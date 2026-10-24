@@ -1,4 +1,6 @@
-# Building hakuX
+# Android build (upstream)
+
+Retained for the Android app; this PortareOS fork does not validate Android builds.
 
 The app (this directory) builds no native code itself: it packs the native
 core's libraries from `app/src/main/jniLibs`. Build the core first, copy its
@@ -61,12 +63,13 @@ A release build (`assembleRelease`) is signed with the keystore that
 
 ## Host tests
 
-The HLE layer's pure modules have host tests (any C compiler with CMake):
+The HLE layer's pure modules have host tests (any C compiler with CMake).
+Use the dependency directory from the native build:
 
 ```
-cmake -S tests/hle -B build/hle-tests -G Ninja
+cmake -S tests/hle -B build/hle-tests -G Ninja -DNC_DEPS=<native-deps>
 ninja -C build/hle-tests
-cd build/hle-tests && ctest
+ctest --test-dir build/hle-tests --output-on-failure
 ```
 
 ## Debug builds

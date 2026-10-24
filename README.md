@@ -1,39 +1,28 @@
-# hakuX
+# hakuX for PortareOS
 
-hakuX runs original Xbox games on Android (arm64) and ARM64 Linux
-(PortareOS), tuned for Adreno GPUs.
+Original Xbox emulation for PortareOS on the Retroid Pocket Nova, through
+RetroArch or the standalone `hakux` emulator.
 
-Its core runs the game's x86 code on a JIT (a FEX fork) under a
-reimplementation of the Xbox kernel, and draws by decoding the push buffer
-the game's own Direct3D sends the NV2A into Vulkan. Audio is the MCPX APU,
-ported from xemu.
+Fork of [rfandango/hakuX](https://github.com/rfandango/hakuX); credit to upstream for the emulator core and Android app.
 
-## Requirements
+## Playing
 
-- An arm64 Android device with Vulkan (custom Turnip drivers can be loaded
-  for Adreno GPUs), or ARM64 Linux with Vulkan, such as PortareOS on the
-  Retroid Pocket Nova.
-- Your own game images (ISO or XISO), dumped from discs you own.
+- Requires ARM64 Linux (glibc) with Vulkan 1.3.
+- Uses your own XISO game images (`.iso`). CHD is not supported yet.
+- Keeps the emulated Xbox hard drive and caches in `/storage/saves/xbox`.
 
-No BIOS, MCPX ROM or hard disk image is needed. hakuX doesn't include any
-copyrighted Xbox software.
+No BIOS, MCPX ROM or hard disk image is needed.
+
+The RetroArch core currently supports player 1 only. Closing a game also
+closes RetroArch; reset, core options and save states are not yet available.
 
 ## Building
 
-See [android/README.md](android/README.md).
-
-On ARM64 Linux, `hakux` runs a game fullscreen through SDL3 (KMSDRM); a
-libretro core for RetroArch is in progress ([LIBRETRO_SPEC.md](LIBRETRO_SPEC.md)).
-See [native/README.linux.md](native/README.linux.md).
+- [Linux build, run and packaging instructions](native/README.linux.md)
+- [Android build notes](android/README.md) — retained from upstream; not validated by this fork
+- [Changelog](CHANGELOG.md)
 
 ## License
 
-hakuX is free software under the GNU General Public License, version 3 or
-later ([COPYING](COPYING)): anyone who distributes it, or a work based on it,
-must make the complete source available under the same license. The code
-ported from xemu (the MCPX APU) and the third-party components keep their
-own licenses, listed in [LICENSE](LICENSE) and [licenses/](licenses/).
-
-## Notes
-
-- hakuX is not affiliated with Microsoft.
+GNU GPL v3 or later ([COPYING](COPYING)). Third-party code retains its own
+licenses; see [LICENSE](LICENSE) and [licenses/](licenses/).

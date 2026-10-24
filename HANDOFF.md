@@ -1,9 +1,8 @@
-# Handoff: v1.0.0-prepare, 2026-10-22
+# Upstream Android handoff: v1.0.0-prepare, 2026-10-22
 
-Repository `D:\code\xemu-android-native`, branch `v1.0.0-prepare` (master
-is the release line). Read `CLAUDE.md` (device etiquette, build steps;
-local-only, in `D:\code\xemu-android`) and `tools/hle/README.md` (tools and
-debug knobs; local-only) first.
+Historical notes from upstream's `v1.0.0-prepare` branch. Paths, devices and
+pending tasks below describe that checkout; for this fork's status, see
+[PORTAREOS_HANDOFF.md](PORTAREOS_HANDOFF.md).
 
 ## State of the branch
 

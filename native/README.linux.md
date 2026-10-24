@@ -1,18 +1,15 @@
 # Linux build
 
-The first PortareOS milestone
-([issue #2](https://github.com/portare-ch/hakuX/issues/2)) built the
-existing core and a headless runner for AArch64 Linux with 4 KiB pages. The
-second adds rendering without a display and `hakux`, a front end that
-presents the game on the panel through SDL3 (KMSDRM) and the renderer's
-Vulkan swapchain. `hakux` plays the APU's output through SDL audio
-(PipeWire on PortareOS); `xboxrun` and the tests keep the silent sink paced
-at 48 kHz stereo. Launcher integration remains open.
+The ARM64 Linux build provides the RetroArch core `hakux_libretro.so`, the
+standalone `hakux` emulator (SDL3/KMSDRM, PipeWire audio), and the headless
+`xboxrun` diagnostic runner. PortareOS launches Xbox games through RetroArch
+by default; the standalone remains selectable.
 
 ## Build and check
 
 On an ARM64 Linux host, install Clang 19, CMake, Ninja, Git, Python 3 and
-zlib development files (the Linux UAPI headers come with the C library's). The versioned source manifest is
+zlib development files (the Linux UAPI headers come with the C library's).
+The versioned source manifest is
 [linux-deps.json](../tools/native/linux-deps.json). The fetcher uses full
 commit hashes, including FEX's required submodules, and refuses to build
 modified or mismatched dependency checkouts.
@@ -21,33 +18,33 @@ From the repository root:
 
 ```sh
 python3 tools/native/linux-deps.py
-sh tools/native/linux-build.sh
+CC=clang-19 CXX=clang++-19 sh tools/native/linux-build.sh
 ```
 
-The fetcher uses `build/deps`, independently of the `external/fex` submodule.
-This avoids requiring an initialized Android development checkout. The
-documented `nv2a_vsh_cpu` revision is pinned by its full SHA; fetching only
-current branch tips does not retrieve that older commit.
+The fetcher uses `build/deps`, independently of the `external/fex` submodule;
+no Android development checkout is needed.
 
 On macOS with Apple's `container`, build the supplied image and run:
 
 ```sh
-container build --tag hakux-linux-day1 --file tools/native/Dockerfile.linux tools/native
+container build --tag hakux-linux --file tools/native/Dockerfile.linux tools/native
 container run --rm --cpus 6 --memory 8g --volume "$PWD:/src" --workdir /src \
-  hakux-linux-day1 sh -c 'python3 tools/native/linux-deps.py && sh tools/native/linux-build.sh'
+  hakux-linux sh -c 'python3 tools/native/linux-deps.py && sh tools/native/linux-build.sh'
 ```
 
 For a second build directory, set `HAKUX_BUILD=/src/build/linux-clean`.
-`HAKUX_DEPS` selects another dependency directory, and `JOBS` selects build
-parallelism. Additional arguments to `linux-build.sh` are passed to CMake;
+`HAKUX_DEPS` selects another dependency directory for the build (fetch it with
+`linux-deps.py --dest <directory>`), and `JOBS` selects build parallelism.
+Additional arguments to `linux-build.sh` are passed to CMake;
 a PortareOS sysroot/toolchain can be supplied there when required.
 
-The build produces `xboxrun`, `hakux`, `linux-smoke`, `audio-smoke`,
-`audio-sdl-smoke`, `vulkan-probe` and `kms-grab`. SDL3 is pinned at release 3.4.16,
+The build produces `hakux`, `hakux_libretro.so`, `xboxrun`, `libretro-harness`,
+`linux-smoke`, `audio-smoke`, `audio-sdl-smoke`, `vulkan-probe` and `kms-grab`.
+SDL3 is pinned at release 3.4.16,
 PortareOS's version. It is built without backends, only to link `hakux`
 against; the device's own `libSDL3.so.0` (with KMSDRM) is loaded at run time.
-CTest runs the CPU/memory and audio tests plus the positive/negative boundary
-suite. `audio-sdl-smoke` checks the SDL output's pacing, pause and wakeup
+CTest runs the CPU/memory, audio, positive/negative boundary and libretro
+suites. `audio-sdl-smoke` checks the SDL output's pacing, pause and wakeup
 contract on SDL's dummy driver; on the Nova it runs through PipeWire.
 `-DHAKUX_DIAGNOSTIC_AUDIO=ON` makes `hakux` silent as well. The boundary
 suite constructs its own small synthetic XBE/XISO files; it needs no game
@@ -140,12 +137,15 @@ nothing.
 
 ## The libretro core
 
-`linux-build.sh` also builds `hakux_libretro.so`, the core for RetroArch
-(everything in it PIC), and `libretro-harness`, a minimal frontend its
-`libretro-smoke` test drives. See [LIBRETRO_SPEC.md](../LIBRETRO_SPEC.md).
-With RetroArch's Vulkan, the renderer runs on RetroArch's device and each
-frame is copied to it on the GPU; without (the harness), frames are read
-back. `HAKUX_LR_STATS=1` logs the core's time in `retro_run`, and
+Load `hakux_libretro.so` in RetroArch with its Vulkan video driver and open
+an XISO `.iso` image. The renderer shares RetroArch's Vulkan device and
+copies frames on the GPU; the diagnostic harness uses CPU readback.
+
+Closing a game closes RetroArch. Only player 1 is supported; reset, core
+options and save states are not yet available. Run-ahead must stay off.
+The remaining design targets are in [LIBRETRO_SPEC.md](../LIBRETRO_SPEC.md).
+
+`HAKUX_LR_STATS=1` logs the core's time in `retro_run`, and
 `HAKUX_DISP_STATS=1` (any front end) the new frames per second, their age
 when taken and the gaps between them.
 
