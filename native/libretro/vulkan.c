@@ -153,6 +153,10 @@ static void context_destroy(void)
     if (!g_vk) {
         return;
     }
+    /* The renderer can't stop yet (M2): once the guest has booted, it may
+     * still submit to the queue and use the device RetroArch is letting go
+     * (a video driver rebuild, or the unload, which comes after this). */
+    nc_lr_end("vulkan: RetroArch destroyed the context");
     hle_vk_queue_lock();
     T.vkDeviceWaitIdle(g_hvk.dev);
     hle_vk_queue_unlock();

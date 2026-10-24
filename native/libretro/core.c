@@ -13,8 +13,8 @@
  * the devices hold off, the guest's time leaves the pause out), and the next
  * retro_run resumes it.
  *
- * Bring-up (M1): the core cannot stop yet, so unloading ends RetroArch's
- * process; it is not packaged until it can (M2).
+ * The core cannot stop yet (M2), so unloading, or RetroArch letting its
+ * Vulkan context go, ends RetroArch's process (nc_lr_end).
  */
 #include "native/libretro/libretro_int.h"
 #include "native/core/core.h"
@@ -313,15 +313,20 @@ RETRO_API bool retro_load_game_special(unsigned type, const struct retro_game_in
     return false;
 }
 
-RETRO_API void retro_unload_game(void)
+void nc_lr_end(const char *why)
 {
-    if (__atomic_load_n(&g_core_state, __ATOMIC_ACQUIRE) == 0) {
+    const int state = __atomic_load_n(&g_core_state, __ATOMIC_ACQUIRE);
+    if (state == 0) {
         return;
     }
-    /* M1: the core thread has no stop; RetroArch's process ends with it. */
-    nc_log("hakuX-libretro", "unload: the core cannot stop yet; ending the process");
+    nc_log("hakuX-libretro", "%s: the core cannot stop yet; ending the process", why);
     fflush(NULL);
     _exit(0);
+}
+
+RETRO_API void retro_unload_game(void)
+{
+    nc_lr_end("unload");
 }
 
 /* HAKUX_LR_STATS=1: every 10 s, how long retro_run takes RetroArch's thread

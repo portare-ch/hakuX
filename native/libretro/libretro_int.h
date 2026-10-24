@@ -17,10 +17,13 @@
 
 /* core.c — the frontend's environment callback; a failure that stops the
  * content (logged; retro_run asks RetroArch to shut down); the guest booted,
- * once (false: it could not be). */
+ * once (false: it could not be); the end of RetroArch's process once the
+ * guest has booted, as the core cannot stop (M2) (returns only when nothing
+ * was booted). */
 bool nc_lr_env(unsigned cmd, void *data);
 void nc_lr_fail(const char *why);
 bool nc_lr_start(void);
+void nc_lr_end(const char *why);
 
 /* audio.c — one period's samples to RetroArch (retro_run). */
 void nc_lr_audio_run(retro_audio_sample_batch_t batch);
