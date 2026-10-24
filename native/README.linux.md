@@ -73,7 +73,8 @@ ldd ./xboxrun
 The suite verifies guest arithmetic/branches, system-operation exits, the
 replacement kernel's initialization, shared RAM aliases and recovery from
 translated dirty-page/MMIO faults through `nc_core_fault`. It deliberately
-tests an incorrect expectation, an unexpected host fault, missing/invalid
+tests an incorrect expectation, an unexpected host fault (from host code
+after the CPU ran, which `nc_core_fault` must decline), missing/invalid
 discs, a synthetic HLT title and an infinite guest loop. Expected failure
 exit codes are asserted; they do not count as successful game boots.
 
