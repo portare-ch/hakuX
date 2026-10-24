@@ -1,9 +1,14 @@
 /*
  * hakuX native core, Linux front end (hakux): the game in a fullscreen SDL3
  * window (on PortareOS the panel itself, through KMSDRM), its frames
- * presented by the HLE GPU's Vulkan swapchain (present.c), the first gamepad
- * as player 1's Duke, and the APU's output through SDL audio (out_sdl.c:
+ * presented by the HLE GPU's Vulkan swapchain (present.c), the gamepads as
+ * player 1's Duke, and the APU's output through SDL audio (out_sdl.c:
  * PipeWire on PortareOS).
+ *
+ * Every gamepad SDL opens is player 1's, merged (gamepad.c): on PortareOS
+ * InputPlumber grabs the Nova's own controls and presents them as a virtual
+ * DualSense Edge, so the raw device SDL also finds is silent; a pad plugged
+ * in plays too. The title's rumble goes to all of them.
  *
  *   hakux <disc image> <data directory> [option...]
  *
@@ -11,10 +16,11 @@
  * caches (cache/). Options, as the Android app's: scale=<n>,
  * aspect=auto|4:3|16:9|stretch, fxaa=0|1, upscale=bilinear|sgsr,
  * video=<flags, hex>, lang=<n>; and exitafter=<seconds>, which leaves as
- * the quit keys would after that long (tests).
+ * the quit keys would after that long (tests). NC_CAPTURE_EVERY captures
+ * frames as xboxrun does (run/capture.c), into frames/ here.
  *
- * Leaving (SIGINT/SIGTERM, Escape, the gamepad's guide button, or the title
- * stopping) drops the swapchain and SDL, then ends the process: the core
+ * Leaving (SIGINT/SIGTERM, Escape, Home + Start as every PortareOS emulator
+ * quits, or the title stopping) drops the swapchain and SDL, then ends the process: the core
  * thread has no stop. Its exit hands the panel back (the DRM master is
  * released with the process's descriptors), as a SIGKILL from PortareOS's
  * quit hotkey does too.
@@ -41,6 +47,65 @@
 static NcCore g_core;
 static int g_disc_fd = -1;
 static SDL_AtomicInt g_core_state; /* 0 booting, 1 running, -1 stopped */
+
+void nc_capture_start(void);       /* run/capture.c */
+
+#define MAX_PADS 8
+static SDL_Gamepad *g_pads[MAX_PADS];
+static unsigned g_rumbles;         /* the title's rumble changes (logged as it leaves) */
+
+static void pad_added(SDL_JoystickID id)
+{
+    for (unsigned i = 0; i < MAX_PADS; i++) {
+        if (!g_pads[i]) {
+            SDL_Gamepad *p = g_pads[i] = SDL_OpenGamepad(id);
+            if (!p) {
+                nc_log("hakuX-linux", "gamepad: %s", SDL_GetError());
+                return;
+            }
+            const bool rumble =
+                SDL_GetBooleanProperty(SDL_GetGamepadProperties(p), SDL_PROP_GAMEPAD_CAP_RUMBLE_BOOLEAN, false);
+            nc_log("hakuX-linux", "gamepad %u: %s (%04x:%04x)%s, player 1", i, SDL_GetGamepadName(p),
+                   SDL_GetGamepadVendor(p), SDL_GetGamepadProduct(p), rumble ? ", rumble" : "");
+            return;
+        }
+    }
+}
+
+static void pad_removed(SDL_JoystickID id)
+{
+    for (unsigned i = 0; i < MAX_PADS; i++) {
+        if (g_pads[i] && SDL_GetGamepadID(g_pads[i]) == id) {
+            nc_log("hakuX-linux", "gamepad %u: removed", i);
+            SDL_CloseGamepad(g_pads[i]);
+            g_pads[i] = NULL;
+        }
+    }
+}
+
+/* The title's rumble on every pad: sent as it changes, and again each half
+ * second while it lasts (each send is good for a second, so a rumble left on
+ * by a stopped title ends). */
+static void rumble(Uint64 now)
+{
+    static uint16_t last_l, last_r;
+    static Uint64 sent;
+    uint16_t l = 0, r = 0;
+    nc_pad_rumble(0, &l, &r);
+    const bool changed = l != last_l || r != last_r;
+    if (!changed && (!(l || r) || now - sent < 500)) {
+        return;
+    }
+    for (unsigned i = 0; i < MAX_PADS; i++) {
+        if (g_pads[i]) {
+            SDL_RumbleGamepad(g_pads[i], l, r, l || r ? 1000 : 0);
+        }
+    }
+    g_rumbles += changed;
+    last_l = l;
+    last_r = r;
+    sent = now;
+}
 
 /* Guest RAM tracking and MMIO are host faults the core resolves; any other
  * is a crash: the default action, as the fault repeats. */
@@ -180,10 +245,9 @@ int main(int argc, char **argv)
     pthread_t core;
     pthread_create(&core, &attr, core_thread, NULL);
     pthread_attr_destroy(&attr);
+    nc_capture_start();
 
     const Uint64 start = SDL_GetTicks();
-    SDL_Gamepad *pad = NULL;
-    uint16_t rumble_l = 0, rumble_r = 0;
     bool shown = false;
     const char *why = NULL;
     while (!why) {
@@ -199,36 +263,29 @@ int main(int argc, char **argv)
                 }
                 break;
             case SDL_EVENT_GAMEPAD_ADDED:
-                if (!pad) {
-                    pad = SDL_OpenGamepad(ev.gdevice.which);
-                    nc_log("hakuX-linux", "gamepad: %s", pad ? SDL_GetGamepadName(pad) : SDL_GetError());
-                }
+                pad_added(ev.gdevice.which);
                 break;
             case SDL_EVENT_GAMEPAD_REMOVED:
-                if (pad && SDL_GetGamepadID(pad) == ev.gdevice.which) {
-                    SDL_CloseGamepad(pad);
-                    pad = NULL;
-                }
+                pad_removed(ev.gdevice.which);
                 break;
             default:
                 break;
             }
         }
         NcPadState s = {0};
-        if (pad) {
-            nc_read_gamepad(pad, &s);
-            if (SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_GUIDE)) {
-                why = "the guide button";  /* the Duke has none */
+        bool home = false;              /* the guide button: the Duke has none */
+        for (unsigned i = 0; i < MAX_PADS; i++) {
+            if (g_pads[i]) {
+                nc_read_gamepad(g_pads[i], &s);
+                home |= SDL_GetGamepadButton(g_pads[i], SDL_GAMEPAD_BUTTON_GUIDE);
             }
         }
-        nc_pad_set(0, &s);
-        uint16_t l = 0, r = 0;
-        nc_pad_rumble(0, &l, &r);
-        if (pad && (l != rumble_l || r != rumble_r)) {
-            SDL_RumbleGamepad(pad, l, r, l || r ? 1000 : 0);
-            rumble_l = l;
-            rumble_r = r;
+        if (home && (s.buttons & NC_PAD_START)) {
+            why = "Home + Start";       /* PortareOS's quit: the title doesn't see the Start */
+            s.buttons &= (uint16_t)~NC_PAD_START;
         }
+        nc_pad_set(0, &s);
+        rumble(SDL_GetTicks());
 
         if (!nc_present_frame(win)) {
             SDL_Delay(8);               /* nothing to wait for the panel on */
@@ -248,8 +305,8 @@ int main(int argc, char **argv)
     }
     float fps, avg_ms, last_ms;
     nc_present_stats(&fps, &avg_ms, &last_ms);
-    nc_log("hakuX-linux", "leaving (%s) after %.1f s: %s, %.1f fps presented", why,
-           (double)(SDL_GetTicks() - start) / 1000.0, shown ? "frames were shown" : "no frame shown", fps);
+    nc_log("hakuX-linux", "leaving (%s) after %.1f s: %s, %.1f fps presented, %u rumble changes", why,
+           (double)(SDL_GetTicks() - start) / 1000.0, shown ? "frames were shown" : "no frame shown", fps, g_rumbles);
     uint32_t pw, ph;
     hle_present_begin(NULL, &pw, &ph);  /* no window: the swapchain and surface go */
     SDL_DestroyWindow(win);

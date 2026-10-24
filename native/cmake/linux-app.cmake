@@ -27,6 +27,7 @@ add_executable(hakux
   "${CMAKE_CURRENT_SOURCE_DIR}/app/present.c"
   "${CMAKE_CURRENT_SOURCE_DIR}/app/gamepad.c"
   "${NC_REPO}/hw/xbox/hle/vk/swapchain.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/run/capture.c"
 )
 if(HAKUX_DIAGNOSTIC_AUDIO)
   target_sources(hakux PRIVATE "${NC_APU_OUT_NULL}")
