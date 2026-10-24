@@ -213,9 +213,13 @@ stays silent.
   in plays too. Separate players for several pads are not done yet.
 - The title's rumble goes to every pad, sent again each half second while
   it lasts (SDL's rumble times out after the second each send asks for).
-- The guide button quits only when held for a second, not on a press that
-  may be part of a system hotkey; `play.sh`-style launches register
-  PortareOS's own quit hotkey with `set_kill`.
+- Home + Start quits, as every PortareOS emulator does (the Nova's Home is
+  the virtual pad's guide button); the title does not see that Start. In
+  the first play test, `hakux` only quit on a guide button held for a
+  second, and with the launcher stopped nothing else handled Home + Start:
+  the owner could not leave the game. When the launcher runs a game, it also
+  closes one that does not quit on Home + Start; PortareOS's kill combo
+  (`portsense`) is L1 + Select + Start for a process named with `set_kill`.
 - `hakux` captures frames like `xboxrun` (`NC_CAPTURE_EVERY`, into
   `frames/` in its working directory) for scripted checks.
 
@@ -223,8 +227,8 @@ Results: the owner raced in Burnout 3 on the Nova with the built-in
 controls: "controls work, pleasing for a first attempt". In the first four
 minutes the emulated Duke registered 116 button changes; 59.9 fps with
 three dips to 59.2-59.7; no short audio callbacks after the APU's first.
-Rumble was not reported on yet: `hakux` logs the title's rumble changes as
-it leaves.
+Over 327 s the title changed its rumble 190 times, all sent to the pad;
+whether the Nova vibrated was not reported.
 
 ## Local artifacts and device state
 
