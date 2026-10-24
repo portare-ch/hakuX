@@ -1,15 +1,17 @@
-# Linux diagnostic build
+# Linux build
 
-This is the first PortareOS milestone, tracked in
-[issue #2](https://github.com/portare-ch/hakuX/issues/2). It builds the
-existing core and a headless runner for AArch64 Linux with 4 KiB pages.
-The diagnostic audio sink is silent and paced at 48 kHz stereo. Window
-presentation, audible audio and production launcher integration remain open.
+The first PortareOS milestone
+([issue #2](https://github.com/portare-ch/hakuX/issues/2)) built the
+existing core and a headless runner for AArch64 Linux with 4 KiB pages. The
+second adds rendering without a display and `hakux`, a front end that
+presents the game on the panel through SDL3 (KMSDRM) and the renderer's
+Vulkan swapchain. The diagnostic audio sink is silent and paced at 48 kHz
+stereo. Audible audio and launcher integration remain open.
 
 ## Build and check
 
 On an ARM64 Linux host, install Clang 19, CMake, Ninja, Git, Python 3 and
-zlib development files. The versioned source manifest is
+zlib development files (the Linux UAPI headers come with the C library's). The versioned source manifest is
 [linux-deps.json](../tools/native/linux-deps.json). The fetcher uses full
 commit hashes, including FEX's required submodules, and refuses to build
 modified or mismatched dependency checkouts.
@@ -39,7 +41,10 @@ For a second build directory, set `HAKUX_BUILD=/src/build/linux-clean`.
 parallelism. Additional arguments to `linux-build.sh` are passed to CMake;
 a PortareOS sysroot/toolchain can be supplied there when required.
 
-The build produces `xboxrun`, `linux-smoke`, `audio-smoke` and `vulkan-probe`.
+The build produces `xboxrun`, `hakux`, `linux-smoke`, `audio-smoke`,
+`vulkan-probe` and `kms-grab`. SDL3 is pinned at release 3.4.16,
+PortareOS's version. It is built without backends, only to link `hakux`
+against; the device's own `libSDL3.so.0` (with KMSDRM) is loaded at run time.
 CTest runs the CPU/memory and audio tests plus the positive/negative boundary
 suite. The boundary suite constructs its own small synthetic XBE/XISO files;
 it needs no game dump, BIOS or proprietary guest software.
@@ -76,7 +81,9 @@ translated dirty-page/MMIO faults through `nc_core_fault`. It deliberately
 tests an incorrect expectation, an unexpected host fault (from host code
 after the CPU ran, which `nc_core_fault` must decline), missing/invalid
 discs, a synthetic HLT title and an infinite guest loop. Expected failure
-exit codes are asserted; they do not count as successful game boots.
+exit codes are asserted; they do not count as successful game boots. It also
+boots the synthetic title in `--render` mode; without a Vulkan loader that
+run still passes, so drawing itself is checked with real titles below.
 
 For a developer-supplied ISO/XISO, explicitly select headless mode and a
 temporary data directory:
@@ -87,10 +94,41 @@ NC_TIMEOUT=30 ./xboxrun --headless /path/to/game.iso /tmp/hakux-diagnostic-data
 
 Use a positive `NC_TIMEOUT`. The runner forces graphics off, stores its
 emulated disk/cache under the supplied directory and reports the silent
-audio backend. This developer interface does not change PortareOS's CHD-only
+audio backend. `--render` in place of `--headless` keeps the renderer on
+without a display and writes a frame every 2 s (`NC_CAPTURE_EVERY`, up to
+`NC_CAPTURE_MAX`) to `<data directory>/frames/`. This developer interface does not change PortareOS's CHD-only
 production library. `vulkan-probe` checks the same portable capability floor
 as the renderer and creates a device, but creates no surface and renders no
 frames. It does not establish Linux shared-memory import correctness.
+
+## The game on the panel
+
+`hakux` runs a title fullscreen:
+
+```sh
+./hakux /roms/xbox/game.iso /tmp/hakux-data [option...]
+```
+
+Options, as the Android app's: `scale=<n>`, `aspect=auto|4:3|16:9|stretch`,
+`fxaa=0|1`, `upscale=bilinear|sgsr`, `video=<flags, hex>` and `lang=<n>`;
+`exitafter=<seconds>` leaves after that long (tests). The first gamepad is
+player 1. Escape, the gamepad's guide button, SIGINT/SIGTERM or the title
+stopping leave; the exit code is 0 if a title frame was shown. On KMSDRM the
+panel must be free: the launcher drops the DRM master while it runs a game.
+Over SSH, stop it first and start it again afterwards:
+
+```sh
+systemctl stop portarelauncher.service
+./hakux /roms/xbox/game.iso /tmp/hakux-data exitafter=30
+systemctl start portarelauncher.service
+```
+
+`kms-grab out.png` saves the framebuffer the panel scans out, when it is
+linear (the launcher's). Turnip's swapchain images are UBWC-compressed:
+`kms-grab` then reports the framebuffer, its size and modifier, and saves
+nothing.
+
+## Properties
 
 Linux startup properties use names such as
 `HAKUX_PROP_DEBUG_HAKUX_APUSPIN=0`. Existing `NC_*`/`HAKUX_*` environment
