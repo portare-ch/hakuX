@@ -20,3 +20,13 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_test(NAME linux-boundaries
          COMMAND "${Python3_EXECUTABLE}" "${NC_REPO}/tests/native/linux/check.py" "$<TARGET_FILE_DIR:xboxrun>")
 set_tests_properties(linux-boundaries PROPERTIES TIMEOUT 60)
+if(TARGET hakux_libretro)
+  # The core through a minimal frontend: exports, info and a synthetic title.
+  add_executable(libretro-harness "${NC_REPO}/tests/native/libretro/harness.c")
+  target_include_directories(libretro-harness PRIVATE "${NC_REPO}")
+  target_link_libraries(libretro-harness PRIVATE ${CMAKE_DL_LIBS})
+  add_test(NAME libretro-smoke
+           COMMAND "${Python3_EXECUTABLE}" "${NC_REPO}/tests/native/libretro/check.py"
+                   "$<TARGET_FILE:libretro-harness>" "$<TARGET_FILE:hakux_libretro>")
+  set_tests_properties(libretro-smoke PROPERTIES TIMEOUT 60)
+endif()
