@@ -16,6 +16,8 @@
 #include <stdlib.h>
 #include <ucontext.h>
 #include <unistd.h>
+#include <errno.h>
+#include <sys/stat.h>
 
 static NcCore g_core;
 
@@ -207,13 +209,39 @@ static void dump_ranges(const char *spec)
 
 int main(int argc, char **argv)
 {
+#ifndef __ANDROID__
+    if (argc != 4 || strcmp(argv[1], "--headless")) {
+        fprintf(stderr, "usage: xboxrun --headless <disc image> <diagnostic data directory>\n");
+        return 2;
+    }
+    char hdd[1024], cache[1024];
+    struct stat st;
+    if ((mkdir(argv[3], 0700) != 0 && errno != EEXIST) || stat(argv[3], &st) != 0 || !S_ISDIR(st.st_mode) ||
+        snprintf(hdd, sizeof(hdd), "%s/hdd", argv[3]) >= (int)sizeof(hdd) ||
+        snprintf(cache, sizeof(cache), "%s/cache", argv[3]) >= (int)sizeof(cache)) {
+        fprintf(stderr, "invalid diagnostic data directory: %s\n", argv[3]);
+        return 2;
+    }
+    if ((mkdir(hdd, 0700) != 0 && errno != EEXIST) ||
+        (mkdir(cache, 0700) != 0 && errno != EEXIST)) {
+        perror("diagnostic data directories");
+        return 2;
+    }
+    nc_io_set_hdd_root(hdd);
+    setenv("HAKUX_NATIVE_BASE", cache, 1);
+    setenv("HAKUX_HLE_MODE", "off", 1);
+    nc_log("hakuX-native", "explicit headless diagnostics: renderer OFF, paced silent audio");
+    const char *disc = argv[2];
+#else
     if (argc != 2) {
         fprintf(stderr, "usage: xboxrun <disc image>\n");
         return 2;
     }
-    int fd = open(argv[1], O_RDONLY | O_CLOEXEC);
+    const char *disc = argv[1];
+#endif
+    int fd = open(disc, O_RDONLY | O_CLOEXEC);
     if (fd < 0) {
-        perror(argv[1]);
+        perror(disc);
         return 2;
     }
 

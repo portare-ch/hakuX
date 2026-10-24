@@ -3,7 +3,9 @@
  */
 #include "hw/xbox/hle/base.h"
 
+#ifdef __ANDROID__
 #include <android/hardware_buffer.h>
+#endif
 #include "hw/xbox/hle/hle.h"
 #include "hw/xbox/hle/mem/guestmem.h"
 #include "hw/xbox/hle/uma/uma.h"
@@ -16,6 +18,7 @@ bool g_hland_coherent;
 
 #define T (g_hvk.t)
 
+#ifdef __ANDROID__
 static bool import(AHardwareBuffer *ahb, bool bda)
 {
     VkAndroidHardwareBufferPropertiesANDROID props = {
@@ -76,16 +79,22 @@ static bool import(AHardwareBuffer *ahb, bool bda)
             g_hvk.mem.memoryTypes[mt].propertyFlags, props.memoryTypeBits, bda ? "yes" : "no");
     return true;
 }
+#endif
 
 int hle_vk_guest_ram_init(void)
 {
-    AHardwareBuffer *ahb = hle_uma_ahb();
     g_hram.size = hle_ram_size();
+#ifdef __ANDROID__
+    AHardwareBuffer *ahb = hle_uma_ahb();
     g_hram.zero_copy = ahb && (import(ahb, true) || import(ahb, false));
     if (!g_hram.zero_copy) {
         hle_log("hakuX-hle-back", "guest RAM not imported (%s): copy fallback",
                 ahb ? "import failed" : "RAM is not an AHB");
     }
+#else
+    g_hram.zero_copy = false;
+    hle_log("hakuX-hle-back", "Linux guest RAM: copy fallback (no external-memory import)");
+#endif
     return 0;
 }
 

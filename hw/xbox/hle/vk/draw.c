@@ -7,9 +7,7 @@
  */
 #include "hw/xbox/hle/base.h"
 #include <math.h>
-#ifdef __ANDROID__
-#include <sys/system_properties.h>
-#endif
+#include "native/platform/properties.h"
 
 #include "hw/xbox/hle/hle.h"
 #include "hw/xbox/hle/prop.h"
@@ -2387,14 +2385,14 @@ void hle_draw_psframe_poll(uint64_t swap)
     }
     next_poll = swap + 3;   /* every 3 swaps: odd, so re-arming reaches either frame parity */
     g_prop_gen++;           /* and the draws' own properties at their next draw */
-    char v[PROP_VALUE_MAX] = "";
-    __system_property_get("debug.hakux.norec", v);
+    char v[NC_PROPERTY_VALUE_MAX] = "";
+    nc_property_get("debug.hakux.norec", v);
     if ((unsigned)atoi(v) != g_norec) {
         g_norec = (unsigned)atoi(v);
         hle_log("hakuX-hle-pipe", "norec=%u (1: no state cache, 2: no firstVertex)", g_norec);
     }
     v[0] = 0;
-    __system_property_get("debug.hakux.probe", v);
+    nc_property_get("debug.hakux.probe", v);
     {
         uint64_t pv[PROBE_PROGS] = { 0 };
         unsigned np = 0;
@@ -2416,7 +2414,7 @@ void hle_draw_psframe_poll(uint64_t swap)
         }
     }
     v[0] = 0;
-    __system_property_get("debug.hakux.eqtol", v);
+    nc_property_get("debug.hakux.eqtol", v);
     if (g_eqtol_off != !strcmp(v, "0") || g_zeq_off != !strcmp(v, "1")) {
         g_eqtol_off = !strcmp(v, "0");
         g_zeq_off = !strcmp(v, "1");
@@ -2425,17 +2423,17 @@ void hle_draw_psframe_poll(uint64_t swap)
                 "a step behind, a few in front (the depth read)");
     }
     v[0] = 0;
-    __system_property_get("debug.hakux.snap", v);
+    nc_property_get("debug.hakux.snap", v);
     if (g_snap_trunc != !strcmp(v, "trunc")) {
         g_snap_trunc = !strcmp(v, "trunc");
         hle_log("hakuX-hle-pipe", "vertex positions: %s",
                 g_snap_trunc ? "each truncated to 1/16 pixel" : "all moved by the rounding bias (1/32 pixel)");
     }
     v[0] = 0;
-    __system_property_get("debug.hakux.probefocus", v);
+    nc_property_get("debug.hakux.probefocus", v);
     g_probe.focus = v[0] ? atoi(v) : -1;
     v[0] = 0;
-    __system_property_get("debug.hakux.probez", v);
+    nc_property_get("debug.hakux.probez", v);
     if ((uint32_t)atoi(v) != g_probe.zop) {
         g_probe.zop = (uint32_t)atoi(v);
         hle_log("hakuX-hle-probe", "probed draws' depth test: %s",
@@ -2443,8 +2441,8 @@ void hle_draw_psframe_poll(uint64_t swap)
     }
     static HleProp psf_prop;
     if (hle_prop_new(&psf_prop, "debug.hakux.psframe", v)) {
-        char n[PROP_VALUE_MAX] = "";
-        __system_property_get("debug.hakux.psmaxn", n);
+        char n[NC_PROPERTY_VALUE_MAX] = "";
+        nc_property_get("debug.hakux.psmaxn", n);
         g_psf_maxn = (uint32_t)atoi(n);
         g_psf_frame = swap + 1;
         g_psf_nseen = 0;
@@ -2784,16 +2782,16 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
         static int64_t skip_n[8], skip_at[8];
         static int nskip = -1;
         static unsigned polled;
-        static char last[PROP_VALUE_MAX];
+        static char last[NC_PROPERTY_VALUE_MAX];
         const char *e = NULL;
-        char v[PROP_VALUE_MAX];
+        char v[NC_PROPERTY_VALUE_MAX];
         if (nskip < 0) {
             e = getenv("HAKUX_HLE_SKIPVSH");
         }
         if (polled != g_prop_gen) {
             polled = g_prop_gen;
             v[0] = 0;
-            if (__system_property_get("debug.hakux.skipvsh", v) > 0 && strcmp(v, last)) {
+            if (nc_property_get("debug.hakux.skipvsh", v) > 0 && strcmp(v, last)) {
                 snprintf(last, sizeof(last), "%s", v);
                 e = v;
                 hle_log("hakuX-hle-pipe", "skipvsh: %s", v);
@@ -2829,10 +2827,10 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
         static uint64_t want;
         static unsigned polled;
         if (polled != g_prop_gen) {
-            static char last[PROP_VALUE_MAX];
+            static char last[NC_PROPERTY_VALUE_MAX];
             polled = g_prop_gen;
-            char v[PROP_VALUE_MAX] = "";
-            if (__system_property_get("debug.hakux.vtok", v) > 0 && strcmp(v, last)) {
+            char v[NC_PROPERTY_VALUE_MAX] = "";
+            if (nc_property_get("debug.hakux.vtok", v) > 0 && strcmp(v, last)) {
                 snprintf(last, sizeof(last), "%s", v);
                 want = strtoull(v, NULL, 16);
             }
@@ -2980,9 +2978,9 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
              * made drops every draw, and must still be switched off. */
             static unsigned polled;
             if (polled != g_prop_gen) {
-                char v[PROP_VALUE_MAX] = "";
+                char v[NC_PROPERTY_VALUE_MAX] = "";
                 polled = g_prop_gen;
-                if (__system_property_get("debug.hakux.psdbg", v) > 0) {
+                if (nc_property_get("debug.hakux.psdbg", v) > 0) {
                     psdbg = atoi(v);
                 }
             }
