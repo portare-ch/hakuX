@@ -7,8 +7,11 @@ add_library(hakux_libretro SHARED
   "${CMAKE_CURRENT_SOURCE_DIR}/libretro/audio.c"
   "${CMAKE_CURRENT_SOURCE_DIR}/libretro/input.c"
   "${CMAKE_CURRENT_SOURCE_DIR}/libretro/video.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/libretro/vulkan.c"
 )
 target_link_libraries(hakux_libretro PRIVATE hakux_native hakux_hle)
+# libretro_vulkan.h, as RetroArch ships it, includes <libretro.h>
+target_include_directories(hakux_libretro PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/libretro")
 target_compile_definitions(hakux_libretro PRIVATE "HAKUX_VERSION=\"${HAKUX_VERSION}\"")
 target_compile_options(hakux_libretro PRIVATE -Wall -Wno-unused-parameter)
 set_target_properties(hakux_libretro PROPERTIES PREFIX "" C_VISIBILITY_PRESET hidden)

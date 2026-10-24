@@ -1,11 +1,13 @@
 /*
  * hakuX native core — the frames to RetroArch, in the libretro core.
  *
- * Bring-up (LIBRETRO_SPEC.md M1): the front frame is read back, as xboxrun's
- * captures are (hle_disp_read_front: the gamma ramp is in it), and handed
- * over as XRGB8888. M3 replaces this with the Vulkan image handoff. A
- * retro_run with no new frame shows the last one again (a 30 fps title, a
- * static screen); RetroArch letterboxes it at the aspect reported here.
+ * Through Vulkan when RetroArch took the renderer's device (vulkan.c: the
+ * front image copied on the GPU). Otherwise, for a frontend without Vulkan,
+ * the front frame is read back, as xboxrun's captures are
+ * (hle_disp_read_front), and handed over as XRGB8888; a retro_run with no new
+ * frame then shows the last one again. Either way the gamma ramp is in the
+ * frame (the render thread bakes it), and RetroArch letterboxes it at the
+ * aspect reported here.
  *
  * A standard-definition frame loses its overscan, as a TV hid it: 1/30 of
  * its height at the top and bottom and of its width at each side, so the
@@ -25,11 +27,12 @@
 #define MAX_H 2160
 
 static struct {
-    uint32_t *buf;
+    uint32_t w, h;           /* the frame shown, without its overscan */
+    bool have;
+    uint32_t *buf;           /* the read-back frame */
     size_t cap;              /* pixels */
-    uint32_t w, h;
-    uint32_t gen, swap;      /* the frame shown: the display's generation, its swap */
-    bool have, dupe_checked, can_dupe;
+    uint32_t gen, swap;      /* the read-back frame's display generation and swap */
+    bool dupe_checked, can_dupe;
 } g_v;
 
 /* As present.c's auto: the frame's own shape, but a standard-definition
@@ -49,20 +52,34 @@ void nc_lr_video_geometry(struct retro_game_geometry *g)
     g->aspect_ratio = aspect_of(g->base_width, g->base_height);
 }
 
-/* The overscan a TV hid, on each side (SD frames: under 16:10). */
-static void overscan(uint32_t w, uint32_t h, uint32_t *cx, uint32_t *cy)
+void nc_lr_overscan(uint32_t w, uint32_t h, uint32_t *cx, uint32_t *cy)
 {
     const bool sd = (float)w / (float)h < 1.6f;
     *cx = sd ? w / 30 : 0;
     *cy = sd ? h / 30 : 0;
 }
 
-/* The front frame, if it is newer than the last one shown, into g_v.buf
- * (without its overscan). */
-static bool take_new(retro_environment_t env)
+void nc_lr_video_size(uint32_t w, uint32_t h, uint32_t ow, uint32_t oh)
+{
+    if (g_v.have && ow == g_v.w && oh == g_v.h) {
+        return;
+    }
+    g_v.w = ow;
+    g_v.h = oh;
+    g_v.have = true;
+    struct retro_game_geometry geo;
+    nc_lr_video_geometry(&geo);
+    nc_lr_env(RETRO_ENVIRONMENT_SET_GEOMETRY, &geo);
+    nc_log("hakuX-libretro", "video: %ux%u, %ux%u without its overscan, shown at %.3f", w, h, ow, oh,
+           geo.aspect_ratio);
+}
+
+/* Without Vulkan: the front frame, if it is newer than the last one shown,
+ * read back into g_v.buf (without its overscan). */
+static bool take_new(void)
 {
     uint32_t gen, swap;
-    if (!hle_disp_front(&gen, &swap) || (g_v.have && gen == g_v.gen && swap == g_v.swap)) {
+    if (!hle_disp_front(&gen, &swap) || (g_v.buf && gen == g_v.gen && swap == g_v.swap)) {
         return false;
     }
     uint32_t w = 0, h = 0;
@@ -72,7 +89,7 @@ static bool take_new(retro_environment_t env)
         return false;
     }
     uint32_t cx, cy;
-    overscan(w, h, &cx, &cy);
+    nc_lr_overscan(w, h, &cx, &cy);
     const uint32_t ow = w - 2 * cx, oh = h - 2 * cy;
     const size_t n = (size_t)ow * oh;
     if (n > g_v.cap) {
@@ -92,34 +109,27 @@ static bool take_new(retro_environment_t env)
         }
     }
     g_free(rgba);
-    const bool resized = !g_v.have || ow != g_v.w || oh != g_v.h;
-    g_v.w = ow;
-    g_v.h = oh;
     g_v.gen = gen;
     g_v.swap = swap;
-    g_v.have = true;
-    if (resized) {
-        struct retro_game_geometry geo;
-        nc_lr_video_geometry(&geo);
-        env(RETRO_ENVIRONMENT_SET_GEOMETRY, &geo);
-        nc_log("hakuX-libretro", "video: %ux%u, %ux%u without its overscan, shown at %.3f", w, h, ow, oh,
-               geo.aspect_ratio);
-    }
+    nc_lr_video_size(w, h, ow, oh);
     return true;
 }
 
-void nc_lr_video_run(retro_environment_t env, retro_video_refresh_t video, uint64_t now_ns)
+void nc_lr_video_run(retro_video_refresh_t video, uint64_t now_ns)
 {
     static uint32_t black[640 * 480];
+    nc_dev_nv2a_display_pickup(now_ns);     /* the vblank keeps clear of this look */
+    if (nc_lr_vk_run(video)) {
+        return;
+    }
     if (!g_v.dupe_checked) {
         g_v.dupe_checked = true;
         g_v.can_dupe = false;
-        env(RETRO_ENVIRONMENT_GET_CAN_DUPE, &g_v.can_dupe);
+        nc_lr_env(RETRO_ENVIRONMENT_GET_CAN_DUPE, &g_v.can_dupe);
     }
-    nc_dev_nv2a_display_pickup(now_ns);     /* the vblank keeps clear of this look */
-    if (take_new(env)) {
+    if (take_new()) {
         video(g_v.buf, g_v.w, g_v.h, g_v.w * sizeof(uint32_t));
-    } else if (g_v.have) {
+    } else if (g_v.buf) {
         video(g_v.can_dupe ? NULL : g_v.buf, g_v.w, g_v.h, g_v.w * sizeof(uint32_t));
     } else {
         video(black, 640, 480, 640 * sizeof(uint32_t));
