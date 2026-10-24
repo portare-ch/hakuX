@@ -33,7 +33,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/system_properties.h>
+#include "native/platform/properties.h"
 #include <time.h>
 
 #define NV2A_BASE 0xFD000000u
@@ -592,8 +592,8 @@ static bool uncapped(void)
         on = getenv("HAKUX_HLE_UNCAP") != NULL;
     }
     if (polls++ % 32 == 0) {
-        char v[PROP_VALUE_MAX] = "";
-        if (__system_property_get("debug.hakux.uncap", v) > 0) {
+        char v[NC_PROPERTY_VALUE_MAX] = "";
+        if (nc_property_get("debug.hakux.uncap", v) > 0) {
             on = atoi(v) != 0;
         }
     }
@@ -664,8 +664,8 @@ void nc_dev_nv2a_init(void)
     g_regs = calloc(1, NV2A_SIZE); /* pages are touched only where the guest writes */
     nc_wr32(g_regs + NV_PMC_BOOT_0, 0x02A000A1u);
     nc_wr32(g_regs + NV_PFB_CSTATUS, 64u << 20);
-    char v[PROP_VALUE_MAX] = "";
-    __system_property_get("debug.hakux.nvcensus", v);
+    char v[NC_PROPERTY_VALUE_MAX] = "";
+    nc_property_get("debug.hakux.nvcensus", v);
     const char *e = getenv("NC_NV2A_CENSUS");
     g_census.on = !strcmp(v, "1") || (e && !strcmp(e, "1"));
     const NcMmioDev dev = {"nv2a", NV2A_BASE, NV2A_SIZE, nv2a_read, nv2a_write, NULL};

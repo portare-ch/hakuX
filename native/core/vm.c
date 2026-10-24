@@ -8,6 +8,7 @@
 
 #include <errno.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -27,6 +28,13 @@ static int memfd(const char *name)
 
 bool nc_vm_init(NcVm *vm, uint32_t ram_size)
 {
+#ifndef __ANDROID__
+    const long host_page = sysconf(_SC_PAGESIZE);
+    if (host_page != NC_PAGE) {
+        nc_log("hakuX-native", "vm: Linux requires %u-byte host pages (got %ld)", NC_PAGE, host_page);
+        return false;
+    }
+#endif
     memset(vm, 0, sizeof(*vm));
     vm->ram_fd = -1;
 

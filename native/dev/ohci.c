@@ -12,6 +12,7 @@
  * gamepad on port 1.
  */
 #include "native/dev/usb.h"
+#include <stdio.h>
 #include "native/core/irq.h"
 #include "native/core/mmio.h"
 #include "native/core/vm.h"

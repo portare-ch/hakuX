@@ -25,9 +25,7 @@
 #include <cstring>
 #include <string>
 #include <sys/mman.h>
-#ifdef __ANDROID__
-#include <sys/system_properties.h>
-#endif
+#include "native/platform/properties.h"
 #include <ucontext.h>
 
 static_assert(NC_SYSOP_CPUID == static_cast<int>(FEXCore::Core::SystemOpKind::Cpuid));
@@ -277,9 +275,9 @@ extern "C" NcCpu* nc_cpu_create(const NcCpuConfig* cfg, uint32_t fs_base) {
   bool x87_full = false;
   {
     const char* e = getenv("NC_FEX_X87");
-    char v[PROP_VALUE_MAX] = "";
+    char v[NC_PROPERTY_VALUE_MAX] = "";
 #ifdef __ANDROID__
-    __system_property_get("debug.hakux.fex_x87", v);
+    nc_property_get("debug.hakux.fex_x87", v);
 #endif
     x87_full = (e && !strcmp(e, "80")) || !strcmp(v, "80");
     FEXCore::Config::Set(FEXCore::Config::CONFIG_X87REDUCEDPRECISION, x87_full ? "0" : "1");
@@ -297,9 +295,9 @@ extern "C" NcCpu* nc_cpu_create(const NcCpuConfig* cfg, uint32_t fs_base) {
   bool x87_pc_off = false;
   {
     const char* e = getenv("NC_FEX_PC");
-    char v[PROP_VALUE_MAX] = "";
+    char v[NC_PROPERTY_VALUE_MAX] = "";
 #ifdef __ANDROID__
-    __system_property_get("debug.hakux.fex_pc", v);
+    nc_property_get("debug.hakux.fex_pc", v);
 #endif
     x87_pc_off = (e && !strcmp(e, "0")) || !strcmp(v, "0");
     FEXCore::Config::Set(FEXCore::Config::CONFIG_X87REDUCEDPRECISIONCONTROL, x87_pc_off ? "0" : "1");
@@ -316,9 +314,9 @@ extern "C" NcCpu* nc_cpu_create(const NcCpuConfig* cfg, uint32_t fs_base) {
   // host call, a little more code for scalar SSE and min/max.
   {
     const char* e = getenv("NC_FEX_AFP");
-    char v[PROP_VALUE_MAX] = "";
+    char v[NC_PROPERTY_VALUE_MAX] = "";
 #ifdef __ANDROID__
-    __system_property_get("debug.hakux.fex_afp", v);
+    nc_property_get("debug.hakux.fex_afp", v);
 #endif
     if ((e && !strcmp(e, "0")) || !strcmp(v, "0")) {
       FEXCore::Config::Set(FEXCore::Config::CONFIG_HOSTFEATURES, std::to_string(static_cast<uint64_t>(FEXCore::Config::HostFeatures::DISABLEAFP)));

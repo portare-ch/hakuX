@@ -165,11 +165,13 @@ int hle_vk_init(void)
     vkEnumerateInstanceExtensionProperties(NULL, &nie, iext);
     const char *iexts[2];
     uint32_t nix = 0;
+#ifdef __ANDROID__
     if (has_ext(iext, nie, VK_KHR_SURFACE_EXTENSION_NAME) &&
         has_ext(iext, nie, VK_KHR_ANDROID_SURFACE_EXTENSION_NAME)) {
         iexts[nix++] = VK_KHR_SURFACE_EXTENSION_NAME;
         iexts[nix++] = VK_KHR_ANDROID_SURFACE_EXTENSION_NAME;
     }
+#endif
     VkInstanceCreateInfo ici = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pApplicationInfo = &app,
@@ -217,7 +219,11 @@ int hle_vk_init(void)
     bool e_iu8x = has_ext(ext, ne, "VK_EXT_index_type_uint8");
     bool e_iu8k = has_ext(ext, ne, "VK_KHR_index_type_uint8");
     bool e_ahb = has_ext(ext, ne,
+#ifdef __ANDROID__
                          VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME) &&
+#else
+                         "VK_ANDROID_external_memory_android_hardware_buffer") &&
+#endif
                  has_ext(ext, ne, VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME);
     bool e_eds3 = has_ext(ext, ne, VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME);
     bool e_gpl = has_ext(ext, ne, VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME) &&
@@ -303,7 +309,9 @@ int hle_vk_init(void)
     need(c, e_dce && q_dce.depthClipEnable, "depth_clip_enable");
     need(c, e_4444 && q_4444.formatA4R4G4B4, "4444_formats");
     need(c, (e_iu8x || e_iu8k) && q_iu8.indexTypeUint8, "index_type_uint8");
+#ifdef __ANDROID__
     need(c, e_ahb, "AHB external memory");
+#endif
     c->gpl = e_gpl && q_gpl.graphicsPipelineLibrary;
     c->eds3 = e_eds3 && q_eds3.extendedDynamicState3ColorBlendEnable &&
               q_eds3.extendedDynamicState3ColorBlendEquation &&
@@ -403,8 +411,10 @@ int hle_vk_init(void)
     exts[nx++] = VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME;
     exts[nx++] = VK_EXT_4444_FORMATS_EXTENSION_NAME;
     exts[nx++] = e_iu8k ? "VK_KHR_index_type_uint8" : "VK_EXT_index_type_uint8";
+#ifdef __ANDROID__
     exts[nx++] = VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME;
     exts[nx++] = VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME;
+#endif
     if (c->eds3) exts[nx++] = VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME;
     if (c->gpl) {
         exts[nx++] = VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME;
@@ -436,8 +446,10 @@ int hle_vk_init(void)
     volkLoadDeviceTable(&v->t, v->dev);
     hle_batch_install(&v->t);           /* strip batching sees every recorded command */
     v->t.vkGetDeviceQueue(v->dev, v->qfam, 0, &v->queue);
+#ifdef __ANDROID__
     v->get_ahb_props = (PFN_vkGetAndroidHardwareBufferPropertiesANDROID)
         vkGetDeviceProcAddr(v->dev, "vkGetAndroidHardwareBufferPropertiesANDROID");
+#endif
     hle_log("hakuX-hle-back", "vk: device \"%s\" api %u.%u.%u driver 0x%x floor=ok "
             "plus: gpl=%d eds3=%d dbuf=%d m5=%d sscaled=%d local_read=%d fbfetch=%d cache_control=%d "
             "swapchain=%d",
