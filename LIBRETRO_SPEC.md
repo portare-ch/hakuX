@@ -198,7 +198,10 @@ when the sync mask or context changes.
 
 Keep the Xbox's gamma ramp (present.c lets the presenter apply it: the export
 pass must), the source size and the aspect; RetroArch letterboxes, so no
-1280 x 960 box in the image. `context_destroy` parks the renderer before its
+1280 x 960 box in the image. A standard-definition frame loses the overscan
+a TV hid, 1/30 of each side (640 x 480 shows 598 x 448 at 4:3): titles left
+that band black (Burnout 3's 16 lines above and below), and with it the
+picture fills the 4:3 panel (owner's requirement). `context_destroy` parks the renderer before its
 resources go; `context_reset` rebuilds them, or stops the content with an
 error.
 
@@ -258,12 +261,13 @@ Options: only what the emulator backs (video region and language, widescreen),
 with what needs a reset said so. No display, VRR, latency, mapping or scaling
 options.
 
-Data: the console's hard disk and caches live in
-`<RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY>/hakux/` (`hdd/`, `cache/`); caches
-can be rebuilt, the disk cannot. The standalone's `/storage/.config/hakux`
-exists since 2026-10-24 (portare-ch/portareos#752): point `start_hakux.sh` at
-the same folder and move the old one once, so both front ends share one
-console disk. A lock keeps two sessions off the same disk. No `chdir`, no
+Data: the console's hard disk and caches live in the save directory
+RetroArch gives (`hdd/`, `cache/`); caches can be rebuilt, the disk cannot.
+On PortareOS that is `/storage/saves/xbox`, beside `/storage/roms/xbox` and
+`/storage/bios/xbox` (owner's layout, 2026-10-24): RetroArch's save
+directory for the core is set to it, and `start_hakux.sh` uses it too, so
+both front ends share one console disk. The standalone's
+`/storage/.config/hakux` (since portare-ch/portareos#752) moves there once. A lock keeps two sessions off the same disk. No `chdir`, no
 `setenv` for paths after load. A title's relaunch stays in process.
 
 ## 11. Save states

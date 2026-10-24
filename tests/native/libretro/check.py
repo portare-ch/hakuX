@@ -53,9 +53,9 @@ def main():
         disc(root / 'halt.iso', b'\xf4')
         run([args.harness, args.core, root / 'halt.iso', 600, root / 'saves'], 0,
             ('guest executed HLT', 'the core asked to shut down', 'the core cannot stop yet'))
-        if not (root / 'saves' / 'hakux' / 'hdd' / 'Partition0').is_dir():
-            raise SystemExit('FAIL: no console disk under the save directory')
-        print('PASS: the console disk is under <save directory>/hakux')
+        if not (root / 'saves' / 'hdd' / 'Partition0').is_dir():
+            raise SystemExit('FAIL: no console disk in the save directory')
+        print('PASS: the console disk is in the save directory')
 
 
 if __name__ == '__main__':

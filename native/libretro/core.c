@@ -135,17 +135,15 @@ static bool make_dir(const char *path)
     return mkdir(path, 0700) == 0 || errno == EEXIST;
 }
 
-/* <save directory>/hakux: the console's hard disk (hdd/, its partitions) and
- * the renderer's caches (cache/). */
+/* The save directory (PortareOS: /storage/saves/xbox): the console's hard
+ * disk (hdd/, its partitions) and the renderer's caches (cache/). */
 static bool data_dirs(char *hdd, char *cache, size_t n)
 {
-    const char *base = NULL;
-    if (!g_env(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &base) || !base || !*base) {
+    const char *root = NULL;
+    if (!g_env(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &root) || !root || !*root) {
         nc_log("hakuX-libretro", "no save directory from the frontend");
         return false;
     }
-    char root[PATH_MAX];
-    snprintf(root, sizeof(root), "%s/hakux", base);
     snprintf(hdd, n, "%s/hdd", root);
     snprintf(cache, n, "%s/cache", root);
     bool ok = make_dir(root) && make_dir(hdd) && make_dir(cache);
