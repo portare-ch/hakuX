@@ -115,9 +115,10 @@ frames. It does not establish Linux shared-memory import correctness.
 
 Options, as the Android app's: `scale=<n>`, `aspect=auto|4:3|16:9|stretch`,
 `fxaa=0|1`, `upscale=bilinear|sgsr`, `video=<flags, hex>` and `lang=<n>`;
-`exitafter=<seconds>` leaves after that long (tests). The first gamepad is
-player 1. Escape, the gamepad's guide button, SIGINT/SIGTERM or the title
-stopping leave; the exit code is 0 if a title frame was shown. On KMSDRM the
+`exitafter=<seconds>` leaves after that long (tests). Every gamepad is
+player 1, merged. Escape, Home + Start (the guide button and Start, as
+every PortareOS emulator quits), SIGINT/SIGTERM or the title stopping
+leave; the exit code is 0 if a title frame was shown. On KMSDRM the
 panel must be free: the launcher drops the DRM master while it runs a game.
 Sound goes to the default PipeWire sink, which SDL finds through
 `XDG_RUNTIME_DIR` (set by `/etc/profile`); without an output device the
@@ -136,6 +137,32 @@ systemctl start portarelauncher.service
 linear (the launcher's). Turnip's swapchain images are UBWC-compressed:
 `kms-grab` then reports the framebuffer, its size and modifier, and saves
 nothing.
+
+## The PortareOS package
+
+PortareOS's `hakux-sa` package installs a release tarball. Make it from a
+clean checkout of the release commit, after `linux-build.sh`, in the same
+image:
+
+```sh
+CC=clang-19 sh tools/native/linux-package.sh 0.1.0
+```
+
+It writes `build/package/hakux-0.1.0-aarch64.tar.gz` and prints its
+SHA-256. The archive holds `bin/hakux`, stripped and without a RUNPATH (it
+runs against the system's `libSDL3.so.0`), the licences in
+`share/licenses/hakux/`, and `BUILD-INFO`: the source revision, the compiler
+and `linux-deps.json`. Names are sorted, owned by root and dated at the
+commit, so the same build packs to the same tarball. Publish it as the
+release `linux-v<version>` and set the package's `PKG_VERSION` and
+`PKG_SHA256` to match.
+
+In PortareOS, the launcher runs `runemu.sh`, which runs `start_hakux.sh
+<game> xbox`. That script runs `hakux <game> /storage/.config/hakux
+aspect=<the system's aspect_ratio setting>` (0 is 4:3 and 1 is 16:9, as
+for xemu) and hands `.chd` images to xemu. On the Nova, hakuX is the Xbox
+system's default emulator and xemu stays selectable; the system lists
+`.iso` and `.chd` files.
 
 ## Properties
 
