@@ -19,8 +19,8 @@
  * the quit keys would after that long (tests). NC_CAPTURE_EVERY captures
  * frames as xboxrun does (run/capture.c), into frames/ here.
  *
- * Leaving (SIGINT/SIGTERM, Escape, the guide button held for a second, or
- * the title stopping) drops the swapchain and SDL, then ends the process: the core
+ * Leaving (SIGINT/SIGTERM, Escape, Home + Start as every PortareOS emulator
+ * quits, or the title stopping) drops the swapchain and SDL, then ends the process: the core
  * thread has no stop. Its exit hands the panel back (the DRM master is
  * released with the process's descriptors), as a SIGKILL from PortareOS's
  * quit hotkey does too.
@@ -248,7 +248,6 @@ int main(int argc, char **argv)
     nc_capture_start();
 
     const Uint64 start = SDL_GetTicks();
-    Uint64 guide_since = 0;
     bool shown = false;
     const char *why = NULL;
     while (!why) {
@@ -274,20 +273,19 @@ int main(int argc, char **argv)
             }
         }
         NcPadState s = {0};
-        bool guide = false;             /* the Duke has none: it leaves, held */
+        bool home = false;              /* the guide button: the Duke has none */
         for (unsigned i = 0; i < MAX_PADS; i++) {
             if (g_pads[i]) {
                 nc_read_gamepad(g_pads[i], &s);
-                guide |= SDL_GetGamepadButton(g_pads[i], SDL_GAMEPAD_BUTTON_GUIDE);
+                home |= SDL_GetGamepadButton(g_pads[i], SDL_GAMEPAD_BUTTON_GUIDE);
             }
         }
-        nc_pad_set(0, &s);
-        const Uint64 now = SDL_GetTicks();
-        rumble(now);
-        guide_since = guide ? (guide_since ? guide_since : now) : 0;
-        if (guide_since && now - guide_since >= 1000) {
-            why = "the guide button held";
+        if (home && (s.buttons & NC_PAD_START)) {
+            why = "Home + Start";       /* PortareOS's quit: the title doesn't see the Start */
+            s.buttons &= (uint16_t)~NC_PAD_START;
         }
+        nc_pad_set(0, &s);
+        rumble(SDL_GetTicks());
 
         if (!nc_present_frame(win)) {
             SDL_Delay(8);               /* nothing to wait for the panel on */
