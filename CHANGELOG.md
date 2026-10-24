@@ -1,5 +1,21 @@
 # Changelog
 
+## linux-v0.2.1 (PortareOS)
+
+Two fixes for the RetroArch core.
+
+### What's fixed
+
+- **Games that switch programs** — When a game starts another of its programs, RetroArch restarts on the same game and continues into it instead of returning to the launcher.
+- **Video driver restarts** — If RetroArch restarts its video driver while a game is running, the game now closes and returns to the launcher, with a log entry, instead of possibly crashing.
+
+### Current limitations
+
+- Closing a game also closes RetroArch.
+- Only player 1 is supported.
+- Reset, core settings and save states are not yet available.
+- Games must be XISO disc images with a `.iso` extension.
+
 ## linux-v0.2.0 (PortareOS)
 
 Play Xbox games through RetroArch on PortareOS (Retroid Pocket Nova).
