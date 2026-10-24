@@ -5,8 +5,9 @@ The first PortareOS milestone
 existing core and a headless runner for AArch64 Linux with 4 KiB pages. The
 second adds rendering without a display and `hakux`, a front end that
 presents the game on the panel through SDL3 (KMSDRM) and the renderer's
-Vulkan swapchain. The diagnostic audio sink is silent and paced at 48 kHz
-stereo. Audible audio and launcher integration remain open.
+Vulkan swapchain. `hakux` plays the APU's output through SDL audio
+(PipeWire on PortareOS); `xboxrun` and the tests keep the silent sink paced
+at 48 kHz stereo. Launcher integration remains open.
 
 ## Build and check
 
@@ -42,12 +43,15 @@ parallelism. Additional arguments to `linux-build.sh` are passed to CMake;
 a PortareOS sysroot/toolchain can be supplied there when required.
 
 The build produces `xboxrun`, `hakux`, `linux-smoke`, `audio-smoke`,
-`vulkan-probe` and `kms-grab`. SDL3 is pinned at release 3.4.16,
+`audio-sdl-smoke`, `vulkan-probe` and `kms-grab`. SDL3 is pinned at release 3.4.16,
 PortareOS's version. It is built without backends, only to link `hakux`
 against; the device's own `libSDL3.so.0` (with KMSDRM) is loaded at run time.
 CTest runs the CPU/memory and audio tests plus the positive/negative boundary
-suite. The boundary suite constructs its own small synthetic XBE/XISO files;
-it needs no game dump, BIOS or proprietary guest software.
+suite. `audio-sdl-smoke` checks the SDL output's pacing, pause and wakeup
+contract on SDL's dummy driver; on the Nova it runs through PipeWire.
+`-DHAKUX_DIAGNOSTIC_AUDIO=ON` makes `hakux` silent as well. The boundary
+suite constructs its own small synthetic XBE/XISO files; it needs no game
+dump, BIOS or proprietary guest software.
 
 The existing pure HLE regressions are a separate suite:
 
@@ -115,9 +119,14 @@ Options, as the Android app's: `scale=<n>`, `aspect=auto|4:3|16:9|stretch`,
 player 1. Escape, the gamepad's guide button, SIGINT/SIGTERM or the title
 stopping leave; the exit code is 0 if a title frame was shown. On KMSDRM the
 panel must be free: the launcher drops the DRM master while it runs a game.
-Over SSH, stop it first and start it again afterwards:
+Sound goes to the default PipeWire sink, which SDL finds through
+`XDG_RUNTIME_DIR` (set by `/etc/profile`); without an output device the
+APU's ring is drained silently at 48 kHz. `HAKUX_APU_STATS=1` logs the
+APU's frames, callbacks and short callbacks each second. Over SSH, load the
+profile and stop the launcher first, and start it again afterwards:
 
 ```sh
+. /etc/profile
 systemctl stop portarelauncher.service
 ./hakux /roms/xbox/game.iso /tmp/hakux-data exitafter=30
 systemctl start portarelauncher.service
