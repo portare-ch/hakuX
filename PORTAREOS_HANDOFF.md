@@ -8,8 +8,10 @@ Build/run instructions: [native/README.linux.md](native/README.linux.md)
 
 Day one, the Linux headless milestone, is integrated: PR #3 merged as
 `1a36787d61`, and issue #2 is closed. Day two, the game on the Nova's panel,
-is integrated: PR #4 merged as `7109f3102f`. Day three adds sound; it is on
-`portareos/day3-audio` (see below). The owner waived
+is integrated: PR #4 merged as `7109f3102f`. Day three, sound, merged in
+PR #5 as `df476d0a3a`, and day four, controls, in PR #6 as `8708cf1479`.
+Day five, the launcher, is on `portareos/day5-launcher` (see below). The
+owner waived
 Android regression validation on 2026-10-24: this fork targets PortareOS,
 and Android compatibility is not an acceptance requirement. Android was not
 tested.
@@ -227,10 +229,45 @@ Results: the owner raced in Burnout 3 on the Nova with the built-in
 controls: "controls work, pleasing for a first attempt". In the first four
 minutes the emulated Duke registered 116 button changes; 59.9 fps with
 three dips to 59.2-59.7; no short audio callbacks after the APU's first.
-Over 327 s the title changed its rumble 190 times, all sent to the pad;
-whether the Nova vibrated was not reported. After the fix, the owner left
+Over 327 s the title changed its rumble 190 times, all sent to the pad,
+but the Nova did not vibrate ("rumble did not work"); the owner put it off
+("not important for now"). After the fix, the owner left
 Burnout 3 with Home + Start ("worked"): `hakux` logged `leaving (Home +
 Start)`, exited 0, and the launcher returned.
+
+## Day five: the launcher — 2026-10-24
+
+The launcher (`portarelauncher`) lists a system from
+`/usr/config/emulationstation/es_systems.cfg` when the system's directory
+has a game with one of its extensions. For a game it drops the DRM master
+and runs `runemu.sh <game> -P<system> --core=<core> --emulator=<emulator>`;
+for a standalone emulator, `runemu.sh` runs `/usr/bin/start_<core>.sh
+<game> <system>`, without the core's `-sa`.
+
+- `tools/native/linux-package.sh` makes the PortareOS package's input from
+  a clean checkout (see [native/README.linux.md](native/README.linux.md)).
+  `hakux` no longer carries the build tree's RUNPATH.
+- PortareOS, on the `hakux-xbox` branch of portare-ch/portareos (no PR
+  yet): a `hakux-sa` package installs the release tarball and
+  `start_hakux.sh`. On SM8550 hakuX becomes the Xbox system's default
+  emulator, with xemu still selectable; the system lists `.iso` and `.chd`
+  files, and `start_hakux.sh` hands a CHD to xemu. The other devices keep
+  xemu.
+- The launcher reads `es_systems.cfg` a line at a time: each `<emulator>`
+  and `<core>` must be on its own line, as `xmlstarlet fo` writes the
+  generated file. A hand-edited test copy with the whole `<emulators>`
+  block on one line gave the launcher the emulator but no core, and it
+  refused the game ("No core configured").
+
+Results: on the Nova, the package's files were laid over `/usr/bin` and
+the Xbox entry over `es_systems.cfg` (both until the next reboot). The
+launcher listed Xbox with BLACK and Burnout 3, and the owner started
+Burnout 3 from it ("it works now"): `runemu.sh`, then `start_hakux.sh`,
+then `hakux <game> /storage/.config/hakux aspect=auto`, which created the
+emulated hard disk and caches there. `runemu.sh` appends the emulator's
+output to `/var/log/exec.log`. SDL's "Couldn't open /dev/input/event3"
+lines there are the raw controls InputPlumber hides; the virtual pad was
+player 1.
 
 ## Local artifacts and device state
 
@@ -249,25 +286,33 @@ Start)`, exited 0, and the launcher returned.
   device logs are in `build/evidence/` on the development host (untracked:
   they include guest code bytes). No personal games/saves or launcher configuration
   were changed. No emulator diagnostic process should remain running.
+- Day five's test install: `/storage/hakux-test` holds the tarball, its
+  files, an overlay upper directory mounted over `/usr/bin` (`hakux`,
+  `start_hakux.sh`) and the Xbox `es_systems.cfg` bind-mounted over
+  `/usr/config/emulationstation/es_systems.cfg`; the mounts go at reboot.
+  The launcher's runs keep their data in `/storage/.config/hakux`, the
+  package's data directory.
 - Connect using the SSH identity and host saved by `nova-push`. The Nova
   must remain awake for reliable SSH access. Do not publish the key or
   device credentials.
 
 ## Next steps for Claude
 
-1. Review and integrate the day-three branch. Android validation was waived
+1. Review and integrate the day-five branch. Android validation was waived
    by the owner; do not install the Android toolchain or spend time on
    Android compatibility for this PortareOS work.
-2. Retain the clean-build evidence and the exact dependency pins when
+2. Release: with the owner's agreement (a release is public), package the
+   merged `master` with `linux-package.sh`, publish it as `linux-v0.1.0`
+   on portare-ch/hakuX, put its SHA-256 in the `hakux-sa` package and open
+   the PortareOS pull request from `hakux-xbox`.
+3. Retain the clean-build evidence and the exact dependency pins when
    changing anything.
-3. Pacing and players: lock the emulated vblank to the panel (DRM vblank
-   events or present timing) in place of Android's Choreographer; confirm
-   rumble on the Nova; separate players for several pads.
-4. Launcher integration: a `runemu` entry and the quit hotkey, launched from
-   the launcher's own DRM-master hand-over. The Xbox library accepts XISO
-   (`.iso`) images for now (owner's decision, 2026-10-24).
+4. Pacing and players: lock the emulated vblank to the panel (DRM vblank
+   events or present timing) in place of Android's Choreographer; find why
+   the Nova does not vibrate (the owner has put this off); separate players
+   for several pads.
 5. CHD, through a disc-reader abstraction, is low priority: only once
-   everything else works. It no longer gates library integration.
+   everything else works. Until then the Xbox library's CHDs go to xemu.
 
-There is no evidence yet for playability with input, performance relative to
-xemu, Linux zero-copy sharing or reliable suspend/title relaunch.
+There is no evidence yet for performance relative to xemu, Linux zero-copy
+sharing or reliable suspend/title relaunch.
