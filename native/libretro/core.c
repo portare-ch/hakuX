@@ -218,7 +218,7 @@ RETRO_API void retro_get_system_av_info(struct retro_system_av_info *info)
 {
     memset(info, 0, sizeof(*info));
     nc_lr_video_geometry(&info->geometry);
-    info->timing.fps = 1e9 / (double)NC_LR_FRAME_NS;
+    info->timing.fps = (double)NC_LR_FPS_NUM / (double)NC_LR_FPS_DEN;   /* the Xbox's, exactly */
     info->timing.sample_rate = 48000.0;
 }
 

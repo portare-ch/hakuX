@@ -44,7 +44,7 @@ def main():
         raise SystemExit(f'FAIL: {args.core.name} exports {len(exports)} symbols; not libretro: {stray[:10]}')
     print(f'PASS: {args.core.name} exports only retro_* ({len(exports)})')
     run([args.harness, args.core], 0, ('core: hakuX', 'extensions iso, need_fullpath 1, block_extract 1',
-                                       'av: 59.940061 fps, 48000 Hz', 'serialize size: 0', 'unloaded without a game'))
+                                       'av: 59.940060 fps, 48000 Hz', 'serialize size: 0', 'unloaded without a game'))
     with tempfile.TemporaryDirectory(prefix='hakux-libretro-') as folder:
         root = Path(folder)
         (root / 'saves').mkdir()

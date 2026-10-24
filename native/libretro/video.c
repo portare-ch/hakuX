@@ -22,7 +22,7 @@ static struct {
     uint32_t *buf;
     size_t cap;              /* pixels */
     uint32_t w, h;
-    uint32_t gen;
+    uint32_t gen, swap;      /* the frame shown: the display's generation, its swap */
     bool have, dupe_checked, can_dupe;
 } g_v;
 
@@ -47,7 +47,7 @@ void nc_lr_video_geometry(struct retro_game_geometry *g)
 static bool take_new(retro_environment_t env)
 {
     uint32_t gen, swap;
-    if (!hle_disp_front(&gen, &swap) || (g_v.have && gen == g_v.gen)) {
+    if (!hle_disp_front(&gen, &swap) || (g_v.have && gen == g_v.gen && swap == g_v.swap)) {
         return false;
     }
     uint32_t w = 0, h = 0;
@@ -75,6 +75,7 @@ static bool take_new(retro_environment_t env)
     g_v.w = w;
     g_v.h = h;
     g_v.gen = gen;
+    g_v.swap = swap;
     g_v.have = true;
     if (resized) {
         struct retro_game_geometry geo;

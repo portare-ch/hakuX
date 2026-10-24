@@ -9,9 +9,11 @@
 #include "native/core/nc.h"
 #include "native/libretro/libretro.h"
 
-/* The emulated video period: nv2a.c's FRAME_NS (59.94 Hz). The core
- * reports 1e9 / this as its rate, and each retro_run is one of it. */
-#define NC_LR_FRAME_NS 16683333ull
+/* The emulated video rate, exactly the Xbox's: 60000/1001 Hz (nv2a.c's
+ * vblank). The core reports it, and each retro_run is one period. */
+#define NC_LR_FPS_NUM 60000ull
+#define NC_LR_FPS_DEN 1001ull
+#define NC_LR_FRAME_NS (1000000000ull * NC_LR_FPS_DEN / NC_LR_FPS_NUM)   /* whole ns */
 
 /* audio.c — one period's samples to RetroArch (retro_run). */
 void nc_lr_audio_run(retro_audio_sample_batch_t batch);
