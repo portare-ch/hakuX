@@ -6,10 +6,12 @@ Build/run instructions: [native/README.linux.md](native/README.linux.md)
 
 ## State
 
-The Linux headless implementation runs on the Nova. The issue remains open
-because the Android native regression build has not been run. The user
-requested a bounded handoff for Claude; graphical and production integration
-work has deliberately not started.
+The Linux headless milestone is complete and runs on the Nova. The owner
+waived Android regression validation on 2026-10-24: this fork targets
+PortareOS, and Android compatibility is not an acceptance requirement.
+Android was not tested. PR #3 is ready for review; issue #2 tracks the change
+until it is integrated. The user requested a bounded handoff for Claude;
+graphical and production integration work has deliberately not started.
 
 The working checkout began at upstream `98b935311184a11b80b6c2a2993536475ca4c0d3`.
 That is the FEX submodule addition immediately after the fork's original
@@ -70,7 +72,7 @@ loader. There are no Android runtime dependencies.
 | Fresh build in the minimal documented image | Build and all 3 CTest groups pass | Same source already tested |
 | State schema lock | 16 sections match; 45 sizes unchanged | Same compiled assertions |
 | Portable Vulkan capability floor and device creation | Not a hardware substitute | Pass |
-| Android native build | Outstanding | Not applicable |
+| Android native build | Not performed; waived by owner | Not applicable |
 
 The initial Nova audio measurement consumed 57600 bytes over approximately
 300 ms, matching 48 kHz stereo signed 16-bit output; a later run consumed
@@ -109,11 +111,10 @@ intentionally reports `swapchain=0`.
 
 ## Next steps for Claude
 
-1. Run the original Android native build using the documented NDK
-   29.0.14206865 and SDL3 dependency. This workstation has no Android SDK/NDK
-   at the usual location, so regression validation is outstanding. Check
-   both `hakuxcore` and the state size probe's Android ABI branch. Do not
-   close issue #2 until its required validation is complete.
+1. Review PR #3 against the Linux/Nova results. Android validation was waived
+   by the owner; do not install the Android toolchain or spend time on Android
+   compatibility for this PortareOS work. Issue #2 can be completed when this
+   implementation is integrated.
 2. Retain the successful clean-build evidence in `build/clean-build.log` and
    the reproducible commands and exact dependency pins when changing anything.
 3. Specify the next display milestone: replace the Android window boundary
