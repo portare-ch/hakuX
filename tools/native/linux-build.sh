@@ -10,6 +10,8 @@ cmake -S native -B "$build" -G Ninja \
     -DCMAKE_C_COMPILER="${CC:-clang}" -DCMAKE_CXX_COMPILER="${CXX:-clang++}" \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo -DHAKUX_LTO=OFF \
     -DHAKUX_FEX_DIR="$deps/fex" -DNC_DEPS="$deps" \
-    -DHAKUX_BUILD_APP=ON -DHAKUX_DIAGNOSTIC_AUDIO=OFF "$@"
-cmake --build "$build" --target xboxrun hakux linux-smoke audio-smoke audio-sdl-smoke vulkan-probe kms-grab -j "${JOBS:-4}"
+    -DHAKUX_BUILD_APP=ON -DHAKUX_BUILD_LIBRETRO=ON -DHAKUX_VERSION="${HAKUX_VERSION:-dev}" \
+    -DHAKUX_DIAGNOSTIC_AUDIO=OFF "$@"
+cmake --build "$build" --target xboxrun hakux hakux_libretro libretro-harness linux-smoke audio-smoke \
+    audio-sdl-smoke vulkan-probe kms-grab -j "${JOBS:-4}"
 ctest --test-dir "$build" --output-on-failure

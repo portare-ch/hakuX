@@ -1,6 +1,7 @@
 # hakuX
 
-hakuX runs original Xbox games on Android (arm64), tuned for Adreno GPUs.
+hakuX runs original Xbox games on Android (arm64) and ARM64 Linux
+(PortareOS), tuned for Adreno GPUs.
 
 Its core runs the game's x86 code on a JIT (a FEX fork) under a
 reimplementation of the Xbox kernel, and draws by decoding the push buffer
@@ -9,8 +10,9 @@ ported from xemu.
 
 ## Requirements
 
-- An arm64 Android device with Vulkan. Custom Turnip drivers can be loaded
-  for Adreno GPUs.
+- An arm64 Android device with Vulkan (custom Turnip drivers can be loaded
+  for Adreno GPUs), or ARM64 Linux with Vulkan, such as PortareOS on the
+  Retroid Pocket Nova.
 - Your own game images (ISO or XISO), dumped from discs you own.
 
 No BIOS, MCPX ROM or hard disk image is needed. hakuX doesn't include any
@@ -20,10 +22,9 @@ copyrighted Xbox software.
 
 See [android/README.md](android/README.md).
 
-The PortareOS work provides a native ARM64 Linux build: a headless runner
-and `hakux`, which presents games on the panel through SDL3 (KMSDRM). See
-[native/README.linux.md](native/README.linux.md) and the
-[handoff](PORTAREOS_HANDOFF.md) for commands and validation status.
+On ARM64 Linux, `hakux` runs a game fullscreen through SDL3 (KMSDRM); a
+libretro core for RetroArch is in progress ([LIBRETRO_SPEC.md](LIBRETRO_SPEC.md)).
+See [native/README.linux.md](native/README.linux.md).
 
 ## License
 

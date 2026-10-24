@@ -25,6 +25,14 @@ endif()
 option(HAKUX_BUILD_APP "Build the app: the Android SDL library, or the Linux front end (hakux)" ${ANDROID})
 option(HAKUX_DIAGNOSTIC_AUDIO "Linux: hakux uses the paced silent sink, as the diagnostics do, instead of SDL audio" OFF)
 option(HAKUX_BUILD_TESTS "Build native Linux smoke tests" ON)
+option(HAKUX_BUILD_LIBRETRO "Linux: build the libretro core (hakux_libretro.so), everything as PIC" OFF)
+set(HAKUX_VERSION "dev" CACHE STRING "The version the libretro core reports")
+if(HAKUX_BUILD_LIBRETRO)
+  if(ANDROID)
+    message(FATAL_ERROR "The libretro core is for Linux (PortareOS)")
+  endif()
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
 
 # ThinLTO for Release builds of everything but FEX (its own ENABLE_LTO stays
 # off, fex.cmake): the decoder and the renderer ~2% lighter (the RP5, DOA2).
@@ -117,6 +125,11 @@ if(HAKUX_BUILD_APP)
   else()
     include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/linux-app.cmake")
   endif()
+endif()
+
+# RetroArch's core (cmake/libretro.cmake).
+if(HAKUX_BUILD_LIBRETRO)
+  include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/libretro.cmake")
 endif()
 
 if(HAKUX_BUILD_TESTS AND NOT ANDROID)

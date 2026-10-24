@@ -138,31 +138,40 @@ linear (the launcher's). Turnip's swapchain images are UBWC-compressed:
 `kms-grab` then reports the framebuffer, its size and modifier, and saves
 nothing.
 
-## The PortareOS package
+## The libretro core
 
-PortareOS's `hakux-sa` package installs a release tarball. Make it from a
-clean checkout of the release commit, after `linux-build.sh`, in the same
-image:
+`linux-build.sh` also builds `hakux_libretro.so`, the core for RetroArch
+(everything in it PIC), and `libretro-harness`, a minimal frontend its
+`libretro-smoke` test drives. See [LIBRETRO_SPEC.md](../LIBRETRO_SPEC.md).
+With RetroArch's Vulkan, the renderer runs on RetroArch's device and each
+frame is copied to it on the GPU; without (the harness), frames are read
+back. `HAKUX_LR_STATS=1` logs the core's time in `retro_run`, and
+`HAKUX_DISP_STATS=1` (any front end) the new frames per second, their age
+when taken and the gaps between them.
+
+## The PortareOS packages
+
+PortareOS's `hakux-sa` (the standalone) and `hakux-lr` (the core) packages
+install one release tarball. Make it from a clean checkout of the release
+commit, in the same image:
 
 ```sh
-CC=clang-19 sh tools/native/linux-package.sh 0.1.0
+HAKUX_VERSION=0.2.0 CC=clang-19 CXX=clang++-19 sh tools/native/linux-build.sh
+CC=clang-19 sh tools/native/linux-package.sh 0.2.0
 ```
 
-It writes `build/package/hakux-0.1.0-aarch64.tar.gz` and prints its
-SHA-256. The archive holds `bin/hakux`, stripped and without a RUNPATH (it
-runs against the system's `libSDL3.so.0`), the licences in
-`share/licenses/hakux/`, and `BUILD-INFO`: the source revision, the compiler
-and `linux-deps.json`. Names are sorted, owned by root and dated at the
-commit, so the same build packs to the same tarball. Publish it as the
-release `linux-v<version>` and set the package's `PKG_VERSION` and
+It writes `build/package/hakux-0.2.0-aarch64.tar.gz` and prints its
+SHA-256. The archive holds `bin/hakux` and `lib/libretro/hakux_libretro.so`,
+stripped and without a RUNPATH, with `lib/libretro/hakux_libretro.info`, the
+licences in `share/licenses/hakux/`, and `BUILD-INFO`: the source revision,
+the compiler and `linux-deps.json`. Names are sorted, owned by root and dated
+at the commit, so the same build packs to the same tarball. Publish it as the
+release `linux-v<version>` and set the packages' `PKG_VERSION` and
 `PKG_SHA256` to match.
 
-In PortareOS, the launcher runs `runemu.sh`, which runs `start_hakux.sh
-<game> xbox`. That script runs `hakux <game> /storage/.config/hakux
-aspect=<the system's aspect_ratio setting>` (0 is 4:3 and 1 is 16:9, as
-for xemu) and hands `.chd` images to xemu. On the Nova, hakuX is the Xbox
-system's default emulator and xemu stays selectable; the system lists
-`.iso` and `.chd` files.
+In PortareOS the Xbox system's default is RetroArch with the core; the
+standalone stays selectable. Both keep the console's disk in
+`/storage/saves/xbox`. Discs are `.iso` (XISO) images.
 
 ## Properties
 
