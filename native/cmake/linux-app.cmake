@@ -38,4 +38,6 @@ endif()
 set_source_files_properties("${NC_REPO}/hw/xbox/hle/vk/swapchain.c" PROPERTIES
   COMPILE_OPTIONS "-Wno-unused-parameter;-Wno-unused-function;-Wno-sign-compare")
 target_link_libraries(hakux PRIVATE hakux_native hakux_hle SDL3::SDL3-shared)
+# no RUNPATH to this tree's SDL: hakux runs against the system's libSDL3.so.0
+set_target_properties(hakux PROPERTIES SKIP_BUILD_RPATH ON)
 target_compile_options(hakux PRIVATE -Wall -Wno-unused-parameter)
