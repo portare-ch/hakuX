@@ -1,8 +1,8 @@
 /*
  * hakuX native core, app front end — presenting the HLE GPU's front image.
  *
- * Once per display refresh the window's thread hands its Android window to
- * the HLE GPU's presenter (hw/xbox/hle/vk/swapchain.h), which draws the
+ * Once per display refresh the window's thread hands its window (Android's,
+ * or an SDL window on Linux) to the HLE GPU's presenter (hw/xbox/hle/vk/swapchain.h), which draws the
  * front frame into it through a Vulkan swapchain: here, the frame's place in
  * the window (letterboxed to the chosen shape) and the anti-aliasing chosen
  * (nc_present_set_fxaa, nc_present_set_upscale).
@@ -13,7 +13,7 @@
 #include "hw/xbox/hle/vk/swapchain.h"
 
 #include <string.h>
-#include <sys/system_properties.h>
+#include "native/platform/properties.h"
 #include <time.h>
 
 static int g_aspect = NC_ASPECT_AUTO;
@@ -113,8 +113,8 @@ static void debug_poll(void)
     if (n++ % 64) {
         return;
     }
-    char v[PROP_VALUE_MAX] = "";
-    __system_property_get("debug.hakux.present", v);
+    char v[NC_PROPERTY_VALUE_MAX] = "";
+    nc_property_get("debug.hakux.present", v);
     g_dbg.fxaa = strstr(v, "nofxaa") ? 0 : strstr(v, "fxaa") ? 1 : -1;
     g_dbg.upscale = strstr(v, "sgsr") ? NC_UPSCALE_SGSR : strstr(v, "bilinear") ? NC_UPSCALE_BILINEAR : -1;
     g_dbg.average = !strstr(v, "noaverage");
@@ -163,7 +163,7 @@ static void wait_next_vsync(void)
     clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL);
 }
 
-bool nc_present_frame(struct ANativeWindow *win)
+bool nc_present_frame(HleWindow *win)
 {
     count_frames();
     debug_poll();

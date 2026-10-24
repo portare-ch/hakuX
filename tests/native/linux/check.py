@@ -38,8 +38,9 @@ def run(command, expected, marker, env=None):
     result = subprocess.run([str(x) for x in command], env=env, capture_output=True, text=True, timeout=15)
     print(result.stdout, end='')
     print(result.stderr, end='')
-    if result.returncode != expected or marker not in result.stdout + result.stderr:
-        raise SystemExit(f'FAIL: {command}: expected exit {expected} with {marker!r}, got {result.returncode}')
+    markers = (marker,) if isinstance(marker, str) else marker
+    if result.returncode != expected or any(m not in result.stdout + result.stderr for m in markers):
+        raise SystemExit(f'FAIL: {command}: expected exit {expected} with {markers!r}, got {result.returncode}')
     print(f'PASS: {Path(command[0]).name} {list(map(str, command[1:]))}: expected exit {expected}')
 
 
@@ -67,6 +68,9 @@ def main():
         disc(root / 'halt.iso', b'\xf4')
         disc(root / 'spin.iso', b'\xeb\xfe')
         run([build / 'xboxrun', '--headless', root / 'halt.iso', root / 'data'], 0, 'guest executed HLT', env)
+        # The renderer's boot path (drawing itself needs a title and a GPU).
+        run([build / 'xboxrun', '--render', root / 'halt.iso', root / 'render'], 0,
+            ('renderer ON without a display', 'guest executed HLT'), env)
         run([build / 'xboxrun', '--headless', root / 'spin.iso', root / 'data'], 5, 'timeout after 1 s', env)
 
 
