@@ -163,9 +163,9 @@ int main(int argc, char **argv)
         return 3;
     }
     const long frames = atol(argv[3]);
-    const long period_ns = (long)(1e9 / av.timing.fps);
-    struct timespec next;
-    clock_gettime(CLOCK_MONOTONIC, &next);
+    struct timespec start;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    const double t0 = (double)start.tv_sec * 1e9 + (double)start.tv_nsec;
     long ran = 0;
     for (; ran < frames && !g_shutdown; ran++) {
         const unsigned before = g_video_calls;
@@ -174,11 +174,9 @@ int main(int argc, char **argv)
             fprintf(stderr, "FAIL: retro_run %ld made %u video calls\n", ran, g_video_calls - before);
             return 1;
         }
-        next.tv_nsec += period_ns;
-        while (next.tv_nsec >= 1000000000L) {
-            next.tv_nsec -= 1000000000L;
-            next.tv_sec++;
-        }
+        /* at the core's rate exactly: the next call's time from the first's */
+        const double t = t0 + (double)(ran + 1) * 1e9 / av.timing.fps;
+        const struct timespec next = {(time_t)(t / 1e9), (long)(t - (double)(time_t)(t / 1e9) * 1e9)};
         clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, NULL);
     }
     printf("ran %ld frames: %u video calls, %u new frames (last %ux%u), %u dupes, %zu audio frames%s\n", ran,

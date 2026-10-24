@@ -5,7 +5,7 @@
  * As out_sdl.c's: the frame thread pushes each EP frame into a ring, and one
  * consumer drains it (two counters). The consumer is retro_run, which takes
  * one emulated period's samples each call (800.8 frames on average at
- * 59.94 Hz, through a fractional accumulator): the APU sees it as a device's
+ * 60000/1001 Hz, through a fractional accumulator): the APU sees it as a device's
  * callback of one period and keeps the ring between one and three of them,
  * pacing itself in real time. Draining everything each call would not do:
  * every drain to empty sets the frame thread producing ahead of real time
@@ -22,7 +22,7 @@ static struct {
     uint32_t cap;
     uint64_t head, tail;     /* bytes written, bytes read */
     pthread_cond_t *wake;
-    uint64_t acc;            /* rate x period remainder, in frames x 1e9 */
+    uint64_t acc;            /* the frames' remainder, in 1/NC_LR_FPS_NUM of one */
     uint32_t callbacks, short_callbacks;
 } g_out;
 
@@ -48,12 +48,12 @@ void apu_out_stats(uint32_t *callbacks, uint32_t *short_callbacks)
     *short_callbacks = apu_xchg(&g_out.short_callbacks, 0);
 }
 
-/* The frames one call takes: a period's, NC_LR_FRAME_NS long. */
+/* The frames one call takes: a period's, 48000 x 1001 / 60000 = 800.8. */
 static uint32_t period_frames(void)
 {
-    g_out.acc += (uint64_t)OUT_RATE * NC_LR_FRAME_NS;
-    const uint64_t n = g_out.acc / 1000000000ull;
-    g_out.acc -= n * 1000000000ull;
+    g_out.acc += (uint64_t)OUT_RATE * NC_LR_FPS_DEN;
+    const uint64_t n = g_out.acc / NC_LR_FPS_NUM;
+    g_out.acc -= n * NC_LR_FPS_NUM;
     return (uint32_t)n;
 }
 
@@ -62,9 +62,10 @@ int apu_out_open(int capacity_bytes, int samples, pthread_cond_t *wake)
     g_out.buf = calloc(1, (size_t)capacity_bytes);
     g_out.cap = (uint32_t)capacity_bytes;
     g_out.wake = wake;
-    nc_log("hakuX-apu", "output: libretro, one period (%u frames) a retro_run",
-           (unsigned)((uint64_t)OUT_RATE * NC_LR_FRAME_NS / 1000000000ull));
-    return (int)((uint64_t)OUT_RATE * NC_LR_FRAME_NS / 1000000000ull) * OUT_FRAME_BYTES;
+    const int frames = (int)((uint64_t)OUT_RATE * NC_LR_FPS_DEN / NC_LR_FPS_NUM);
+    nc_log("hakuX-apu", "output: libretro, one period (%d.%d frames) a retro_run", frames,
+           (int)((uint64_t)OUT_RATE * NC_LR_FPS_DEN * 10 / NC_LR_FPS_NUM % 10));
+    return frames * OUT_FRAME_BYTES;
 }
 
 /* retro_run: one period's samples to RetroArch, what the ring has of them
