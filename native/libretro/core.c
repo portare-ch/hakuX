@@ -255,6 +255,7 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
     setenv("HAKUX_HLE_MODE", "replace", 0);
     setenv("HAKUX_NATIVE_BASE", cache, 1);
     nc_kernel_set_video(-1, NC_AV_PACK_HDTV);
+    nc_dev_nv2a_display_period(NC_LR_FRAME_NS);    /* retro_run's: the vblank locks one to one */
     nc_hle_set_pipeline_options(true, true);   /* the app's defaults */
 
     struct sigaction sa = {.sa_sigaction = on_fault, .sa_flags = SA_SIGINFO | SA_ONSTACK};
@@ -297,6 +298,34 @@ RETRO_API void retro_unload_game(void)
     _exit(0);
 }
 
+/* HAKUX_LR_STATS=1: every 10 s, how long retro_run takes RetroArch's thread
+ * (avg, max) and its video part (the readback, for now). */
+static void run_stat(uint64_t t0, uint64_t tv, uint64_t t1)
+{
+    static int on = -1;
+    static uint64_t start, n, run_sum, run_max, vid_sum, vid_max;
+    if (on < 0) {
+        const char *e = getenv("HAKUX_LR_STATS");
+        on = e && atoi(e) != 0;
+    }
+    if (!on) {
+        return;
+    }
+    start = start ? start : t0;
+    n++;
+    run_sum += t1 - t0;
+    run_max = t1 - t0 > run_max ? t1 - t0 : run_max;
+    vid_sum += t1 - tv;
+    vid_max = t1 - tv > vid_max ? t1 - tv : vid_max;
+    if (t1 - start >= 10000000000ull) {
+        nc_log("hakuX-libretro", "stats: %.2f retro_run/s, %.2f ms each (max %.2f), video %.2f ms (max %.2f)",
+               (double)n * 1e9 / (double)(t1 - start), (double)run_sum / (double)n / 1e6, (double)run_max / 1e6,
+               (double)vid_sum / (double)n / 1e6, (double)vid_max / 1e6);
+        start = t1;
+        n = run_sum = run_max = vid_sum = vid_max = 0;
+    }
+}
+
 RETRO_API void retro_run(void)
 {
     const uint64_t now = now_ns();
@@ -304,7 +333,9 @@ RETRO_API void retro_run(void)
     nc_dev_nv2a_display_vsync(now);         /* RetroArch's frame tick is the display's vsync */
     gap_tick(now);
     nc_lr_audio_run(g_audio_batch);
+    const uint64_t tv = now_ns();
     nc_lr_video_run(g_env, g_video, now);
+    run_stat(now, tv, now_ns());
 
     const char *why = __atomic_load_n(&g_core_state, __ATOMIC_ACQUIRE) < 0 ? "the core stopped" : nc_hle_fatal();
     if (why && !g_shutdown_sent) {

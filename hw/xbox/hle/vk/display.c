@@ -21,6 +21,7 @@ typedef struct HleDispSlot {
     bool held;
     uint32_t swap_id;
     uint64_t value;
+    int64_t front_ns;           /* when it became the front image */
 } HleDispSlot;
 
 static struct {
@@ -175,6 +176,7 @@ static void to_front(int i, uint32_t swap_id)
         }
     }
     g_disp.s[i].state = SLOT_FRONT;
+    g_disp.s[i].front_ns = hle_now_ns();
     g_disp.st.presented++;
     hle_hitch_frame(swap_id, HLE_FR_FRONT);
 }
@@ -298,10 +300,50 @@ bool hle_disp_present(uint32_t swap_id)
     return found;
 }
 
+/* HAKUX_DISP_STATS=1: every 10 s, the new frames the consumer took (the
+ * window's presenter, or the libretro core), their age from front image to
+ * taken (avg, max) and the gaps between them (avg, max, and over 25 ms).
+ * The same code for every front end, to compare their display paths. */
+static void disp_stat(int64_t front_ns)
+{
+    static int on = -1;
+    static int64_t t0, last, age_sum, age_max, gap_max;
+    static uint64_t n, late;
+    if (on < 0) {
+        const char *e = getenv("HAKUX_DISP_STATS");
+        on = e && atoi(e) != 0;
+    }
+    if (!on) {
+        return;
+    }
+    const int64_t now = hle_now_ns(), age = now - front_ns;
+    if (!t0) {
+        t0 = last = now;
+        return;
+    }
+    const int64_t gap = now - last;
+    last = now;
+    n++;
+    age_sum += age;
+    age_max = MAX(age_max, age);
+    gap_max = MAX(gap_max, gap);
+    late += gap > 25000000;
+    if (now - t0 >= 10000000000ll) {
+        hle_log("hakuX-hle-disp", "stats: %.1f new frames/s, age front to taken %.2f ms (max %.2f), "
+                "gap %.2f ms (max %.2f, %llu over 25 ms)", (double)n * 1e9 / (double)(now - t0),
+                (double)age_sum / (double)n / 1e6, (double)age_max / 1e6,
+                (double)(now - t0) / (double)n / 1e6, (double)gap_max / 1e6, (unsigned long long)late);
+        t0 = now;
+        n = late = 0;
+        age_sum = age_max = gap_max = 0;
+    }
+}
+
 bool hle_disp_acquire(HleDispFrame *f)
 {
     bool found = false;
     uint32_t shown = 0;
+    int64_t front_ns = 0;
     if (!hle_atomic_load_acquire(&g_disp.inited)) {
         return false;
     }
@@ -313,6 +355,7 @@ bool hle_disp_acquire(HleDispFrame *f)
             if (s->swap_id != s_last_shown) {
                 s_last_shown = s->swap_id;
                 shown = s_last_shown;
+                front_ns = s->front_ns;
             }
             s->held = true;
             *f = (HleDispFrame){ i, g_disp.gen, s->swap_id, g_disp.w, g_disp.h, s->value, s->img, s->view };
@@ -323,6 +366,7 @@ bool hle_disp_acquire(HleDispFrame *f)
     hle_mutex_unlock(&g_disp.lock);
     if (shown) {
         hle_hitch_frame(shown, HLE_FR_SHOWN);   /* a new frame on screen */
+        disp_stat(front_ns);
     }
     return found;
 }
