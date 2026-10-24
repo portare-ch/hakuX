@@ -28,6 +28,11 @@ add_executable(hakux
   "${CMAKE_CURRENT_SOURCE_DIR}/app/gamepad.c"
   "${NC_REPO}/hw/xbox/hle/vk/swapchain.c"
 )
+if(HAKUX_DIAGNOSTIC_AUDIO)
+  target_sources(hakux PRIVATE "${NC_APU_OUT_NULL}")
+else()
+  target_sources(hakux PRIVATE "${NC_APU_OUT_SDL}")
+endif()
 # the presenter is the HLE GPU's (hle.cmake's warnings), built here with SDL
 set_source_files_properties("${NC_REPO}/hw/xbox/hle/vk/swapchain.c" PROPERTIES
   COMPILE_OPTIONS "-Wno-unused-parameter;-Wno-unused-function;-Wno-sign-compare")
