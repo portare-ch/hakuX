@@ -15,6 +15,11 @@ static HleMutex g_queue_lock;
 static bool g_ready;
 static bool g_lost;                     /* hle_vk_lose */
 static int64_t g_lock_wait_ns;          /* hle_vk_queue_wait_ns */
+static struct {                         /* hle_vk_set_frontend_queue_lock */
+    void (*lock)(void *);
+    void (*unlock)(void *);
+    void *handle;
+} g_fe;
 
 const char *hle_vk_result_text(VkResult r)
 {
@@ -70,16 +75,30 @@ bool hle_vk_check(VkResult r, const char *what)
 
 void hle_vk_queue_lock(void)
 {
-    if (pthread_mutex_trylock(&g_queue_lock.m) == 0) {
-        return;
+    if (pthread_mutex_trylock(&g_queue_lock.m) != 0) {
+        const int64_t t0 = hle_now_ns();
+        hle_mutex_lock(&g_queue_lock);
+        __atomic_fetch_add(&g_lock_wait_ns, hle_now_ns() - t0, __ATOMIC_RELAXED);
     }
-    const int64_t t0 = hle_now_ns();
-    hle_mutex_lock(&g_queue_lock);
-    __atomic_fetch_add(&g_lock_wait_ns, hle_now_ns() - t0, __ATOMIC_RELAXED);
+    if (g_fe.lock) {
+        g_fe.lock(g_fe.handle);
+    }
 }
 
 void hle_vk_queue_unlock(void)
 {
+    if (g_fe.unlock) {
+        g_fe.unlock(g_fe.handle);
+    }
+    hle_mutex_unlock(&g_queue_lock);
+}
+
+void hle_vk_set_frontend_queue_lock(void (*lock)(void *), void (*unlock)(void *), void *handle)
+{
+    hle_mutex_lock(&g_queue_lock);
+    g_fe.lock = lock;
+    g_fe.unlock = unlock;
+    g_fe.handle = handle;
     hle_mutex_unlock(&g_queue_lock);
 }
 
@@ -149,14 +168,17 @@ void hle_vk_set_window_extensions(const char *const *names, uint32_t n)
 }
 #endif
 
-int hle_vk_init(void)
+static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared, VkPhysicalDevice gpu,
+                   VkSurfaceKHR surface, HleVkMakeDevice make, void *opaque)
 {
     HleVk *v = &g_hvk;
     HleCaps *c = &v->caps;
     if (v->dev) {
         return 0;
     }
-    if (volkGetInstanceVersion() == 0) {
+    if (gipa_shared) {
+        volkInitializeCustom(gipa_shared);
+    } else if (volkGetInstanceVersion() == 0) {
         PFN_vkGetInstanceProcAddr gipa = (PFN_vkGetInstanceProcAddr)hle_host_vk_loader();
         if (gipa) {
             volkInitializeCustom(gipa);
@@ -166,49 +188,58 @@ int hle_vk_init(void)
         }
     }
     hle_mutex_init(&g_queue_lock);
-    VkApplicationInfo app = {
-        .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-        .pApplicationName = "hakuX-hle",
-        .apiVersion = VK_API_VERSION_1_3,
-    };
-    /* the window's surface (vk/swapchain.c): where the loader has it */
-    uint32_t nie = 0;
-    vkEnumerateInstanceExtensionProperties(NULL, &nie, NULL);
-    g_autofree VkExtensionProperties *iext = g_new(VkExtensionProperties, nie ? nie : 1);
-    vkEnumerateInstanceExtensionProperties(NULL, &nie, iext);
+    v->shared = inst_shared != VK_NULL_HANDLE;
     const char *iexts[HLE_VK_WINDOW_EXTS];
     uint32_t nix = 0;
+    if (v->shared) {
+        v->inst = inst_shared;
+    } else {
+        VkApplicationInfo app = {
+            .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+            .pApplicationName = "hakuX-hle",
+            .apiVersion = VK_API_VERSION_1_3,
+        };
+        /* the window's surface (vk/swapchain.c): where the loader has it */
+        uint32_t nie = 0;
+        vkEnumerateInstanceExtensionProperties(NULL, &nie, NULL);
+        g_autofree VkExtensionProperties *iext = g_new(VkExtensionProperties, nie ? nie : 1);
+        vkEnumerateInstanceExtensionProperties(NULL, &nie, iext);
 #ifdef __ANDROID__
-    if (has_ext(iext, nie, VK_KHR_SURFACE_EXTENSION_NAME) &&
-        has_ext(iext, nie, VK_KHR_ANDROID_SURFACE_EXTENSION_NAME)) {
-        iexts[nix++] = VK_KHR_SURFACE_EXTENSION_NAME;
-        iexts[nix++] = VK_KHR_ANDROID_SURFACE_EXTENSION_NAME;
-    }
+        if (has_ext(iext, nie, VK_KHR_SURFACE_EXTENSION_NAME) &&
+            has_ext(iext, nie, VK_KHR_ANDROID_SURFACE_EXTENSION_NAME)) {
+            iexts[nix++] = VK_KHR_SURFACE_EXTENSION_NAME;
+            iexts[nix++] = VK_KHR_ANDROID_SURFACE_EXTENSION_NAME;
+        }
 #else
-    /* the window system's (hle_vk_set_window_extensions): all or none */
-    bool all = g_window_nexts > 0;
-    for (uint32_t i = 0; i < g_window_nexts; i++) {
-        all &= has_ext(iext, nie, g_window_exts[i]);
-    }
-    for (uint32_t i = 0; all && i < g_window_nexts; i++) {
-        iexts[nix++] = g_window_exts[i];
-    }
-    if (g_window_nexts && !all) {
-        hle_log("hakuX-hle-back", "vk: the window's instance extensions are missing: no swapchain");
-    }
+        /* the window system's (hle_vk_set_window_extensions): all or none */
+        bool all = g_window_nexts > 0;
+        for (uint32_t i = 0; i < g_window_nexts; i++) {
+            all &= has_ext(iext, nie, g_window_exts[i]);
+        }
+        for (uint32_t i = 0; all && i < g_window_nexts; i++) {
+            iexts[nix++] = g_window_exts[i];
+        }
+        if (g_window_nexts && !all) {
+            hle_log("hakuX-hle-back", "vk: the window's instance extensions are missing: no swapchain");
+        }
 #endif
-    VkInstanceCreateInfo ici = {
-        .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .pApplicationInfo = &app,
-        .enabledExtensionCount = nix, .ppEnabledExtensionNames = iexts,
-    };
-    if (vkCreateInstance(&ici, NULL, &v->inst) != VK_SUCCESS) {
-        hle_log("hakuX-hle-back", "vk: vkCreateInstance failed");
-        return -1;
+        VkInstanceCreateInfo ici = {
+            .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+            .pApplicationInfo = &app,
+            .enabledExtensionCount = nix, .ppEnabledExtensionNames = iexts,
+        };
+        if (vkCreateInstance(&ici, NULL, &v->inst) != VK_SUCCESS) {
+            hle_log("hakuX-hle-back", "vk: vkCreateInstance failed");
+            return -1;
+        }
     }
     volkLoadInstanceOnly(v->inst);
     uint32_t n = 1;
-    vkEnumeratePhysicalDevices(v->inst, &n, &v->phys);
+    if (gpu) {
+        v->phys = gpu;
+    } else {
+        vkEnumeratePhysicalDevices(v->inst, &n, &v->phys);
+    }
     if (!n) {
         hle_log("hakuX-hle-back", "vk: no physical device");
         return -1;
@@ -222,7 +253,11 @@ int hle_vk_init(void)
     v->qfam = UINT32_MAX;
     for (uint32_t i = 0; i < nq && v->qfam == UINT32_MAX; i++) {
         VkQueueFlags want = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT;
-        if ((qf[i].queueFlags & want) == want) {
+        VkBool32 present = VK_TRUE;     /* the frontend presents from this queue */
+        if (surface) {
+            vkGetPhysicalDeviceSurfaceSupportKHR(v->phys, i, surface, &present);
+        }
+        if ((qf[i].queueFlags & want) == want && present) {
             v->qfam = i;
         }
     }
@@ -360,7 +395,9 @@ int hle_vk_init(void)
                 v->props.deviceName, c->missing);
         snprintf(g_hle_unavailable, sizeof(g_hle_unavailable), "%s lacks %s", v->props.deviceName,
                  c->missing);
-        vkDestroyInstance(v->inst, NULL);
+        if (!v->shared) {
+            vkDestroyInstance(v->inst, NULL);
+        }
         v->inst = VK_NULL_HANDLE;
         return -2;
     }
@@ -460,10 +497,18 @@ int hle_vk_init(void)
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .pNext = &f,
         .queueCreateInfoCount = 1, .pQueueCreateInfos = &qci,
         .enabledExtensionCount = nx, .ppEnabledExtensionNames = exts };
-    VkResult r = vkCreateDevice(v->phys, &dci, NULL, &v->dev);
+    VkResult r;
+    if (make) {
+        v->dev = make(v->phys, opaque, &dci);
+        r = v->dev ? VK_SUCCESS : VK_ERROR_INITIALIZATION_FAILED;
+    } else {
+        r = vkCreateDevice(v->phys, &dci, NULL, &v->dev);
+    }
     if (r != VK_SUCCESS) {
         hle_log("hakuX-hle-back", "vk: vkCreateDevice failed (%d)", r);
-        vkDestroyInstance(v->inst, NULL);
+        if (!v->shared) {
+            vkDestroyInstance(v->inst, NULL);
+        }
         v->inst = VK_NULL_HANDLE;
         v->dev = VK_NULL_HANDLE;
         return -1;
@@ -485,5 +530,16 @@ int hle_vk_init(void)
             c->local_read, c->fbfetch, c->cache_control, c->swapchain);
     hle_quirks_init(v->phys);           /* what this driver needs worked around */
     return 0;
+}
+
+int hle_vk_init(void)
+{
+    return vk_init(NULL, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, NULL, NULL);
+}
+
+int hle_vk_init_shared(PFN_vkGetInstanceProcAddr gipa, VkInstance inst, VkPhysicalDevice gpu,
+                       VkSurfaceKHR surface, HleVkMakeDevice make, void *opaque)
+{
+    return vk_init(gipa, inst, gpu, surface, make, opaque);
 }
 

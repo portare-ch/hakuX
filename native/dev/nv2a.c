@@ -75,12 +75,17 @@
 #define PFIFO_LOW_MARK   (1u << 4) /* RUNOUT_STATUS / CACHE1_STATUS: empty */
 #define PFIFO_DMA_BUSY   (1u << 4) /* CACHE1_DMA_PUSH state */
 
-#define FRAME_NS   16683333ull /* 59.94 Hz */
+#define FRAME_NS   16683333ull /* 59.94 Hz, whole ns: 60000/1001 Hz is 16683333 1/3 */
 #define LINES      525u
 
 static uint8_t *g_regs;
 static uint64_t g_vblanks;
+/* The vblank's period: the video mode's exact rate, 60000/1001 Hz as the
+ * Xbox's 525-line output or 50 Hz, as g_frame_ns whole nanoseconds and
+ * g_frame_rem / g_frame_den of one, which the vblank thread carries
+ * (frame_after) so that the free-running vblank keeps the exact rate. */
 static uint64_t g_frame_ns = FRAME_NS;
+static uint64_t g_frame_rem = 20000, g_frame_den = 60000;
 static uint64_t g_last_vblank_ns;     /* when the last vblank came (the raster counts from it) */
 
 /* The panel's vsync (the app's Choreographer, nc_dev_nv2a_display_vsync):
@@ -514,6 +519,11 @@ void nc_dev_nv2a_display_vsync(uint64_t ns)
     __atomic_store_n(&g_disp_vsync_ns, ns, __ATOMIC_RELEASE);
 }
 
+void nc_dev_nv2a_display_period(uint64_t ns)
+{
+    __atomic_store_n(&g_disp_period_ns, ns, __ATOMIC_RELAXED);
+}
+
 uint64_t nc_dev_nv2a_next_vsync(uint64_t after)
 {
     const uint64_t vs = __atomic_load_n(&g_disp_vsync_ns, __ATOMIC_ACQUIRE);
@@ -558,6 +568,18 @@ void nc_dev_nv2a_display_pickup(uint64_t ns)
     }
 }
 
+/* A frame after prev at the mode's exact rate (the vblank thread's: it
+ * carries the fraction of a nanosecond). */
+static uint64_t frame_after(uint64_t prev, uint64_t frame)
+{
+    static uint64_t acc;
+    const uint64_t den = __atomic_load_n(&g_frame_den, __ATOMIC_RELAXED);
+    acc += __atomic_load_n(&g_frame_rem, __ATOMIC_RELAXED);
+    const uint64_t extra = den ? acc / den : 0;
+    acc = den ? acc % den : 0;
+    return prev + frame + extra;
+}
+
 /* The next vblank after one at prev: a frame later, or locked to the panel
  * (its period times the vsyncs per frame, the phase nudged at most 0.5 ms a
  * vblank so the guest's clock never jumps). */
@@ -567,11 +589,11 @@ static uint64_t next_vblank(uint64_t prev)
     const uint64_t vs = __atomic_load_n(&g_disp_vsync_ns, __ATOMIC_ACQUIRE);
     const uint64_t pd = __atomic_load_n(&g_disp_period_ns, __ATOMIC_RELAXED);
     if (!vs || !pd || now_ns() - vs > VSYNC_STALE) {
-        return prev + frame;                /* no panel (the app in the background) */
+        return frame_after(prev, frame);    /* no panel (the app in the background) */
     }
     const uint64_t k = (frame + pd / 2) / pd;
     if (k < 1 || k > 4 || llabs((int64_t)(k * pd) - (int64_t)frame) > (int64_t)(frame / 20)) {
-        return prev + frame;                /* 90 Hz and the like: free running */
+        return frame_after(prev, frame);    /* 90 Hz and the like: free running */
     }
     const uint64_t next = prev + k * pd;
     const int64_t pick = __atomic_load_n(&g_pick_off_ns, __ATOMIC_RELAXED);
@@ -685,7 +707,12 @@ static unsigned g_mode_hz = 60, g_vblank_mul = 1;
 void nc_dev_nv2a_refresh(unsigned hz)
 {
     g_mode_hz = hz == 50 ? 50 : 60;
-    const uint64_t f = (hz == 50 ? 20000000ull : FRAME_NS) / g_vblank_mul;
+    /* the period, num / den ns: 1e9 x 1001 / 60000 (60000/1001 Hz) or 1e9 / 50 */
+    const uint64_t num = hz == 50 ? 1000000000ull : 1001000000000ull;
+    const uint64_t den = (hz == 50 ? 50ull : 60000ull) * g_vblank_mul;
+    const uint64_t f = num / den;
+    __atomic_store_n(&g_frame_rem, num % den, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_frame_den, den, __ATOMIC_RELAXED);
     if (__atomic_exchange_n(&g_frame_ns, f, __ATOMIC_RELAXED) != f) {
         nc_log("hakuX-native", "nv2a: vblank at %u Hz (the video mode%s)", g_mode_hz * g_vblank_mul,
                g_vblank_mul > 1 ? ", a mod's rate" : "");

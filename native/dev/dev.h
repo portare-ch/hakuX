@@ -23,6 +23,10 @@ void nc_dev_nv2a_vblank_multiply(unsigned n);
 /* A vsync of the panel the frames are shown on (host monotonic ns, the
  * Choreographer's frame time): the vblank locks to the panel's. */
 void nc_dev_nv2a_display_vsync(uint64_t ns);
+/* The vsyncs' period when the display knows it (the libretro core: its own
+ * rate), before the first: the estimate starts from it, not from the first
+ * two vsyncs, which a frontend's start-up can bunch. */
+void nc_dev_nv2a_display_period(uint64_t ns);
 /* The presenter looked for a new front image (host monotonic ns): the vblank
  * keeps half a panel period from its pickups. */
 void nc_dev_nv2a_display_pickup(uint64_t ns);
