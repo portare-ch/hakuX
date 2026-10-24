@@ -198,6 +198,40 @@ Not tested: headphones (SDL should follow the default sink), Bluetooth
 audio, a PipeWire restart while playing, and the app pause
 (`nc_audio_set_paused`), which `hakux` does not use yet.
 
+## Day four: controls — 2026-10-24
+
+On PortareOS, InputPlumber grabs the Nova's built-in controls (`event3`,
+"AYN Odin2 Gamepad") and its side keys (`event5`), and presents them as a
+virtual DualSense Edge (`054c:0df2`, profile
+`/usr/share/inputplumber/devices/02-retroid-pocket-nova.yaml`). That virtual
+pad is the one with input; SDL may also find the grabbed raw device, which
+stays silent.
+
+- `hakux` opens every gamepad SDL reports and merges them all into player 1
+  (`gamepad.c`'s rules: buttons or'ed, the furthest stick and trigger), so
+  the built-in controls work with or without InputPlumber, and a pad plugged
+  in plays too. Separate players for several pads are not done yet.
+- The title's rumble goes to every pad, sent again each half second while
+  it lasts (SDL's rumble times out after the second each send asks for).
+- Home + Start quits, as every PortareOS emulator does (the Nova's Home is
+  the virtual pad's guide button); the title does not see that Start. In
+  the first play test, `hakux` only quit on a guide button held for a
+  second, and with the launcher stopped nothing else handled Home + Start:
+  the owner could not leave the game. When the launcher runs a game, it also
+  closes one that does not quit on Home + Start; PortareOS's kill combo
+  (`portsense`) is L1 + Select + Start for a process named with `set_kill`.
+- `hakux` captures frames like `xboxrun` (`NC_CAPTURE_EVERY`, into
+  `frames/` in its working directory) for scripted checks.
+
+Results: the owner raced in Burnout 3 on the Nova with the built-in
+controls: "controls work, pleasing for a first attempt". In the first four
+minutes the emulated Duke registered 116 button changes; 59.9 fps with
+three dips to 59.2-59.7; no short audio callbacks after the APU's first.
+Over 327 s the title changed its rumble 190 times, all sent to the pad;
+whether the Nova vibrated was not reported. After the fix, the owner left
+Burnout 3 with Home + Start ("worked"): `hakux` logged `leaving (Home +
+Start)`, exited 0, and the launcher returned.
+
 ## Local artifacts and device state
 
 - Source: `/Users/jmoehle/1234/hakuX`.
@@ -226,13 +260,14 @@ audio, a PipeWire restart while playing, and the app pause
    Android compatibility for this PortareOS work.
 2. Retain the clean-build evidence and the exact dependency pins when
    changing anything.
-3. Input and pacing: exercise the Nova's built-in controls and rumble through
-   SDL; lock the emulated vblank to the panel (DRM vblank events or present
-   timing) in place of Android's Choreographer.
+3. Pacing and players: lock the emulated vblank to the panel (DRM vblank
+   events or present timing) in place of Android's Choreographer; confirm
+   rumble on the Nova; separate players for several pads.
 4. Launcher integration: a `runemu` entry and the quit hotkey, launched from
-   the launcher's own DRM-master hand-over.
-5. Implement CHD through a disc-reader abstraction before production Xbox
-   library integration. Keep the production library CHD-only.
+   the launcher's own DRM-master hand-over. The Xbox library accepts XISO
+   (`.iso`) images for now (owner's decision, 2026-10-24).
+5. CHD, through a disc-reader abstraction, is low priority: only once
+   everything else works. It no longer gates library integration.
 
 There is no evidence yet for playability with input, performance relative to
 xemu, Linux zero-copy sharing or reliable suspend/title relaunch.
