@@ -1,4 +1,4 @@
-# PortareOS day-one handoff — 2026-10-24
+# PortareOS handoff — 2026-10-24
 
 Issue: https://github.com/portare-ch/hakuX/issues/2
 Specification: [SPEC.md](SPEC.md)
@@ -6,12 +6,12 @@ Build/run instructions: [native/README.linux.md](native/README.linux.md)
 
 ## State
 
-The Linux headless milestone is complete and runs on the Nova. The owner
-waived Android regression validation on 2026-10-24: this fork targets
-PortareOS, and Android compatibility is not an acceptance requirement.
-Android was not tested. PR #3 is ready for review; issue #2 tracks the change
-until it is integrated. The user requested a bounded handoff for Claude;
-graphical and production integration work has deliberately not started.
+Day one, the Linux headless milestone, is integrated: PR #3 merged as
+`1a36787d61`, and issue #2 is closed. Day two puts the game on the Nova's
+panel; it is on `portareos/day2-display` (see below). The owner waived
+Android regression validation on 2026-10-24: this fork targets PortareOS,
+and Android compatibility is not an acceptance requirement. Android was not
+tested.
 
 The working checkout began at upstream `98b935311184a11b80b6c2a2993536475ca4c0d3`.
 That is the FEX submodule addition immediately after the fork's original
@@ -106,6 +106,55 @@ Fresh stripped binaries in `/tmp/hakux-day1-review` on the Nova passed
 `vulkan-probe` (exit 0, same GPU/driver); `ldd` resolved only the libraries
 listed above. The device log is `build/evidence/nova-review.log`.
 
+## Day two: the first frame on the panel — 2026-10-24
+
+The renderer runs on Linux: `xboxrun --render` keeps the HLE GPU on without a
+display and captures frames. The new `hakux` front end presents them on the
+panel through SDL3's KMSDRM backend and the renderer's existing swapchain.
+
+Implemented:
+
+- `swapchain.c` presents into a platform window (`HleWindow`): Android's, or
+  an SDL window, whose Vulkan surface SDL creates. Size and surface creation
+  are the only platform code; the presenter is otherwise unchanged.
+- `vkdev.c` enables the window system's instance extensions given by the
+  front end (`hle_vk_set_window_extensions`). SDL's `vkGetInstanceProcAddr`
+  is the renderer's loader (`nc_hle_set_vk_loader`), so both share one.
+- `native/app/linux_main.c` (`hakux`): fullscreen window at the desktop
+  mode, the core thread and host-fault handler, the present loop, the first
+  gamepad as player 1 and an orderly exit. `present.c` and the gamepad
+  mapping (`gamepad.c`, moved from `app_main.c`) are shared with Android.
+  Choreographer vsync is Android-only: on Linux the emulated vblank runs from
+  the host clock.
+- SDL3 release 3.4.16 (PortareOS's) is pinned and built only to link.
+- `kms-grab` reads back a linear scanout framebuffer as a PNG.
+
+Results on the Nova (PortareOS nightly 20261023, Turnip / Mesa 26.3.0-rc1):
+
+| Check | Result |
+| --- | --- |
+| `xboxrun --render`, BLACK (USA) `45410083` | Push-buffer mode at 30 fps; captures show the Criterion logo (12 s) and the title screen (20 s) |
+| `xboxrun --render`, Burnout 3 (USA) `4541005b` | 59.9 fps; captures show the Crash Nav globe (18 s) and the in-engine attract race (36 s) |
+| `hakux`, BLACK | KMSDRM 1280x960 at 120 Hz with `VK_KHR_surface` and `VK_KHR_display`; Turnip `swapchain=1`; swapchain 1280x960, 3 images, BGRA8; 640x480 scaled 2x bilinear; first title frame 0.4 s after start; 29.8 fps presented over 40 s; exit 0 |
+| `hakux`, Burnout 3 | First title frame after 0.2 s; 59.7 fps presented |
+| Panel during `hakux` | Backlight on; plane 48 scans out the swapchain's framebuffer (UBWC) on CRTC 108 at 1280x960 |
+| SIGTERM / SIGKILL | Orderly exit 0 in 147 ms / process gone in 121 ms; the launcher then shows its own framebuffer again (`kms-grab`) |
+| `check.py` (with the new `--render` case), `vulkan-probe` | Pass |
+| Container: 3 CTest groups, 14 HLE tests, state lock | Pass; 16 sections and 45 sizes unchanged |
+| Fresh build in the minimal documented image, SDL3 included | Build and all 3 CTest groups pass (`build/clean-build-day2.log`) |
+
+The panel's pixels during the game were not read back: Turnip's display
+swapchain is UBWC-compressed, and neither `TU_DEBUG=noubwc` nor
+`MESA_VK_WSI_DEBUG=linear` made it linear. Frames shown on the panel were
+not inspected by a person. A DualSense Edge paired with the Nova was the
+gamepad; input was not exercised. Launching from the launcher itself, with
+its DRM-master hand-over, was simulated by stopping and starting
+`portarelauncher.service`.
+
+Test images for repeated runs are in `/roms/xbox` on the Nova (the SD card's
+storage partition, grown to 117 GiB by portare-ch/portareos#749). They are
+the user's and are not to be deleted.
+
 ## Local artifacts and device state
 
 - Source: this repository.
@@ -117,9 +166,11 @@ listed above. The device log is `build/evidence/nova-review.log`.
 - Logs: `build/linux-checks.log`, `build/clean-build.log`,
   `build/hle-tests.log`, `build/statelock-sizes.log` and
   `build/evidence/nova-boundaries.log`. These generated files are untracked.
-- Device diagnostics: `/tmp/hakux-day1` and the review run's
-  `/tmp/hakux-day1-review`, including binaries, generated fixture discs and
-  logs. No personal games/saves or launcher configuration
+- Device diagnostics: `/tmp/hakux-day1`, the review run's
+  `/tmp/hakux-day1-review` and day two's `/tmp/hakux-day2`, including
+  binaries, generated fixture discs, captured frames and logs. Day two's
+  device logs are in `build/evidence/` on the development host (untracked:
+  they include guest code bytes). No personal games/saves or launcher configuration
   were changed. No emulator diagnostic process should remain running.
 - Connect using the SSH identity and host saved by `nova-push`. The Nova
   must remain awake for reliable SSH access. Do not publish the key or
@@ -127,20 +178,20 @@ listed above. The device log is `build/evidence/nova-review.log`.
 
 ## Next steps for Claude
 
-1. Integrate PR #3; it has been reviewed (see above). Android validation was
-   waived by the owner; do not install the Android toolchain or spend time on
-   Android compatibility for this PortareOS work. Issue #2 can be completed
-   when this implementation is integrated.
-2. Retain the successful clean-build evidence in `build/clean-build.log` and
-   the reproducible commands and exact dependency pins when changing anything.
-3. Specify the next display milestone: replace the Android window boundary
-   with SDL3 Vulkan surface creation and use its required instance extensions.
-   Reuse the existing swapchain rendering logic. Test direct KMS ownership,
-   first-frame presentation and orderly return to the launcher on the Nova.
-4. Add audible audio, controller/rumble handling and timing in subsequent
-   bounded work. Preserve the proven headless and fault-handling checks.
-5. Implement CHD through a disc-reader abstraction before production Xbox
+1. Review and integrate the day-two branch. Android validation was waived by
+   the owner; do not install the Android toolchain or spend time on Android
+   compatibility for this PortareOS work.
+2. Retain the clean-build evidence and the exact dependency pins when
+   changing anything.
+3. Audible audio: a Linux output for the APU's ring (ALSA or SDL audio on
+   PortareOS's stack), keeping `out_null.c`'s pacing and pause semantics.
+4. Input and pacing: exercise the Nova's built-in controls and rumble through
+   SDL; lock the emulated vblank to the panel (DRM vblank events or present
+   timing) in place of Android's Choreographer.
+5. Launcher integration: a `runemu` entry and the quit hotkey, launched from
+   the launcher's own DRM-master hand-over.
+6. Implement CHD through a disc-reader abstraction before production Xbox
    library integration. Keep the production library CHD-only.
 
-There is no evidence yet for game playability, performance relative to xemu,
-Linux zero-copy sharing or reliable suspend/title relaunch.
+There is no evidence yet for playability with input, performance relative to
+xemu, Linux zero-copy sharing or reliable suspend/title relaunch.

@@ -136,6 +136,19 @@ int hle_vk_memtype(uint32_t bits, VkMemoryPropertyFlags want,
     return -1;
 }
 
+#ifndef __ANDROID__
+static const char *g_window_exts[HLE_VK_WINDOW_EXTS];
+static uint32_t g_window_nexts;
+
+void hle_vk_set_window_extensions(const char *const *names, uint32_t n)
+{
+    g_window_nexts = 0;
+    for (uint32_t i = 0; i < n && i < HLE_VK_WINDOW_EXTS; i++) {
+        g_window_exts[g_window_nexts++] = names[i];
+    }
+}
+#endif
+
 int hle_vk_init(void)
 {
     HleVk *v = &g_hvk;
@@ -163,13 +176,25 @@ int hle_vk_init(void)
     vkEnumerateInstanceExtensionProperties(NULL, &nie, NULL);
     g_autofree VkExtensionProperties *iext = g_new(VkExtensionProperties, nie ? nie : 1);
     vkEnumerateInstanceExtensionProperties(NULL, &nie, iext);
-    const char *iexts[2];
+    const char *iexts[HLE_VK_WINDOW_EXTS];
     uint32_t nix = 0;
 #ifdef __ANDROID__
     if (has_ext(iext, nie, VK_KHR_SURFACE_EXTENSION_NAME) &&
         has_ext(iext, nie, VK_KHR_ANDROID_SURFACE_EXTENSION_NAME)) {
         iexts[nix++] = VK_KHR_SURFACE_EXTENSION_NAME;
         iexts[nix++] = VK_KHR_ANDROID_SURFACE_EXTENSION_NAME;
+    }
+#else
+    /* the window system's (hle_vk_set_window_extensions): all or none */
+    bool all = g_window_nexts > 0;
+    for (uint32_t i = 0; i < g_window_nexts; i++) {
+        all &= has_ext(iext, nie, g_window_exts[i]);
+    }
+    for (uint32_t i = 0; all && i < g_window_nexts; i++) {
+        iexts[nix++] = g_window_exts[i];
+    }
+    if (g_window_nexts && !all) {
+        hle_log("hakuX-hle-back", "vk: the window's instance extensions are missing: no swapchain");
     }
 #endif
     VkInstanceCreateInfo ici = {
