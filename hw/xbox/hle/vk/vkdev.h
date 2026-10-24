@@ -6,7 +6,9 @@
 #define HW_XBOX_HLE_VK_VKDEV_H
 
 #include <volk.h>
+#ifdef __ANDROID__
 #include <vulkan/vulkan_android.h>
+#endif
 
 /* Command buffers in flight (back.c's ring, one recording each): a slot's
  * recording starts once its previous submission has completed, so the
@@ -55,7 +57,9 @@ typedef struct HleVk {
                                  * only the struct tag, no typedef) */
     VkPhysicalDeviceProperties props;
     VkPhysicalDeviceMemoryProperties mem;
+#ifdef __ANDROID__
     PFN_vkGetAndroidHardwareBufferPropertiesANDROID get_ahb_props;
+#endif
     HleCaps caps;
 } HleVk;
 

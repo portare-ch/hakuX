@@ -1,0 +1,13 @@
+add_executable(linux-smoke "${NC_REPO}/tests/native/linux/smoke.c")
+target_link_libraries(linux-smoke PRIVATE hakux_native)
+add_test(NAME linux-smoke COMMAND linux-smoke)
+set_tests_properties(linux-smoke PROPERTIES TIMEOUT 15)
+add_executable(audio-smoke "${NC_REPO}/tests/native/linux/audio.c")
+target_include_directories(audio-smoke PRIVATE "${NC_REPO}")
+target_link_libraries(audio-smoke PRIVATE hakux_native)
+add_test(NAME audio-smoke COMMAND audio-smoke)
+set_tests_properties(audio-smoke PROPERTIES TIMEOUT 10)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_test(NAME linux-boundaries
+         COMMAND "${Python3_EXECUTABLE}" "${NC_REPO}/tests/native/linux/check.py" "$<TARGET_FILE_DIR:xboxrun>")
+set_tests_properties(linux-boundaries PROPERTIES TIMEOUT 60)
