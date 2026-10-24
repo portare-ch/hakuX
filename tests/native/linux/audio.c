@@ -3,6 +3,16 @@
 
 void nc_audio_set_paused(bool on);
 
+/* SDL's output (out_sdl.c) goes at its device's pace: SDL's dummy driver,
+ * CTest's, runs a sixth slow; PipeWire on the Nova drains 57600 bytes. */
+#ifdef AUDIO_DEVICE_PACED
+#define MIN_DRAINED 40320
+#define MIN_CALLBACKS 20
+#else
+#define MIN_DRAINED 48000
+#define MIN_CALLBACKS 25
+#endif
+
 static void check(bool ok, const char *what)
 {
     printf("%s: %s\n", ok ? "PASS" : "FAIL", what);
@@ -13,9 +23,11 @@ static void check(bool ok, const char *what)
 
 int main(void)
 {
+    setvbuf(stdout, NULL, _IONBF, 0);   /* it leaves by _exit */
     alarm(5);
-    pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
-    pthread_cond_t wake = PTHREAD_COND_INITIALIZER;
+    /* static: the output's thread may still broadcast while the process exits */
+    static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+    static pthread_cond_t wake = PTHREAD_COND_INITIALIZER;
     static uint8_t silence[192000];
     nc_audio_set_paused(true);
     check(apu_out_open(sizeof(silence), 480, &wake) == 1920, "480-frame diagnostic callback");
@@ -34,10 +46,10 @@ int main(void)
     nc_audio_set_paused(true);
     int after = apu_out_queued();
     printf("drained %d bytes in approximately 300 ms (expected 57600)\n", before - after);
-    check(before - after >= 48000 && before - after <= 67200, "output drains at 48 kHz stereo, not as fast as possible");
+    check(before - after >= MIN_DRAINED && before - after <= 67200, "output drains at 48 kHz stereo, not as fast as possible");
     uint32_t cb, short_cb;
     apu_out_stats(&cb, &short_cb);
-    check(cb >= 25 && short_cb == 0, "buffered output has no short callbacks");
+    check(cb >= MIN_CALLBACKS && short_cb == 0, "buffered output has no short callbacks");
     usleep(100000);
     check(apu_out_queued() == after, "pause acknowledges before returning");
     apu_out_stats(&cb, &short_cb);
@@ -49,5 +61,8 @@ int main(void)
     nc_pause_set(false);
     usleep(50000);
     check(apu_out_queued() < after, "audio resumes after core pause");
-    return 0;
+    /* As hakux leaves: the output's thread stopped, then no teardown (static
+     * destructors, the stack's cond) with it still running. */
+    nc_audio_set_paused(true);
+    _exit(0);
 }
