@@ -50,6 +50,8 @@ static retro_input_state_t g_input_state;
 static NcCore g_core;
 static int g_disc_fd = -1;
 static int g_core_state;           /* 0 none, 1 booting, 2 running, -1 stopped */
+static bool g_started;
+static const char *g_fail;         /* nc_lr_fail's: the content stops */
 static bool g_shutdown_sent;
 
 static struct {
@@ -86,6 +88,17 @@ static void on_fault(int sig, siginfo_t *info, void *ctx)
     }
     struct sigaction dfl = {.sa_handler = SIG_DFL};
     sigaction(sig, &dfl, NULL);
+}
+
+bool nc_lr_env(unsigned cmd, void *data)
+{
+    return g_env && g_env(cmd, data);
+}
+
+void nc_lr_fail(const char *why)
+{
+    nc_log("hakuX-libretro", "failed: %s", why);
+    __atomic_store_n(&g_fail, why, __ATOMIC_RELEASE);
 }
 
 static void *core_thread(void *arg)
@@ -261,6 +274,21 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
     sigaction(SIGSEGV, &sa, &g_old_segv);
     sigaction(SIGBUS, &sa, &g_old_bus);
 
+    /* With Vulkan the guest boots in context_reset, on RetroArch's device. */
+    const bool vulkan = nc_lr_vk_negotiate();
+    if (__atomic_load_n(&g_fail, __ATOMIC_ACQUIRE)) {
+        return false;
+    }
+    nc_log("hakuX-libretro", "loaded %s; data in %s", game->path, hdd);
+    return vulkan || nc_lr_start();
+}
+
+bool nc_lr_start(void)
+{
+    if (g_started) {
+        return true;
+    }
+    g_started = true;
     __atomic_store_n(&g_core_state, 1, __ATOMIC_RELEASE);
     pthread_attr_t attr;
     pthread_attr_init(&attr);
@@ -270,13 +298,13 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
     pthread_attr_destroy(&attr);
     if (err) {
         nc_log("hakuX-libretro", "core thread: %s", strerror(err));
+        __atomic_store_n(&g_core_state, -1, __ATOMIC_RELEASE);
         return false;
     }
     pthread_detach(t);
     if (pthread_create(&t, NULL, gap_thread, NULL) == 0) {
         pthread_detach(t);
     }
-    nc_log("hakuX-libretro", "loaded %s; data in %s", game->path, hdd);
     return true;
 }
 
@@ -297,7 +325,7 @@ RETRO_API void retro_unload_game(void)
 }
 
 /* HAKUX_LR_STATS=1: every 10 s, how long retro_run takes RetroArch's thread
- * (avg, max) and its video part (the readback, for now). */
+ * (avg, max) and its video part. */
 static void run_stat(uint64_t t0, uint64_t tv, uint64_t t1)
 {
     static int on = -1;
@@ -332,10 +360,11 @@ RETRO_API void retro_run(void)
     gap_tick(now);
     nc_lr_audio_run(g_audio_batch);
     const uint64_t tv = now_ns();
-    nc_lr_video_run(g_env, g_video, now);
+    nc_lr_video_run(g_video, now);
     run_stat(now, tv, now_ns());
 
-    const char *why = __atomic_load_n(&g_core_state, __ATOMIC_ACQUIRE) < 0 ? "the core stopped" : nc_hle_fatal();
+    const char *why = __atomic_load_n(&g_fail, __ATOMIC_ACQUIRE);
+    why = why ? why : __atomic_load_n(&g_core_state, __ATOMIC_ACQUIRE) < 0 ? "the core stopped" : nc_hle_fatal();
     if (why && !g_shutdown_sent) {
         g_shutdown_sent = true;
         nc_log("hakuX-libretro", "shutting down: %s", why);
