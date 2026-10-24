@@ -97,7 +97,8 @@ void nc_hle_boot(NcKernel *k, NcVm *vm, NcCpu *cpu, const NcCpuContext *boot)
         }
     }
     if (!hle_active()) {
-        nc_log("hakuX-native-hle", "HLE GPU off (HAKUX_HLE_MODE unset)");
+        const char *mode = getenv("HAKUX_HLE_MODE");
+        nc_log("hakuX-native-hle", "HLE GPU off (HAKUX_HLE_MODE %s)", mode ? mode : "unset");
         return;
     }
     g_active = true;
