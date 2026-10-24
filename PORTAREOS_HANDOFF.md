@@ -7,16 +7,17 @@ Build/run instructions: [native/README.linux.md](native/README.linux.md)
 ## State
 
 Day one, the Linux headless milestone, is integrated: PR #3 merged as
-`820026e20c`, and issue #2 is closed. Day two, the game on the Nova's panel,
-is integrated: PR #4 merged as `4c4027b61b`. Day three, sound, merged in
-PR #5 as `e68fce349d`, and day four, controls, in PR #6 as `1286f5600f`.
-Day five, the launcher, merged in PR #7 as `d2264875c5`; the libretro core
-and Vulkan handoff merged in PR #10 as `75a6381790`.
+`8f2937308e`, and issue #2 is closed. Day two, the game on the Nova's panel,
+is integrated: PR #4 merged as `8c633edfd9`. Day three, sound, merged in
+PR #5 as `1a058f38dd`, and day four, controls, in PR #6 as `8d32ef4afd`.
+Day five, the launcher, merged in PR #7 as `93bad3d7fe`; the libretro core
+and Vulkan handoff merged in PR #10 as `100e9fadef`.
 
 PortareOS defaults to RetroArch; the standalone remains selectable. Both
 use `/storage/saves/xbox` for the emulated disk and caches. The core still
-ends RetroArch on unload and lacks reset, additional players, core options
-and save states. Current usage: [native/README.linux.md](native/README.linux.md).
+ends RetroArch on unload, and when RetroArch lets its Vulkan context go; a
+title's relaunch starts RetroArch again in its place (#11). It lacks reset,
+additional players, core options and save states. Current usage: [native/README.linux.md](native/README.linux.md).
 Android validation is outside this fork's scope and was not performed.
 
 The working checkout began at upstream `98b935311184a11b80b6c2a2993536475ca4c0d3`.
@@ -312,6 +313,8 @@ player 1.
 - Additional controller ports, core options and save states.
 - Complete the long-run display timing, audio, pause/resume and relaunch
   checks in the libretro design; investigate rumble when prioritized.
+- Check #11 on the Nova: a relaunching title, and a video driver rebuild
+  mid-game. The relaunch has run only the harness's synthetic title.
 - CHD support through a disc-reader abstraction, after the core work.
 
 Retain clean-build evidence and exact dependency pins when changing the core.

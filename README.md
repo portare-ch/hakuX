@@ -14,7 +14,9 @@ Fork of [rfandango/hakuX](https://github.com/rfandango/hakuX); credit to upstrea
 No BIOS, MCPX ROM or hard disk image is needed.
 
 The RetroArch core currently supports player 1 only. Closing a game also
-closes RetroArch; reset, core options and save states are not yet available.
+closes RetroArch. A game that starts another of its programs restarts
+RetroArch on the same game and continues there, without returning to the
+launcher. Reset, core options and save states are not yet available.
 
 ## Building
 

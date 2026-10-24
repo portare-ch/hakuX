@@ -1,6 +1,6 @@
 # PortareOS port: day-one specification
 
-Status: complete; integrated in PR #3 (`820026e20c`), issue #2 closed.
+Status: complete; integrated in PR #3 (`8f2937308e`), issue #2 closed.
 Historical scope for the headless milestone; later work is recorded in
 [PORTAREOS_HANDOFF.md](PORTAREOS_HANDOFF.md).
 Written: 2026-10-24.

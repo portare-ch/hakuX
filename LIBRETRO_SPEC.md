@@ -34,7 +34,7 @@ in particular is too much overhead.
 
 | Component | Revision |
 | --- | --- |
-| portare-ch/hakuX `master` | `d2264875c50d7929e41c27a9f0912566bc25e774` |
+| portare-ch/hakuX `master` | `93bad3d7fe2261e65adc9b3e69602e175d8d7da7` |
 | hakuX's FEX (`external/fex`) | `52018bf46a8279b22bce738548ab3f40db467064` |
 | portare-ch/portareos `next` | `0f02b9cff6b54269b7e621a70649138045caa464` |
 | RetroArch in PortareOS | `9705e03a59145bc33aa79fe6b52a92005703f74e` |
@@ -270,7 +270,7 @@ On PortareOS that is `/storage/saves/xbox`, beside `/storage/roms/xbox` and
 directory for the core is set to it, and `start_hakux.sh` uses it too, so
 both front ends share one console disk. The standalone's
 `/storage/.config/hakux` (since portare-ch/portareos#752) moves there once. A lock keeps two sessions off the same disk. No `chdir`, no
-`setenv` for paths after load. A title's relaunch stays in process.
+`setenv` for paths after load. A title's relaunch stays in process (until M2, RetroArch starts again in its place: #11).
 
 ## 11. Save states
 
@@ -319,7 +319,7 @@ comparison until the core passes its gates.
 | | Deliverable | Gate |
 | --- | --- | --- |
 | M0 | The shared library builds; a harness loads it; an inventory of threads, mappings, handlers and FEX globals; a `create_device2` probe | It loads into a frontend in process and exports only `retro_*`. |
-| M1 | First picture in RetroArch: phase-locked `retro_run`, the libretro audio sink, port 0, the menu's pause | BLACK and Burnout 3 play in RetroArch on the Nova (CPU readback allowed here). Until M2, unloading ends RetroArch's process; the owner chose to package it before M2 (2026-10-24), as quitting a game ends RetroArch on PortareOS anyway. |
+| M1 | First picture in RetroArch: phase-locked `retro_run`, the libretro audio sink, port 0, the menu's pause | BLACK and Burnout 3 play in RetroArch on the Nova (CPU readback allowed here). Until M2, unloading ends RetroArch's process; the owner chose to package it before M2 (2026-10-24), as quitting a game ends RetroArch on PortareOS anyway. Until then RetroArch letting its Vulkan context go ends the process too, and a title's relaunch starts RetroArch again in its place, on the same command line (#11). |
 | M2 | A stoppable core | 100 load/run/unload cycles in one process; a CPU in a tight loop stops; failure at each boot stage cleans up; no threads, mappings, fds or handlers left. |
 | M3 | Vulkan handoff | `create_device2`, `set_image`, the queue lock, gamma; no readback; context reset works or fails cleanly. RetroArch only negotiates when the v1 `create_device` is set too (it then calls `create_device2`). |
 | M4 | PortareOS integration and #8 | The package, the launcher entry, the data folder, ports 0-3, reset and relaunch, run-ahead off; the device checks below. |
