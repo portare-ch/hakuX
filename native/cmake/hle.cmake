@@ -114,7 +114,10 @@ if(ANDROID)
   target_sources(hakux_apu PRIVATE ${NC_APU}/out.c)
   target_link_libraries(hakux_apu PUBLIC aaudio)
 else()
-  target_sources(hakux_apu PRIVATE ${NC_APU}/out_null.c)
+  # Linux: each executable brings its output (apu_out_*): the paced silent
+  # sink for the diagnostics, SDL audio for hakux (linux-app.cmake).
+  set(NC_APU_OUT_NULL "${NC_APU}/out_null.c")
+  set(NC_APU_OUT_SDL "${NC_APU}/out_sdl.c")
 endif()
 target_include_directories(hakux_apu PRIVATE "${NC_REPO}")
 target_compile_options(hakux_apu PRIVATE -Wno-unused-parameter -Wno-unused-function -Wno-sign-compare
