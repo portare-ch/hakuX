@@ -64,7 +64,7 @@ loader. There are no Android runtime dependencies.
 | Kernel initialization, memfd RAM and alias visibility | Pass | Pass |
 | Translated dirty-page recovery through `nc_core_fault` | Pass | Pass |
 | Translated MMIO read/write recovery through `nc_core_fault` | Pass | Pass |
-| Wrong expected result exits 1; unexpected host fault exits 3 | Pass | Pass |
+| Wrong expected result exits 1; unexpected host fault, declined by `nc_core_fault` after the CPU ran, exits 3 | Pass | Pass |
 | Paced silent output, full-ring wakeup, pause/resume | Pass | Pass |
 | Missing disc exits 2; malformed disc exits 1 | Pass | Pass |
 | Synthetic XBE HLT exits 0; infinite-loop XBE times out with exit 5 | Pass | Pass |
@@ -91,6 +91,21 @@ Nova's instance-extension report. Surface creation, presentation, display
 ownership and frame pacing are still untested. The current Linux core
 intentionally reports `swapchain=0`.
 
+## Review — 2026-10-24
+
+PR #3 was reviewed against these results. One test gap was fixed: the
+unexpected-host-fault case previously faulted before `nc_cpu_create`, so the
+smoke handler exited without consulting `nc_core_fault`. It now faults from
+host code after the translated checks pass, and `nc_core_fault` must decline
+it; resuming it would loop until the timeout fails the test.
+
+After the fix, the container passed `linux-build.sh` (3/3 CTest groups), the
+14 HLE tests, the 16-section schema lock and the 45 unchanged record sizes.
+Fresh stripped binaries in `/tmp/hakux-day1-review` on the Nova passed
+`check.py` (exit 0, 57600 audio bytes in approximately 300 ms) and
+`vulkan-probe` (exit 0, same GPU/driver); `ldd` resolved only the libraries
+listed above. The device log is `build/evidence/nova-review.log`.
+
 ## Local artifacts and device state
 
 - Source: `/Users/jmoehle/1234/hakuX`.
@@ -102,8 +117,9 @@ intentionally reports `swapchain=0`.
 - Logs: `build/linux-checks.log`, `build/clean-build.log`,
   `build/hle-tests.log`, `build/statelock-sizes.log` and
   `build/evidence/nova-boundaries.log`. These generated files are untracked.
-- Device diagnostics: `/tmp/hakux-day1`, including binaries, generated
-  fixture discs and logs. No personal games/saves or launcher configuration
+- Device diagnostics: `/tmp/hakux-day1` and the review run's
+  `/tmp/hakux-day1-review`, including binaries, generated fixture discs and
+  logs. No personal games/saves or launcher configuration
   were changed. No emulator diagnostic process should remain running.
 - Connect using the existing `id_portare` identity and the host saved by
   `nova-push`. The Nova must remain awake for reliable SSH access. Do not
@@ -111,10 +127,10 @@ intentionally reports `swapchain=0`.
 
 ## Next steps for Claude
 
-1. Review PR #3 against the Linux/Nova results. Android validation was waived
-   by the owner; do not install the Android toolchain or spend time on Android
-   compatibility for this PortareOS work. Issue #2 can be completed when this
-   implementation is integrated.
+1. Integrate PR #3; it has been reviewed (see above). Android validation was
+   waived by the owner; do not install the Android toolchain or spend time on
+   Android compatibility for this PortareOS work. Issue #2 can be completed
+   when this implementation is integrated.
 2. Retain the successful clean-build evidence in `build/clean-build.log` and
    the reproducible commands and exact dependency pins when changing anything.
 3. Specify the next display milestone: replace the Android window boundary

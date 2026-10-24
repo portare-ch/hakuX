@@ -78,10 +78,6 @@ int main(int argc, char **argv)
     sigemptyset(&sa.sa_mask);
     check(sigaction(SIGSEGV, &sa, NULL) == 0 && sigaction(SIGBUS, &sa, NULL) == 0,
           "glibc signal handlers installed");
-    if (argc > 1 && !strcmp(argv[1], "--host-fault")) {
-        *(volatile uint32_t *)core.vm.reservation = 1;
-        return 1;
-    }
 
     /* mov eax,6; mov ebx,7; add; cmp 13; jne fail; write data;
      * read alias; write/read MMIO; int 42; hlt. Failure reports 0xdead. */
@@ -105,5 +101,11 @@ int main(int argc, char **argv)
     check(*(volatile uint32_t *)nc_vm_host(&core.vm, alias) == 13, "translated write visible through alias");
     check(g_nc_faults_dirty == 1 && hle_host_mem_dirty(pa), "translated write fault resumed and dirtied page");
     check(g_nc_faults_mmio == 2 && mmio_value == 13, "translated MMIO read/write faults resumed");
+    if (argc > 1 && !strcmp(argv[1], "--host-fault")) {
+        /* Host code writing the reservation's low guard, after the CPU ran:
+         * nc_core_fault must decline it rather than resume it as the guest's. */
+        *(volatile uint32_t *)core.vm.reservation = 1;
+        return 1;
+    }
     return 0;
 }
