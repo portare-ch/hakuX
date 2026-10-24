@@ -61,12 +61,25 @@ typedef struct HleVk {
     PFN_vkGetAndroidHardwareBufferPropertiesANDROID get_ahb_props;
 #endif
     HleCaps caps;
+    bool shared;                /* inst and dev are a frontend's (hle_vk_init_shared) */
 } HleVk;
 
 extern HleVk g_hvk;
 
 /* 0 = ready; -1 = no Vulkan; -2 = floor not met (g_hvk.caps.missing). */
 int hle_vk_init(void);
+/* hle_vk_init on a frontend's instance (the libretro core): gpu, or the first
+ * one when VK_NULL_HANDLE; a queue that can present to surface if it isn't
+ * VK_NULL_HANDLE; the device made by make, as vkCreateDevice would (the
+ * frontend's wrapper, which adds what it needs itself). The frontend uses
+ * that device and queue too and destroys them; nothing here does. A later
+ * hle_vk_init finds them. Same results as hle_vk_init. */
+typedef VkDevice (*HleVkMakeDevice)(VkPhysicalDevice gpu, void *opaque, const VkDeviceCreateInfo *ci);
+int hle_vk_init_shared(PFN_vkGetInstanceProcAddr gipa, VkInstance inst, VkPhysicalDevice gpu,
+                       VkSurfaceKHR surface, HleVkMakeDevice make, void *opaque);
+/* The frontend's lock on the queue it shares (libretro's lock_queue and
+ * unlock_queue), taken inside hle_vk_queue_lock; NULL: none. */
+void hle_vk_set_frontend_queue_lock(void (*lock)(void *), void (*unlock)(void *), void *handle);
 /* The instance extensions for the window's surface, at most. */
 #define HLE_VK_WINDOW_EXTS 8
 #ifndef __ANDROID__
@@ -91,7 +104,8 @@ bool hle_vk_check(VkResult r, const char *what);
 const char *hle_vk_result_text(VkResult r);
 void hle_vk_set_ready(void);
 /* g_hvk.queue's external synchronization: the render thread, the window's
- * presenter and a capture submit to it, and vkDeviceWaitIdle needs it too. */
+ * presenter and a capture submit to it, and vkDeviceWaitIdle needs it too.
+ * A frontend sharing the queue has its lock taken with it. */
 void hle_vk_queue_lock(void);
 void hle_vk_queue_unlock(void);
 /* The time its lock was waited for since the last call (statistics). */
