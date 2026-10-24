@@ -6,6 +6,12 @@
  * over as XRGB8888. M3 replaces this with the Vulkan image handoff. A
  * retro_run with no new frame shows the last one again (a 30 fps title, a
  * static screen); RetroArch letterboxes it at the aspect reported here.
+ *
+ * A standard-definition frame loses its overscan, as a TV hid it: 1/30 of
+ * its height at the top and bottom and of its width at each side, so the
+ * picture keeps its shape and fills a 4:3 screen. Titles left that band
+ * black (Burnout 3: 16 lines above and below its 448) or kept their HUD
+ * clear of it (the title-safe area).
  */
 #include "native/libretro/libretro_int.h"
 #include "native/dev/dev.h"
@@ -43,7 +49,16 @@ void nc_lr_video_geometry(struct retro_game_geometry *g)
     g->aspect_ratio = aspect_of(g->base_width, g->base_height);
 }
 
-/* The front frame, if it is newer than the last one shown, into g_v.buf. */
+/* The overscan a TV hid, on each side (SD frames: under 16:10). */
+static void overscan(uint32_t w, uint32_t h, uint32_t *cx, uint32_t *cy)
+{
+    const bool sd = (float)w / (float)h < 1.6f;
+    *cx = sd ? w / 30 : 0;
+    *cy = sd ? h / 30 : 0;
+}
+
+/* The front frame, if it is newer than the last one shown, into g_v.buf
+ * (without its overscan). */
 static bool take_new(retro_environment_t env)
 {
     uint32_t gen, swap;
@@ -56,7 +71,10 @@ static bool take_new(retro_environment_t env)
         g_free(rgba);
         return false;
     }
-    const size_t n = (size_t)w * h;
+    uint32_t cx, cy;
+    overscan(w, h, &cx, &cy);
+    const uint32_t ow = w - 2 * cx, oh = h - 2 * cy;
+    const size_t n = (size_t)ow * oh;
     if (n > g_v.cap) {
         uint32_t *b = realloc(g_v.buf, n * sizeof(*b));
         if (!b) {
@@ -66,14 +84,17 @@ static bool take_new(retro_environment_t env)
         g_v.buf = b;
         g_v.cap = n;
     }
-    for (size_t i = 0; i < n; i++) {
-        const uint8_t *p = rgba + 4 * i;
-        g_v.buf[i] = (uint32_t)p[0] << 16 | (uint32_t)p[1] << 8 | p[2];
+    for (uint32_t y = 0; y < oh; y++) {
+        const uint8_t *p = rgba + 4 * ((size_t)(y + cy) * w + cx);
+        uint32_t *d = g_v.buf + (size_t)y * ow;
+        for (uint32_t x = 0; x < ow; x++, p += 4) {
+            d[x] = (uint32_t)p[0] << 16 | (uint32_t)p[1] << 8 | p[2];
+        }
     }
     g_free(rgba);
-    const bool resized = !g_v.have || w != g_v.w || h != g_v.h;
-    g_v.w = w;
-    g_v.h = h;
+    const bool resized = !g_v.have || ow != g_v.w || oh != g_v.h;
+    g_v.w = ow;
+    g_v.h = oh;
     g_v.gen = gen;
     g_v.swap = swap;
     g_v.have = true;
@@ -81,7 +102,8 @@ static bool take_new(retro_environment_t env)
         struct retro_game_geometry geo;
         nc_lr_video_geometry(&geo);
         env(RETRO_ENVIRONMENT_SET_GEOMETRY, &geo);
-        nc_log("hakuX-libretro", "video: %ux%u, shown at %.3f", w, h, geo.aspect_ratio);
+        nc_log("hakuX-libretro", "video: %ux%u, %ux%u without its overscan, shown at %.3f", w, h, ow, oh,
+               geo.aspect_ratio);
     }
     return true;
 }
