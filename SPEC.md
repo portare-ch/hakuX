@@ -1,7 +1,8 @@
 # PortareOS port: day-one specification
 
-Status: planned; implementation has not started.
+Status: Linux milestone validated on the Nova; implementation is in PR #3.
 Written: 2026-10-24.
+Scope updated: 2026-10-24; Android regression validation waived by the owner.
 Time budget: one developer, one working day (approximately eight hours).
 Target: Retroid Pocket Nova (SM8550), native AArch64 Linux on PortareOS.
 Repository: [portare-ch/hakuX](https://github.com/portare-ch/hakuX).
@@ -46,9 +47,10 @@ Relevant boundaries already present in the code:
 ## Scope and implementation constraints
 
 Keep the existing CPU, kernel, graphics translation and APU implementations.
-Add platform boundaries where needed, with Android's current build remaining
-the default. Linux builds must not require the Android SDK, NDK, JVM,
-adrenotools or Android runtime libraries.
+Add platform boundaries where needed for PortareOS. Android regression
+validation and ongoing Android compatibility are outside this fork's
+acceptance criteria. Linux builds must not require the Android SDK, NDK,
+JVM, adrenotools or Android runtime libraries.
 
 The day-one executable is the existing `xboxrun`, built for AArch64 Linux.
 The graphical app target may be disabled explicitly for this configuration.
@@ -88,7 +90,7 @@ frontend port.
 | Hours 2–4 | Separate Android build dependencies, properties, audio output and graphics platform code sufficiently to link the Linux headless runner. | An AArch64 Linux `xboxrun` with a documented configuration. |
 | Hours 5–6 | Exercise the actual FEX embedding and guest-memory fault paths, first in ARM64 Linux and then on the Nova. | Small runtime smoke harness, explicit assertions and logs. |
 | Hour 7 | Query the Nova's Vulkan driver and compare it with hakuX's requirements. | Capability report with each missing requirement named. |
-| Hour 8 | Repeat the documented build/checks; check the Android configuration; write the handoff and next task. | Reviewable changes, results and outstanding blockers. |
+| Hour 8 | Repeat the documented Linux/Nova build/checks; write the handoff and next task. | Reviewable changes, results and outstanding blockers. |
 
 If time remains after the required checks, attempt a bounded headless boot
 of one user-supplied game known to boot in the Android version. Record the
@@ -154,9 +156,8 @@ Day one is complete when all of the following are recorded:
 - The Vulkan report names supported and missing requirements and identifies
   the next graphics task. A missing portable feature is an explicit design
   blocker, not a reason to silently relax the renderer's requirements.
-- The Android native target still configures and builds with its existing
-  toolchain. If that toolchain is unavailable, record Android validation as
-  outstanding rather than claim it passed.
+- Android regression validation is not required. It was waived by the owner
+  on 2026-10-24 and was not performed; this is not a passing Android result.
 - The handoff identifies the exact source/dependency revisions, build and
   run commands, test results, device/OS/driver versions and remaining work.
 
