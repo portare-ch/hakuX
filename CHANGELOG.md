@@ -1,5 +1,29 @@
 # Changelog
 
+## linux-v0.2.0 (PortareOS)
+
+hakuX as a libretro core, in RetroArch on PortareOS (Retroid Pocket Nova).
+
+### New
+- **Libretro core** — `hakux_libretro.so`: the renderer runs on RetroArch's Vulkan device and each frame is copied on the GPU into the image RetroArch shows, so RetroArch's timed presents, VRR and LFC, menu, hotkeys and remapping apply
+- **The Xbox's exact clock** — the vblank runs at exactly 60000/1001 Hz (it was 1e9/16683333); the core reports that rate, its vblank locks to RetroArch's frames, and the sound takes exactly 800.8 frames a frame
+- **The whole 4:3 screen** — a standard-definition frame loses the band a TV's overscan hid, so it fills a 4:3 panel
+- **Saves** — the console's disk lives in RetroArch's save directory (PortareOS: `/storage/saves/xbox`)
+- **Stats** — `HAKUX_DISP_STATS` and `HAKUX_LR_STATS` log frame rates, frame age and the core's time per frame
+
+### Not yet
+- Closing a game ends RetroArch; no reset; player 1 only; no core options or save states; discs are XISO `.iso` images
+
+## linux-v0.1.0 (PortareOS)
+
+The first Linux build: hakuX on PortareOS (Retroid Pocket Nova), in place of xemu.
+
+### New
+- **Linux** — the core builds and runs on ARM64 Linux (glibc): headless (`xboxrun`) and fullscreen (`hakux`, SDL3 on KMSDRM through the HLE GPU's swapchain)
+- **Sound** — the APU's output through SDL3 audio (PipeWire)
+- **Controls** — every gamepad drives player 1; Home + Start quits, as in every PortareOS emulator
+- **Package** — `tools/native/linux-package.sh` makes the reproducible release tarball PortareOS installs
+
 ## v1.0.0
 
 A new core replaces xemu's QEMU-based one.

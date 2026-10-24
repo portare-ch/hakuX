@@ -32,7 +32,7 @@ in particular is too much overhead.
 
 | Component | Revision |
 | --- | --- |
-| portare-ch/hakuX `master` | `c4a846c5249d6461bade796231186e3818e74470` |
+| portare-ch/hakuX `master` | `d2264875c50d7929e41c27a9f0912566bc25e774` |
 | hakuX's FEX (`external/fex`) | `52018bf46a8279b22bce738548ab3f40db467064` |
 | portare-ch/portareos `next` | `0f02b9cff6b54269b7e621a70649138045caa464` |
 | RetroArch in PortareOS | `9705e03a59145bc33aa79fe6b52a92005703f74e` |

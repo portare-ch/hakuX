@@ -7,10 +7,11 @@ Build/run instructions: [native/README.linux.md](native/README.linux.md)
 ## State
 
 Day one, the Linux headless milestone, is integrated: PR #3 merged as
-`1a36787d61`, and issue #2 is closed. Day two, the game on the Nova's panel,
-is integrated: PR #4 merged as `7109f3102f`. Day three, sound, merged in
-PR #5 as `df476d0a3a`, and day four, controls, in PR #6 as `8708cf1479`.
-Day five, the launcher, is on `portareos/day5-launcher` (see below). The
+`820026e20c`, and issue #2 is closed. Day two, the game on the Nova's panel,
+is integrated: PR #4 merged as `4c4027b61b`. Day three, sound, merged in
+PR #5 as `e68fce349d`, and day four, controls, in PR #6 as `1286f5600f`.
+Day five, the launcher, in PR #7 as `d2264875c5`, and the libretro
+core in PR #10 as `75a6381790` ([LIBRETRO_SPEC.md](LIBRETRO_SPEC.md)). The
 owner waived
 Android regression validation on 2026-10-24: this fork targets PortareOS,
 and Android compatibility is not an acceptance requirement. Android was not
