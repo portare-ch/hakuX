@@ -43,7 +43,7 @@ target supports.
 
 | In the source | Consequence |
 | --- | --- |
-| `native/dev/nv2a.c`: a detached, endless vblank thread at `FRAME_NS` 16683333 (50 Hz mode, optional multiplier). It locks its period and phase to an outside vsync (`nc_dev_nv2a_display_vsync`, `nc_dev_nv2a_display_pickup`), which Android's Choreographer feeds (`native/app/vsync.c`). | `retro_run` feeds the same lock (section 5). |
+| `native/dev/nv2a.c`: a detached, endless vblank thread at the Xbox's exact 60000/1001 Hz (16683333 ns and a carried third; 50 Hz mode, optional multiplier). It locks its period and phase to an outside vsync (`nc_dev_nv2a_display_vsync`, `nc_dev_nv2a_display_pickup`), which Android's Choreographer feeds (`native/app/vsync.c`). | `retro_run` feeds the same lock (section 5). |
 | `native/core/irq.c` / `native/kernel/kernel.c`: `nc_pause_set` pulls the vCPU into the kernel (FEX's `InterruptPending`, checked at block boundaries, so a tight loop is reached too), parks it at `nc_kernel_pause_point`, parks the registered device threads in `nc_pause_wait`, and keeps the guest's kernel time and RDTSC (`CycleCounterOffset`) from advancing. | The menu's pause and frame gaps use it. Check which threads are not registered (the HLE render, watcher and timer threads). |
 | Both front ends end with `_exit`; nothing destroys the FEX context or thread (no `nc_cpu_destroy`). FEX has `DestroyThread`, a virtual `~Context` and `Config::Shutdown` (its config layers are process-global statics). `EnableExitOnHLT` makes `ExecuteThread` return. | A stoppable core is the largest single work item (section 6). |
 | Detached endless threads: vblank, AC'97 PCM, OHCI frame, kernel clock, I/O reader and closer, HLE render, watcher and timer, APU drain/reopen/trace; joinable APU frame and voice workers. | Each needs a stop, a wakeup and a join. |
@@ -116,10 +116,13 @@ take the newest front frame: nc_dev_nv2a_display_pickup(now), export it
 video_cb exactly once (a new frame, or the last one again)
 ```
 
-- RetroArch calls `retro_run` at the reported rate, `1e9 / FRAME_NS` (59.94
-  Hz; 50 Hz when that mode is set). With one tick per frame the vblank thread
-  locks to it (k = 1) and places vblanks half a period from the pickups, as
-  it does with Choreographer. Report the clock's own rate; do not round it.
+- The rate is the real Xbox's, exactly (owner's requirement): 60000/1001 Hz
+  for the 525-line output, 50 Hz when that mode is set. The vblank thread
+  carries the fraction of a nanosecond, the core reports exactly that rate,
+  and the audio takes 48000 x 1001 / 60000 = 800.8 frames a call through an
+  exact accumulator. RetroArch calls `retro_run` at the reported rate; with
+  one tick per frame the vblank thread locks to it (k = 1) and places
+  vblanks half a period from the pickups, as it does with Choreographer.
 - The guest keeps its pipelining: the CPU, the render thread and the export
   overlap as they do today. `retro_run` never waits for the guest to finish
   a frame; a 30 fps title or a static screen shows its last frame again.
@@ -238,7 +241,7 @@ Home + Start stays PortareOS's; the core adds no exit chord.
 | --- | --- |
 | `retro_get_system_info` | name, version; `need_fullpath = true`, `block_extract = true`; extensions `iso` |
 | `retro_load_game` | check the image, resolve paths, negotiate Vulkan, boot; false with full cleanup on failure |
-| `retro_get_system_av_info` | 1e9 / FRAME_NS, 48000 Hz, the source size and aspect |
+| `retro_get_system_av_info` | 60000/1001 (the Xbox's, exactly), 48000 Hz, the source size and aspect |
 | `retro_run` | section 5: one `video_cb`, at least one input poll |
 | `retro_reset` | stop and boot again in process |
 | `retro_unload_game` | stop, join, destroy; a later load works |
