@@ -145,8 +145,8 @@ Results on the Nova (PortareOS nightly 20261023, Turnip / Mesa 26.3.0-rc1):
 
 The panel's pixels during the game were not read back: Turnip's display
 swapchain is UBWC-compressed, and neither `TU_DEBUG=noubwc` nor
-`MESA_VK_WSI_DEBUG=linear` made it linear. Frames shown on the panel were
-not inspected by a person. A DualSense Edge paired with the Nova was the
+`MESA_VK_WSI_DEBUG=linear` made it linear. The owner then ran `hakux` on
+the Nova and confirmed the game on the panel ("it works. beautiful"). A DualSense Edge paired with the Nova was the
 gamepad; input was not exercised. Launching from the launcher itself, with
 its DRM-master hand-over, was simulated by stopping and starting
 `portarelauncher.service`.
