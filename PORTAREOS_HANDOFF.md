@@ -7,8 +7,9 @@ Build/run instructions: [native/README.linux.md](native/README.linux.md)
 ## State
 
 Day one, the Linux headless milestone, is integrated: PR #3 merged as
-`1a36787d61`, and issue #2 is closed. Day two puts the game on the Nova's
-panel; it is on `portareos/day2-display` (see below). The owner waived
+`1a36787d61`, and issue #2 is closed. Day two, the game on the Nova's panel,
+is integrated: PR #4 merged as `7109f3102f`. Day three adds sound; it is on
+`portareos/day3-audio` (see below). The owner waived
 Android regression validation on 2026-10-24: this fork targets PortareOS,
 and Android compatibility is not an acceptance requirement. Android was not
 tested.
@@ -155,6 +156,48 @@ Test images for repeated runs are in `/roms/xbox` on the Nova (the SD card's
 storage partition, grown to 117 GiB by portare-ch/portareos#749). They are
 the user's and are not to be deleted.
 
+## Day three: sound — 2026-10-24
+
+`hakux` plays the APU's output through SDL3's audio: PipeWire 1.6.8 on
+PortareOS, to the default sink (the speaker).
+
+- `native/dev/apu/out_sdl.c` follows `out.c` (AAudio): the same ring, fill
+  and pause contract, a callback per device request, and SDL following the
+  default device. With no device it drains the ring at 48 kHz and retries
+  each second, so the APU never stalls.
+- On Linux the APU library has no output: each executable brings one.
+  `hakux` gets `out_sdl.c`; `xboxrun`, the tests and `vulkan-probe` keep
+  `out_null.c`. `HAKUX_DIAGNOSTIC_AUDIO` is no longer required; ON makes
+  `hakux` silent too.
+- `hakux` initializes SDL audio on its main thread and names itself, so
+  PipeWire shows a "hakuX" stream.
+- `audio-sdl-smoke` runs the audio contract test against the SDL output.
+
+Results:
+
+| Check | Result |
+| --- | --- |
+| `audio-sdl-smoke`, Nova through PipeWire (speaker) | 57600 bytes in 300 ms (exactly 48 kHz), 3 of 3 runs |
+| `audio-sdl-smoke`, container (SDL's dummy driver) | Pass with device-paced floors: the dummy driver drains 48000 bytes, a sixth slow |
+| `hakux`, BLACK | SDL pipewire, speaker, 512-frame callbacks; PipeWire lists an active "hakuX" stream on both speaker channels; APU 1500 frames/s, about 94 callbacks/s, 0 short callbacks |
+| Speaker monitor, 7 s recorded during BLACK | -35 to -17 dBFS RMS, peaks to 16924: game audio, not silence |
+| `hakux`, Burnout 3, 40 s, ended by SIGKILL | 0 short callbacks in 40 s; APU busy 2-24 % after startup; 59.9 fps; the stream is gone after the kill |
+| Owner listening on the Nova | "sounds beautiful" |
+| `check.py`, `vulkan-probe`, 14 HLE tests, state lock | Pass |
+| Fresh build in the minimal documented image | Build and all 4 CTest groups pass (`build/clean-build-day3.log`) |
+
+In the first fresh build in the minimal image, `audio-sdl-smoke` crashed
+once as it exited; 30 further runs of the old test did not repeat it. Two
+causes fit, both in the test rather than in `hakux`: SDL's audio thread
+still broadcasting to the test's stack-local condition variable after
+`main` returned, or running during `exit()`'s static destructors. The test
+now keeps them static, pauses the output and leaves by `_exit`, as `hakux`
+does; it passed 40 of 40 direct runs and 10 of 10 CTest runs in that image.
+
+Not tested: headphones (SDL should follow the default sink), Bluetooth
+audio, a PipeWire restart while playing, and the app pause
+(`nc_audio_set_paused`), which `hakux` does not use yet.
+
 ## Local artifacts and device state
 
 - Source: this repository.
@@ -178,19 +221,17 @@ the user's and are not to be deleted.
 
 ## Next steps for Claude
 
-1. Review and integrate the day-two branch. Android validation was waived by
-   the owner; do not install the Android toolchain or spend time on Android
-   compatibility for this PortareOS work.
+1. Review and integrate the day-three branch. Android validation was waived
+   by the owner; do not install the Android toolchain or spend time on
+   Android compatibility for this PortareOS work.
 2. Retain the clean-build evidence and the exact dependency pins when
    changing anything.
-3. Audible audio: a Linux output for the APU's ring (ALSA or SDL audio on
-   PortareOS's stack), keeping `out_null.c`'s pacing and pause semantics.
-4. Input and pacing: exercise the Nova's built-in controls and rumble through
+3. Input and pacing: exercise the Nova's built-in controls and rumble through
    SDL; lock the emulated vblank to the panel (DRM vblank events or present
    timing) in place of Android's Choreographer.
-5. Launcher integration: a `runemu` entry and the quit hotkey, launched from
+4. Launcher integration: a `runemu` entry and the quit hotkey, launched from
    the launcher's own DRM-master hand-over.
-6. Implement CHD through a disc-reader abstraction before production Xbox
+5. Implement CHD through a disc-reader abstraction before production Xbox
    library integration. Keep the production library CHD-only.
 
 There is no evidence yet for playability with input, performance relative to
