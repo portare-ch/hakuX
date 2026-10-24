@@ -2,8 +2,8 @@
  * hakuX native core, Linux front end (hakux): the game in a fullscreen SDL3
  * window (on PortareOS the panel itself, through KMSDRM), its frames
  * presented by the HLE GPU's Vulkan swapchain (present.c), the first gamepad
- * as player 1's Duke, and the diagnostic audio sink (silent and paced: no
- * Linux audio output yet).
+ * as player 1's Duke, and the APU's output through SDL audio (out_sdl.c:
+ * PipeWire on PortareOS).
  *
  *   hakux <disc image> <data directory> [option...]
  *
@@ -136,9 +136,15 @@ int main(int argc, char **argv)
     nc_present_set_widescreen(video >= 0 && (video & NC_VIDEO_WIDESCREEN));
     nc_hle_set_pipeline_options(true, true);   /* the app's defaults */
 
+    SDL_SetAppMetadata("hakuX", NULL, "ch.portare.hakux");   /* the audio stream's name */
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         nc_log("hakuX-linux", "SDL_Init: %s", SDL_GetError());
         return 1;
+    }
+    /* here on the main thread, before the core opens the output; without it
+     * the game runs on, its sound drained unheard */
+    if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
+        nc_log("hakuX-linux", "SDL audio: %s", SDL_GetError());
     }
     const SDL_DisplayMode *dm = SDL_GetDesktopDisplayMode(SDL_GetPrimaryDisplay());
     const int ww = dm ? dm->w : 1280, wh = dm ? dm->h : 960;
