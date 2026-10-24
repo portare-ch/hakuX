@@ -173,8 +173,8 @@ The following belong to subsequent specifications:
 - SDL3/Vulkan window presentation and replacement of Choreographer timing.
 - Real Linux audio output, controller/rumble integration and game lifecycle.
 - CHD reads through a disc abstraction, including compressed-image tests.
-  PortareOS's production Xbox library remains CHD-only. A temporary raw
-  ISO/XISO used for developer diagnostics does not change that interface.
+  The owner changed this on 2026-10-24: the Xbox library accepts XISO
+  (`.iso`) images now, and CHD comes last, once everything else works.
 - PortareOS package, launcher selection, persistent settings and save paths.
 - Save-state UI, pause menu, suspend/resume and reliable title relaunch.
 - Linux zero-copy GPU memory, performance tuning and game compatibility work.
