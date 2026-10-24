@@ -14,7 +14,8 @@
  * retro_run resumes it.
  *
  * The core cannot stop yet (M2), so unloading, or RetroArch letting its
- * Vulkan context go, ends RetroArch's process (nc_lr_end).
+ * Vulkan context go, ends RetroArch's process (nc_lr_end). A title's
+ * relaunch starts RetroArch again in its place (relaunch).
  */
 #include "native/libretro/libretro_int.h"
 #include "native/core/core.h"
@@ -23,6 +24,7 @@
 #include "native/hle/hle_native.h"
 #include "native/kernel/kernel.h"
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -53,6 +55,7 @@ static int g_core_state;           /* 0 none, 1 booting, 2 running, -1 stopped *
 static bool g_started;
 static const char *g_fail;         /* nc_lr_fail's: the content stops */
 static bool g_shutdown_sent;
+static char g_game[PATH_MAX];      /* the content's real path */
 
 static struct {
     pthread_mutex_t mu;
@@ -261,6 +264,13 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
         nc_log("hakuX-libretro", "%s: %s", game->path, strerror(errno));
         return false;
     }
+    if (!realpath(game->path, g_game)) {
+        snprintf(g_game, sizeof(g_game), "%s", game->path);
+    }
+    /* RetroArch started again for this game's relaunch: boot the XBE it named. */
+    const char *again = getenv("HAKUX_RELAUNCH");
+    nc_core_set_relaunch(again && !strcmp(again, g_game));
+    unsetenv("HAKUX_RELAUNCH");
     nc_lr_input_describe(g_env);
     nc_io_set_hdd_root(hdd);
     setenv("HAKUX_HLE_MODE", "replace", 0);
@@ -313,11 +323,93 @@ RETRO_API bool retro_load_game_special(unsigned type, const struct retro_game_in
     return false;
 }
 
+/* Every descriptor but stdin, stdout and stderr closes at the exec, as at an
+ * exit: the display, the input devices, the audio server. */
+static void close_on_exec(void)
+{
+    DIR *d = opendir("/proc/self/fd");
+    if (!d) {
+        return;
+    }
+    for (const struct dirent *e; (e = readdir(d));) {
+        const int fd = atoi(e->d_name);
+        const int flags = fd > 2 && fd != dirfd(d) ? fcntl(fd, F_GETFD) : -1;
+        if (flags >= 0) {
+            fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+        }
+    }
+    closedir(d);
+}
+
+/* A title's XLaunchNewImage (kernel.relaunch; the launch data page is in
+ * relaunch.bin, beside the console disk): the core cannot boot again in this
+ * process, so RetroArch starts again in its place, on the same command line,
+ * with HAKUX_RELAUNCH naming the game. Its load boots the XBE the page names,
+ * as Android's activity does with "relaunch". The process stays the same one
+ * to its parent (runemu.sh), so the game does not go back to the launcher.
+ * Returns if RetroArch can't start again for the game. */
+static void relaunch(void)
+{
+    static char cmd[64 * 1024];
+    static char *argv[1024];
+    static char mark[PATH_MAX + 32];
+    extern char **environ;
+    const int fd = open("/proc/self/cmdline", O_RDONLY | O_CLOEXEC);
+    size_t n = 0;
+    if (fd >= 0) {
+        ssize_t r;
+        while (n < sizeof(cmd) - 1 && (r = read(fd, cmd + n, sizeof(cmd) - 1 - n)) > 0) {
+            n += (size_t)r;
+        }
+        close(fd);
+    }
+    unsigned argc = 0;
+    bool on_game = false;
+    for (size_t i = 0; i < n && argc < sizeof(argv) / sizeof(*argv) - 1; i += strlen(cmd + i) + 1) {
+        char real[PATH_MAX];
+        argv[argc++] = cmd + i;
+        on_game = on_game || (realpath(cmd + i, real) && !strcmp(real, g_game));
+    }
+    argv[argc] = NULL;
+    if (!on_game) {
+        nc_log("hakuX-libretro", "relaunch: RetroArch was not started on the game; it can't start again for it");
+        return;
+    }
+    size_t ne = 0;
+    while (environ && environ[ne]) {
+        ne++;
+    }
+    char **envp = calloc(ne + 2, sizeof(*envp));
+    if (!envp) {
+        return;
+    }
+    size_t m = 0;
+    for (size_t i = 0; i < ne; i++) {
+        if (strncmp(environ[i], "HAKUX_RELAUNCH=", 15)) {
+            envp[m++] = environ[i];
+        }
+    }
+    snprintf(mark, sizeof(mark), "HAKUX_RELAUNCH=%s", g_game);
+    envp[m] = mark;
+    nc_log("hakuX-libretro", "relaunch: starting RetroArch again for %s", g_game);
+    fflush(NULL);
+    close_on_exec();
+    sigset_t none;
+    sigemptyset(&none);
+    pthread_sigmask(SIG_SETMASK, &none, NULL);
+    execve("/proc/self/exe", argv, envp);
+    nc_log("hakuX-libretro", "relaunch: RetroArch can't start again: %s", strerror(errno));
+    free(envp);
+}
+
 void nc_lr_end(const char *why)
 {
     const int state = __atomic_load_n(&g_core_state, __ATOMIC_ACQUIRE);
     if (state == 0) {
         return;
+    }
+    if (state < 0 && g_core.kernel.relaunch) {
+        relaunch();
     }
     nc_log("hakuX-libretro", "%s: the core cannot stop yet; ending the process", why);
     fflush(NULL);

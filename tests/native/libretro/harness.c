@@ -8,7 +8,8 @@
  * the core's rate, checking that each call hands over exactly one video
  * frame. It stops after <frames>, or when the core asks to shut down; the
  * summary is printed before retro_unload_game (which ends the process
- * until the core can stop).
+ * until the core can stop, or after a title's relaunch starts the harness
+ * again, as it would RetroArch).
  */
 #include "native/libretro/libretro.h"
 

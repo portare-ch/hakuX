@@ -10,6 +10,20 @@ import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'linux'))
 from check import disc, run  # noqa: E402  (the day-one fixtures)
 
+# A title that relaunches itself once (XLaunchNewImage): with no launch data
+# page, it leaves one naming its own XBE and quick-reboots; booted again with
+# the page, it halts.
+RELAUNCH = (
+    b'\xa1\x04\x0f\x01\x00'          # mov eax, [thunk 1]: &LaunchDataPage
+    b'\x83\x38\x00'                  # cmp dword [eax], 0
+    b'\x75\x10'                      # jne halt
+    b'\xc7\x00\x00\x20\x01\x00'      # mov dword [eax], 0x12000: the page below
+    b'\x6a\x02'                      # push 2: ReturnFirmwareQuickReboot
+    b'\xff\x15\x00\x0f\x01\x00'      # call [thunk 0]: HalReturnToFirmware
+    b'\xeb\xfe'                      # jmp $
+    b'\xf4'                          # halt: hlt
+).ljust(0x1000, b'\0') + struct.pack('<II', 1, 0) + b'\\Device\\CdRom0;default.xbe'
+
 
 def dynamic_exports(path):
     """The defined global and weak symbols in an ELF64 object's .dynsym."""
@@ -56,6 +70,15 @@ def main():
         if not (root / 'saves' / 'hdd' / 'Partition0').is_dir():
             raise SystemExit('FAIL: no console disk in the save directory')
         print('PASS: the console disk is in the save directory')
+        # The frontend (here the harness) starts again in its place and boots
+        # the XBE the launch data page names.
+        disc(root / 'relaunch.iso', RELAUNCH, imports=(49, 164))
+        run([args.harness, args.core, root / 'relaunch.iso', 600, root / 'saves'], 0,
+            ('relaunch into \\default.xbe', 'relaunch: starting RetroArch again',
+             'relaunch: \\Device\\CdRom0\\default.xbe', 'guest executed HLT', 'the core cannot stop yet'))
+        if (root / 'saves' / 'relaunch.bin').exists():
+            raise SystemExit('FAIL: the relaunch left its launch data page')
+        print('PASS: the relaunch booted the XBE its page named')
 
 
 if __name__ == '__main__':

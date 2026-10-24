@@ -8,19 +8,24 @@ import subprocess
 import tempfile
 
 
-def disc(path, code):
-    xbe = bytearray(0x1010)
+def disc(path, code, imports=()):
+    """A disc whose default.xbe runs code at 0x11000 (its section takes whole
+    pages), with the kernel's ordinals in imports through the thunks at 0x10f00."""
+    size = max(0x1000, -(-len(code) // 0x1000) * 0x1000)
+    xbe = bytearray(max(0x1010, 0x1000 + len(code)))
     def word(offset, value):
         struct.pack_into('<I', xbe, offset, value)
     for offset, value in {
-        0: 0x48454258, 0x104: 0x10000, 0x108: 0x1000, 0x10c: 0x2000,
+        0: 0x48454258, 0x104: 0x10000, 0x108: 0x1000, 0x10c: 0x1000 + size,
         0x118: 0x10200, 0x11c: 1, 0x120: 0x10400,
         0x128: 0x11000 ^ 0xa8fc57ab, 0x130: 0x1000,
         0x158: 0x10f00 ^ 0x5b6d40b6, 0x164: 0x10a00, 0x208: 0xffff0001,
-        0x400: 6, 0x404: 0x11000, 0x408: 0x1000,
+        0x400: 6, 0x404: 0x11000, 0x408: size,
         0x40c: 0x1000, 0x410: len(code), 0x414: 0x10800,
     }.items():
         word(offset, value)
+    for i, ordinal in enumerate(imports):
+        word(0xf00 + 4 * i, 0x80000000 | ordinal)
     xbe[0x800:0x806] = b'.text\0'
     xbe[0x1000:0x1000 + len(code)] = code
     image = bytearray(34 * 2048) + xbe
