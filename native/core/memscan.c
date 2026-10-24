@@ -29,7 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/system_properties.h>
+#include "native/platform/properties.h"
 
 #define SCAN_MAX 300
 
@@ -305,7 +305,7 @@ static void log_word(const NcVm *vm, uint32_t va)
 void nc_memscan_poll(const NcVm *vm)
 {
     static unsigned polls;
-    static char last[PROP_VALUE_MAX];
+    static char last[NC_PROPERTY_VALUE_MAX];
     static bool mats_next;
     static uint32_t mats_word;          /* "mats1:<va>": that guest word at both ends */
     if (mats_next) {
@@ -317,8 +317,8 @@ void nc_memscan_poll(const NcVm *vm)
     if (polls++ % 30) {
         return;
     }
-    char v[PROP_VALUE_MAX] = "";
-    if (__system_property_get("debug.hakux.memscan", v) <= 0 || !strcmp(v, last)) {
+    char v[NC_PROPERTY_VALUE_MAX] = "";
+    if (nc_property_get("debug.hakux.memscan", v) <= 0 || !strcmp(v, last)) {
         return;
     }
     const bool first = !last[0] && polls == 1;

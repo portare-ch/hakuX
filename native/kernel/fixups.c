@@ -23,7 +23,7 @@
 
 #include <string.h>
 
-#include <sys/system_properties.h>
+#include "native/platform/properties.h"
 
 #include "hw/xbox/hle/core/xbe.h"
 
@@ -34,8 +34,8 @@ static const uint8_t k_mailbox_wait[] = {0x05, 0x00, 0x08, 0x00, 0x00,  /* add e
 
 static bool apu_spin_on(void)
 {
-    char v[PROP_VALUE_MAX] = "";
-    __system_property_get("debug.hakux.apuspin", v);
+    char v[NC_PROPERTY_VALUE_MAX] = "";
+    nc_property_get("debug.hakux.apuspin", v);
     return strcmp(v, "0") != 0;
 }
 
