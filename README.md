@@ -20,9 +20,10 @@ copyrighted Xbox software.
 
 See [android/README.md](android/README.md).
 
-The PortareOS work currently provides a native ARM64 Linux diagnostic
-build. See [native/README.linux.md](native/README.linux.md) and the
-[day-one handoff](PORTAREOS_HANDOFF.md) for commands and validation status.
+The PortareOS work provides a native ARM64 Linux build: a headless runner
+and `hakux`, which presents games on the panel through SDL3 (KMSDRM). See
+[native/README.linux.md](native/README.linux.md) and the
+[handoff](PORTAREOS_HANDOFF.md) for commands and validation status.
 
 ## License
 

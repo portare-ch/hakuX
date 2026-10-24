@@ -67,6 +67,12 @@ extern HleVk g_hvk;
 
 /* 0 = ready; -1 = no Vulkan; -2 = floor not met (g_hvk.caps.missing). */
 int hle_vk_init(void);
+#ifndef __ANDROID__
+/* Linux: the instance extensions the window's surface needs (SDL's), before
+ * hle_vk_init; enabled when the loader has them all (the swapchain with them). */
+#define HLE_VK_WINDOW_EXTS 8
+void hle_vk_set_window_extensions(const char *const *names, uint32_t n);
+#endif
 /* The back end is up (hle_back_start done): other threads may use g_hvk. */
 bool hle_vk_ready(void);
 
