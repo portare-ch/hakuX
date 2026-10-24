@@ -2,27 +2,34 @@
 
 ## linux-v0.2.0 (PortareOS)
 
-hakuX as a libretro core, in RetroArch on PortareOS (Retroid Pocket Nova).
+Play Xbox games through RetroArch on PortareOS (Retroid Pocket Nova).
 
-### New
-- **Libretro core** — `hakux_libretro.so`: the renderer runs on RetroArch's Vulkan device and each frame is copied on the GPU into the image RetroArch shows, so RetroArch's timed presents, VRR and LFC, menu, hotkeys and remapping apply
-- **The Xbox's exact clock** — the vblank runs at exactly 60000/1001 Hz (it was 1e9/16683333); the core reports that rate, its vblank locks to RetroArch's frames, and the sound takes exactly 800.8 frames a frame
-- **The whole 4:3 screen** — a standard-definition frame loses the band a TV's overscan hid, so it fills a 4:3 panel
-- **Saves** — the console's disk lives in RetroArch's save directory (PortareOS: `/storage/saves/xbox`)
-- **Stats** — `HAKUX_DISP_STATS` and `HAKUX_LR_STATS` log frame rates, frame age and the core's time per frame
+### What's new
 
-### Not yet
-- Closing a game ends RetroArch; no reset; player 1 only; no core options or save states; discs are XISO `.iso` images
+- **RetroArch support** — Run hakuX as a RetroArch core, with access to RetroArch's menu, hotkeys and controller remapping.
+- **Display timing** — RetroArch handles when frames appear on screen, including variable refresh rates and compensation for low frame rates. Graphics stay on the GPU throughout.
+- **Xbox timing** — Matches the original Xbox's 59.94 Hz video timing and keeps audio in sync.
+- **4:3 display** — Removes the border normally hidden by a TV, so standard-definition games fill a 4:3 screen.
+- **Game saves** — Stores the emulated Xbox hard drive in RetroArch's save folder (`/storage/saves/xbox` on PortareOS).
+- **Performance logs** — Optional logs show frame rates, frame delivery delays and the core's processing time per frame. Enable them with `HAKUX_DISP_STATS` and `HAKUX_LR_STATS`.
+
+### Current limitations
+
+- Closing a game also closes RetroArch.
+- Only player 1 is supported.
+- Reset, core settings and save states are not yet available.
+- Games must be XISO disc images with a `.iso` extension.
 
 ## linux-v0.1.0 (PortareOS)
 
-The first Linux build: hakuX on PortareOS (Retroid Pocket Nova), in place of xemu.
+The first standalone hakuX release for PortareOS on the Retroid Pocket Nova, replacing xemu.
 
-### New
-- **Linux** — the core builds and runs on ARM64 Linux (glibc): headless (`xboxrun`) and fullscreen (`hakux`, SDL3 on KMSDRM through the HLE GPU's swapchain)
-- **Sound** — the APU's output through SDL3 audio (PipeWire)
-- **Controls** — every gamepad drives player 1; Home + Start quits, as in every PortareOS emulator
-- **Package** — `tools/native/linux-package.sh` makes the reproducible release tarball PortareOS installs
+### What's new
+
+- **Standalone emulator** — Play fullscreen with `hakux` on ARM64 Linux (glibc). A command-line version, `xboxrun`, is also available for testing without a display.
+- **Audio** — Game audio plays through PipeWire.
+- **Controllers** — All connected gamepads control player 1. Press **Home + Start** to quit.
+- **PortareOS package** — Adds a script to create reproducible release archives for installation on PortareOS.
 
 ## v1.0.0
 

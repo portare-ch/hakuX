@@ -1,6 +1,8 @@
 # PortareOS port: day-one specification
 
-Status: complete; integrated in PR #3 (`820026e20c`), issue #2 closed. Day two (display) is in [PORTAREOS_HANDOFF.md](PORTAREOS_HANDOFF.md).
+Status: complete; integrated in PR #3 (`820026e20c`), issue #2 closed.
+Historical scope for the headless milestone; later work is recorded in
+[PORTAREOS_HANDOFF.md](PORTAREOS_HANDOFF.md).
 Written: 2026-10-24.
 Scope updated: 2026-10-24; Android regression validation waived by the owner.
 Time budget: one developer, one working day (approximately eight hours).

@@ -1,6 +1,8 @@
 # hakuX libretro core for PortareOS
 
-Status: specification; no core implementation is claimed by this document.
+Status: design targets. The initial core and Vulkan handoff merged in PR #10.
+In-process unload/reload, reset, multiple players, core options and save states
+remain unfinished. See [native/README.linux.md](native/README.linux.md) for current usage.
 Written: 2026-10-24, from the owner's draft and its review against the source.
 Target: Retroid Pocket Nova (SM8550), AArch64 Linux, PortareOS, RetroArch
 Vulkan on KMS.
@@ -302,14 +304,8 @@ part of #8 is superseded by this route; the issue's wording should record it.
 
 ## 13. Build and PortareOS
 
-An opt-in CMake target, everything linked in built as PIC (FEX, the renderer,
-the APU):
-
-```sh
-cmake -S native -B build/libretro -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DHAKUX_BUILD_LIBRETRO=ON -DHAKUX_BUILD_APP=OFF
-cmake --build build/libretro --target hakux_libretro
-```
+`tools/native/linux-build.sh` builds `hakux_libretro.so` with all linked
+libraries as PIC. See the [Linux build and packaging instructions](native/README.linux.md).
 
 The object exports only `retro_*`, needs no SDL, Android or build-tree
 RUNPATH, and embeds no Vulkan loader. Package as `hakux-lr` from a release,

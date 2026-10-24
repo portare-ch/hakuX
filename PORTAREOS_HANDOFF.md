@@ -10,12 +10,14 @@ Day one, the Linux headless milestone, is integrated: PR #3 merged as
 `820026e20c`, and issue #2 is closed. Day two, the game on the Nova's panel,
 is integrated: PR #4 merged as `4c4027b61b`. Day three, sound, merged in
 PR #5 as `e68fce349d`, and day four, controls, in PR #6 as `1286f5600f`.
-Day five, the launcher, in PR #7 as `d2264875c5`, and the libretro
-core in PR #10 as `75a6381790` ([LIBRETRO_SPEC.md](LIBRETRO_SPEC.md)). The
-owner waived
-Android regression validation on 2026-10-24: this fork targets PortareOS,
-and Android compatibility is not an acceptance requirement. Android was not
-tested.
+Day five, the launcher, merged in PR #7 as `d2264875c5`; the libretro core
+and Vulkan handoff merged in PR #10 as `75a6381790`.
+
+PortareOS defaults to RetroArch; the standalone remains selectable. Both
+use `/storage/saves/xbox` for the emulated disk and caches. The core still
+ends RetroArch on unload and lacks reset, additional players, core options
+and save states. Current usage: [native/README.linux.md](native/README.linux.md).
+Android validation is outside this fork's scope and was not performed.
 
 The working checkout began at upstream `98b935311184a11b80b6c2a2993536475ca4c0d3`.
 That is the FEX submodule addition immediately after the fork's original
@@ -26,7 +28,12 @@ The implementation uses the exact FEX revision required by the SPEC and the
 documented graphics dependency revisions. Full source/submodule hashes are
 in `tools/native/linux-deps.json`.
 
-## Implemented
+The sections below record each milestone's implementation and test environment
+at the time.
+
+## Day one: headless core — 2026-10-24
+
+### Implemented
 
 - Platform-aware build/linking and an explicitly selected Linux diagnostic
   audio backend. Android remains the default graphical app configuration.
@@ -49,7 +56,7 @@ in `tools/native/linux-deps.json`.
   sink initializer field and parentheses around intentional shader string
   concatenation. The strict warning-as-error host suite passes.
 
-## Verified results
+### Verified results
 
 Build environment: AArch64 Debian container, base image
 `debian:stable-slim@sha256:a717a33469731894e77e912ea7d714e27c2dc38ee6554fd1a3102e92999cfc66`.
@@ -80,7 +87,8 @@ loader. There are no Android runtime dependencies.
 
 The initial Nova audio measurement consumed 57600 bytes over approximately
 300 ms, matching 48 kHz stereo signed 16-bit output; a later run consumed
-55680 bytes and passed the timing bounds. No commercial game was tested.
+55680 bytes and passed the timing bounds. No commercial game was tested in
+this milestone.
 
 GPU: Turnip Adreno 740, Vulkan 1.4.363, Mesa 26.3.0-rc1. Every portable
 requirement in `vkdev.c` passed. Optional GPL, EDS3, descriptor buffer,
@@ -92,10 +100,10 @@ The installed SDL3 is 3.4.16. Its
 [KMSDRM Vulkan implementation](https://github.com/libsdl-org/SDL/blob/release-3.4.16/src/video/kmsdrm/SDL_kmsdrmvulkan.c)
 requests `VK_KHR_surface` and `VK_KHR_display`; both are present in the
 Nova's instance-extension report. Surface creation, presentation, display
-ownership and frame pacing are still untested. The current Linux core
-intentionally reports `swapchain=0`.
+ownership and frame pacing were outside this milestone; the headless runner
+reported `swapchain=0`.
 
-## Review — 2026-10-24
+### Review — 2026-10-24
 
 PR #3 was reviewed against these results. One test gap was fixed: the
 unexpected-host-fault case previously faulted before `nc_cpu_create`, so the
@@ -270,7 +278,7 @@ output to `/var/log/exec.log`. SDL's "Couldn't open /dev/input/event3"
 lines there are the raw controls InputPlumber hides; the virtual pad was
 player 1.
 
-## Local artifacts and device state
+## Standalone milestone artifacts
 
 - Source: this repository.
 - Development container: `hakux-build`, mounted at `/src`.
@@ -297,23 +305,16 @@ player 1.
   must remain awake for reliable SSH access. Do not publish the key or
   device credentials.
 
-## Next steps for Claude
+## Remaining work
 
-1. Review and integrate the day-five branch. Android validation was waived
-   by the owner; do not install the Android toolchain or spend time on
-   Android compatibility for this PortareOS work.
-2. Release: with the owner's agreement (a release is public), package the
-   merged `master` with `linux-package.sh`, publish it as `linux-v0.1.0`
-   on portare-ch/hakuX, put its SHA-256 in the `hakux-sa` package and open
-   the PortareOS pull request from `hakux-xbox`.
-3. Retain the clean-build evidence and the exact dependency pins when
-   changing anything.
-4. Pacing and players: lock the emulated vblank to the panel (DRM vblank
-   events or present timing) in place of Android's Choreographer; find why
-   the Nova does not vibrate (the owner has put this off); separate players
-   for several pads.
-5. CHD, through a disc-reader abstraction, is low priority: only once
-   everything else works. Until then the Xbox library's CHDs go to xemu.
+- In-process core shutdown, unload/reload and reset; see
+  [LIBRETRO_SPEC.md](LIBRETRO_SPEC.md) for the lifecycle and validation targets.
+- Additional controller ports, core options and save states.
+- Complete the long-run display timing, audio, pause/resume and relaunch
+  checks in the libretro design; investigate rumble when prioritized.
+- CHD support through a disc-reader abstraction, after the core work.
+
+Retain clean-build evidence and exact dependency pins when changing the core.
 
 There is no evidence yet for performance relative to xemu, Linux zero-copy
 sharing or reliable suspend/title relaunch.
