@@ -20,6 +20,10 @@ copyrighted Xbox software.
 
 See [android/README.md](android/README.md).
 
+The PortareOS work currently provides a native ARM64 Linux diagnostic
+build. See [native/README.linux.md](native/README.linux.md) and the
+[day-one handoff](PORTAREOS_HANDOFF.md) for commands and validation status.
+
 ## License
 
 hakuX is free software under the GNU General Public License, version 3 or

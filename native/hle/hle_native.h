@@ -50,6 +50,7 @@ void nc_hle_pipeline_progress(uint32_t *done, uint32_t *total);
  * dropped when nothing is translated yet. */
 extern HleCpu nc_hle_regs;
 void nc_hle_host_init(NcKernel *k, NcVm *vm, NcCpu *cpu);
+void nc_hle_dirty_init(NcVm *vm);
 void nc_hle_host_flush(void);
 void nc_hle_host_flush_discard(void);
 
