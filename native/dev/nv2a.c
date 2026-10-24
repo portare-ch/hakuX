@@ -519,6 +519,11 @@ void nc_dev_nv2a_display_vsync(uint64_t ns)
     __atomic_store_n(&g_disp_vsync_ns, ns, __ATOMIC_RELEASE);
 }
 
+void nc_dev_nv2a_display_period(uint64_t ns)
+{
+    __atomic_store_n(&g_disp_period_ns, ns, __ATOMIC_RELAXED);
+}
+
 uint64_t nc_dev_nv2a_next_vsync(uint64_t after)
 {
     const uint64_t vs = __atomic_load_n(&g_disp_vsync_ns, __ATOMIC_ACQUIRE);
