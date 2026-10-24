@@ -228,7 +228,9 @@ controls: "controls work, pleasing for a first attempt". In the first four
 minutes the emulated Duke registered 116 button changes; 59.9 fps with
 three dips to 59.2-59.7; no short audio callbacks after the APU's first.
 Over 327 s the title changed its rumble 190 times, all sent to the pad;
-whether the Nova vibrated was not reported.
+whether the Nova vibrated was not reported. After the fix, the owner left
+Burnout 3 with Home + Start ("worked"): `hakux` logged `leaving (Home +
+Start)`, exited 0, and the launcher returned.
 
 ## Local artifacts and device state
 
