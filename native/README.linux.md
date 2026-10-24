@@ -100,8 +100,8 @@ Use a positive `NC_TIMEOUT`. The runner forces graphics off, stores its
 emulated disk/cache under the supplied directory and reports the silent
 audio backend. `--render` in place of `--headless` keeps the renderer on
 without a display and writes a frame every 2 s (`NC_CAPTURE_EVERY`, up to
-`NC_CAPTURE_MAX`) to `<data directory>/frames/`. This developer interface does not change PortareOS's CHD-only
-production library. `vulkan-probe` checks the same portable capability floor
+`NC_CAPTURE_MAX`) to `<data directory>/frames/`. Discs are XISO images;
+CHD is not supported yet. `vulkan-probe` checks the same portable capability floor
 as the renderer and creates a device, but creates no surface and renders no
 frames. It does not establish Linux shared-memory import correctness.
 
