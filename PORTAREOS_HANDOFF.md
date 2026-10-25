@@ -18,6 +18,9 @@ use `/storage/saves/xbox` for the emulated disk and caches. The core still
 ends RetroArch on unload, and when RetroArch lets its Vulkan context go; a
 title's relaunch starts RetroArch again in its place (#11). It lacks reset,
 additional players, core options and save states. Current usage: [native/README.linux.md](native/README.linux.md).
+Issue #8's display checks passed on the Nova on 2026-10-25: through
+RetroArch, Burnout 3 was shown for two refreshes per frame for 10 minutes
+(see "Issue #8" below).
 Android validation is outside this fork's scope and was not performed.
 
 The working checkout began at upstream `98b935311184a11b80b6c2a2993536475ca4c0d3`.
@@ -279,6 +282,49 @@ output to `/var/log/exec.log`. SDL's "Couldn't open /dev/input/event3"
 lines there are the raw controls InputPlumber hides; the virtual pad was
 player 1.
 
+## Issue #8: the display through RetroArch — 2026-10-25
+
+#8's checks ran on the Nova with the image of 2026-10-24 (`next`,
+`248be686`), using the 0.2.1 release's core, bind-mounted over the image's
+0.2.0 for the runs. Each game ran through `runemu.sh`, as the launcher
+starts it, under portare-ch/distribution's `tools/display-trace`, which
+records every vblank, flip, scanout and Mesa commit. Each was checked with
+`tools/display-check --rate 59.94006`, then RetroArch was asked to quit
+(SIGTERM). There was no input: Burnout 3 played its attract loop (the
+Crash Nav globe and in-engine races), and BLACK its logo and title screen.
+
+| Run | Panel | Frames | Shown for two refreshes, from 1 s | Checks |
+| --- | --- | --- | --- | --- |
+| Burnout 3, 10 min 19 s | 120.20 Hz mode, `VRR_ENABLED` 1 | 37096 | 37033 of 37034 | All but one: a 2.6 ms phase jump at 556.9 s, where a commit took 3.15 ms to reach the screen; that frame was still shown twice |
+| Burnout 3, `xbox.vrr=0`, 60 s | 119.88 Hz mode, `VRR_ENABLED` 0 before, during and after | 3546 | 3493 of 3493 | All but the mean interval, which a 152 ms start-up stall in the first 0.4 s skews; from 1 s it is 16.6831 ms |
+| BLACK, 2 min | 120.20 Hz mode, `VRR_ENABLED` 1 | 7125 | 7063 of 7063 | All |
+
+- **No beat.** Burnout 3's mean display interval was 16.6830 ms, against
+  1001/60 = 16.6833 ms. Measured against the content's clock, its
+  per-minute medians stayed within 0.15 ms of each other. Its only two
+  frames shown once came in the first 1.1 s. Eight presents came late, by
+  at most 0.78 ms, and none cost a refresh.
+- **No FIFO wait.** With VRR, `retro_run` took 1.7-1.9 ms on average, at
+  most 4.6 ms after the first 10 s, and each frame reached the screen a
+  median 0.11 ms after its target. On fixed refresh `retro_run` took
+  7.8 ms, because RetroArch's present waits for the refresh, and each
+  frame reached the screen 6.27 ms after its target.
+- **Every game frame once.** Burnout 3 handed over 59.9 new frames per
+  second in every 10 s window after the first; the longest gap between
+  two was 17.6 ms. BLACK handed over 30.0, each one presented by two
+  `retro_run` calls. That is four refreshes per game frame at 120 Hz, as
+  #8 asked.
+- **Pipelines.** Burnout 3 took all 115 of its pipelines from the
+  prebuild, which uses the cache, and compiled none. BLACK started from an
+  empty cache and compiled 7; the slowest took 6.2 ms.
+- **Quit.** SIGTERM ended RetroArch within a second, through 0.2.1's
+  context teardown ("vulkan: RetroArch destroyed the context"), and
+  `runemu.sh` returned 0. After a run with VRR, `VRR_ENABLED` stays 1: the
+  process ends before Mesa lets the CRTC go. The launcher runs VRR itself.
+
+The traces and logs are in `build/evidence/issue-8/` on the development
+host (untracked). The runs' files were removed from the Nova afterwards.
+
 ## Standalone milestone artifacts
 
 - Source: this repository.
@@ -311,10 +357,12 @@ player 1.
 - In-process core shutdown, unload/reload and reset; see
   [LIBRETRO_SPEC.md](LIBRETRO_SPEC.md) for the lifecycle and validation targets.
 - Additional controller ports, core options and save states.
-- Complete the long-run display timing, audio, pause/resume and relaunch
-  checks in the libretro design; investigate rumble when prioritized.
+- Complete the long-run audio, pause/resume and relaunch checks in the
+  libretro design (the display's, #8, are done); investigate rumble when
+  prioritized.
 - Check #11 on the Nova: a relaunching title, and a video driver rebuild
-  mid-game. The relaunch has run only the harness's synthetic title.
+  mid-game. The relaunch has run only the harness's synthetic title. A
+  quit already ends through the context teardown there (2026-10-25).
 - CHD support through a disc-reader abstraction, after the core work.
 
 Retain clean-build evidence and exact dependency pins when changing the core.

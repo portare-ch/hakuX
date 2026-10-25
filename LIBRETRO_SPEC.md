@@ -300,7 +300,17 @@ under Sync to Exact Content Framerate: the goal is no independent pacing
 clock and no fixed-refresh beat, not a ban on FIFO. A 30 fps title gives one
 `retro_run` per 59.94 Hz period with its image repeated, so the kernel shows
 each submission twice; that is expected. The standalone's `start_hakux.sh`
-part of #8 is superseded by this route; the issue's wording should record it.
+part of #8 is superseded by this route, as the issue records.
+
+Measured on the Nova on 2026-10-25 with 0.2.1, through `runemu.sh`, with
+flip traces (PORTAREOS_HANDOFF.md, "Issue #8"):
+- Burnout 3, 10 minutes on the 120.20 Hz mode with VRR: every frame after
+  the first second was shown twice but one, at about 119.88 Hz. Its mean
+  interval was 16.6830 ms against 16.6833 ms, and 59.9 new frames reached
+  RetroArch each second.
+- BLACK showed each of its 30 frames a second for four refreshes.
+- `xbox.vrr=0` gave the 119.88 Hz mode with `VRR_ENABLED` 0, and every
+  frame was shown twice.
 
 ## 13. Build and PortareOS
 
