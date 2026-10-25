@@ -8,6 +8,7 @@ add_library(hakux_libretro SHARED
   "${CMAKE_CURRENT_SOURCE_DIR}/libretro/input.c"
   "${CMAKE_CURRENT_SOURCE_DIR}/libretro/video.c"
   "${CMAKE_CURRENT_SOURCE_DIR}/libretro/vulkan.c"
+  "${CMAKE_CURRENT_SOURCE_DIR}/libretro/options.c"
 )
 target_link_libraries(hakux_libretro PRIVATE hakux_native hakux_hle)
 # libretro_vulkan.h, as RetroArch ships it, includes <libretro.h>

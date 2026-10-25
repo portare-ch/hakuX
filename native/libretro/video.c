@@ -33,14 +33,21 @@ static struct {
     size_t cap;              /* pixels */
     uint32_t gen, swap;      /* the read-back frame's display generation and swap */
     bool dupe_checked, can_dupe;
+    bool widescreen;         /* the console is set to widescreen */
 } g_v;
 
 /* As present.c's auto: the frame's own shape, but a standard-definition
- * frame (640x480, 720x480: under 16:10) is shown 4:3. */
+ * frame (640x480, 720x480: under 16:10) is shown 4:3, or 16:9 when the
+ * console is set to widescreen (the title renders anamorphic into it). */
 static float aspect_of(uint32_t w, uint32_t h)
 {
     const float fa = (float)w / (float)h;
-    return fa < 1.6f ? 4.0f / 3.0f : fa;
+    return fa >= 1.6f ? fa : g_v.widescreen ? 16.0f / 9.0f : 4.0f / 3.0f;
+}
+
+void nc_lr_video_set_widescreen(bool on)
+{
+    g_v.widescreen = on;
 }
 
 void nc_lr_video_geometry(struct retro_game_geometry *g)

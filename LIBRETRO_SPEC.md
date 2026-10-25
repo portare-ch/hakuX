@@ -259,9 +259,15 @@ Run-ahead stays off for hakuX, now and after section 11:
 the Xbox system ships a RetroArch override with `run_ahead_enabled =
 "false"`. RetroArch must never load a second hakuX instance into the process.
 
-Options: only what the emulator backs (video region and language, widescreen),
-with what needs a reset said so. No display, VRR, latency, mapping or scaling
-options.
+Options (`options.c`): only what the emulator backs. The render scale (1-4x),
+and the console's own settings as its dashboard keeps them: screen format
+(normal, widescreen, letterbox), language (auto: RetroArch's) and video region
+(auto: the game's; NTSC-M, NTSC-J, PAL). PAL60 is always set, as RetroArch runs
+at 59.94 Hz; 480p, 720p and 1080i stay off. All of them are read before the
+console boots, so a change takes effect when the game starts next, and
+RetroArch shows a message saying so. No display, VRR, latency, mapping or
+filter options: FXAA and the picture's shape are RetroArch's shaders and
+aspect setting, and SGSR is not offered (owner, 2026-10-25).
 
 Data: the console's hard disk and caches live in the save directory
 RetroArch gives (`hdd/`, `cache/`); caches can be rebuilt, the disk cannot.

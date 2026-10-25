@@ -184,6 +184,7 @@ RETRO_API void retro_set_environment(retro_environment_t cb)
     g_env = cb;
     bool no_game = false;
     cb(RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &no_game);
+    nc_lr_options_declare(cb);
 }
 
 RETRO_API void retro_set_video_refresh(retro_video_refresh_t cb)
@@ -275,7 +276,7 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
     nc_io_set_hdd_root(hdd);
     setenv("HAKUX_HLE_MODE", "replace", 0);
     setenv("HAKUX_NATIVE_BASE", cache, 1);
-    nc_kernel_set_video(-1, NC_AV_PACK_HDTV);
+    nc_lr_options_apply();                          /* the render scale, the console's settings */
     nc_dev_nv2a_display_period(NC_LR_FRAME_NS);    /* retro_run's: the vblank locks one to one */
     nc_hle_set_pipeline_options(true, true);   /* the app's defaults */
 
@@ -459,6 +460,7 @@ RETRO_API void retro_run(void)
     const uint64_t tv = now_ns();
     nc_lr_video_run(g_video, now);
     run_stat(now, tv, now_ns());
+    nc_lr_options_run();
 
     const char *why = __atomic_load_n(&g_fail, __ATOMIC_ACQUIRE);
     why = why ? why : __atomic_load_n(&g_core_state, __ATOMIC_ACQUIRE) < 0 ? "the core stopped" : nc_hle_fatal();
