@@ -40,12 +40,12 @@ SETTINGS = (
 )
 
 
-def cycles(command, env, n):
+def cycles(command, env, n, expect=None):
     """The harness's game cycles (HARNESS_CYCLES): each cycle's threads,
     descriptors and memory; the last as the second, up to a margin (the
     first may leave FEX's allocator a heap for the frontend's thread, once:
     nc_cpu_destroy runs there). The signal handlers after each, as before
-    the core."""
+    the core. expect: a line each cycle logs."""
     result = subprocess.run([str(x) for x in command], env=dict(env, HARNESS_CYCLES=str(n)), capture_output=True,
                             text=True, timeout=300)
     rows = [tuple(int(v) for v in m) for m in re.findall(
@@ -53,9 +53,11 @@ def cycles(command, env, n):
     stops = result.stdout.count('the core stopped in') + result.stderr.count('the core stopped in')
     before = re.findall(r'signals caught before the core: (\w+)', result.stdout)
     caught = re.findall(r'cycle \d+: .*, signals caught (\w+)', result.stdout)
-    if result.returncode or len(rows) != n or stops < n:
+    seen = (result.stdout + result.stderr).count(expect) if expect else n
+    if result.returncode or len(rows) != n or stops < n or seen < n:
         print(result.stdout[-4000:], result.stderr[-4000:])
-        raise SystemExit(f'FAIL: {n} cycles of {command[2]}: exit {result.returncode}, {len(rows)} cycles, {stops} stops')
+        raise SystemExit(f'FAIL: {n} cycles of {command[2]}: exit {result.returncode}, {len(rows)} cycles, {stops} stops'
+                         + (f', {seen} times {expect!r}' if expect else ''))
     left = sorted({m for m in caught if m != before[0]}) if before else ['?']
     if left or len(caught) != n:
         raise SystemExit(f'FAIL: {n} cycles of {command[2]} left signal handlers behind: SigCgt '
@@ -187,6 +189,14 @@ def main():
             ('guest executed HLT', 'unload: the core stopped in', 'load again: loaded'),
             dict(os.environ, HARNESS_LOAD_AGAIN='1'))
         print('PASS: the relaunch booted the XBE its page named')
+        # A boot that fails at any stage leaves nothing behind either: each
+        # stage's failure five times in one process, the renderer's also on
+        # the frontend's device.
+        for stage in ('kernel', 'disc', 'xbe', 'cpu', 'thread', 'hle'):
+            cycles([args.harness, args.core, root / 'halt.iso', 60, root / 'saves'],
+                   dict(os.environ, NC_BOOT_FAIL_AT=stage), 5, f'boot: failing after {stage}')
+        cycles([args.harness, args.core, root / 'halt.iso', 60, root / 'saves'],
+               dict(os.environ, NC_BOOT_FAIL_AT='hle', HARNESS_VULKAN='1'), 5, 'boot: failing after hle')
         # PortareOS's build: a stop that outlasts its watchdog (here any: 1 ms)
         # ends the process. Outside it the stop waits, and HAKUX_LR_STOP=0
         # changes nothing.

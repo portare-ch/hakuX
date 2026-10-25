@@ -203,9 +203,11 @@ the same process.
 
 The harness checks it (`tests/native/libretro/check.py`): 100 cycles of a
 title that halts and 20 of one that spins in a tight loop, with and without
-the renderer, on the harness's own Vulkan device and on a shared one, each
-leaving one thread, the same descriptors and signal handlers, and memory
-within a margin.
+the renderer, on the harness's own Vulkan device and on a shared one, and
+boots made to fail after each stage (`NC_BOOT_FAIL_AT`: the kernel, the
+disc, the XBE, the CPU, the boot thread, the HLE GPU), each leaving one
+thread, the same descriptors and signal handlers, and memory within a
+margin.
 
 PortareOS's build (`HAKUX_LR_END_PROCESS`, on in its package) may end
 RetroArch's process, as every closed game did before M2:
@@ -389,7 +391,7 @@ comparison until the core passes its gates.
 | --- | --- | --- |
 | M0 | The shared library builds; a harness loads it; an inventory of threads, mappings, handlers and FEX globals; a `create_device2` probe | It loads into a frontend in process and exports only `retro_*`. |
 | M1 | First picture in RetroArch: phase-locked `retro_run`, the libretro audio sink, port 0, the menu's pause | BLACK and Burnout 3 play in RetroArch on the Nova (CPU readback allowed here). Until M2, unloading ends RetroArch's process; the owner chose to package it before M2 (2026-10-24), as quitting a game ends RetroArch on PortareOS anyway. Until then RetroArch letting its Vulkan context go ends the process too, and a title's relaunch starts RetroArch again in its place, on the same command line (#11). That is PortareOS's build (`HAKUX_LR_END_PROCESS`); other builds parked the emulation and kept RetroArch running, until M2. |
-| M2 | A stoppable core | 100 load/run/unload cycles in one process; a CPU in a tight loop stops; failure at each boot stage cleans up; no threads, mappings, fds or handlers left. Status (2026-10-25): the cycles pass in the container's harness and on the Nova (Burnout 3, 100 and 200 cycles, renderer on), with the leftovers section 6 lists; failures injected at each boot stage and Android are still to do. |
+| M2 | A stoppable core | 100 load/run/unload cycles in one process; a CPU in a tight loop stops; failure at each boot stage cleans up; no threads, mappings, fds or handlers left. Status (2026-10-25): the cycles pass in the container's harness and on the Nova (Burnout 3, 100 and 200 cycles, renderer on), with the leftovers section 6 lists, and boots that fail at each stage clean up (the container). Android is still to do. |
 | M3 | Vulkan handoff | `create_device2`, `set_image`, the queue lock, gamma; no readback; context reset works or fails cleanly. RetroArch only negotiates when the v1 `create_device` is set too (it then calls `create_device2`). |
 | M4 | PortareOS integration and #8 | The package, the launcher entry, the data folder, ports 0-3, reset and relaunch, run-ahead off; the device checks below. |
 | M5 | Save states | Section 11. |
