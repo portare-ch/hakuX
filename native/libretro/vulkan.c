@@ -198,7 +198,11 @@ bool nc_lr_vk_negotiate(void)
         .version_major = VK_API_VERSION_1_3,
         .context_reset = context_reset,
         .context_destroy = context_destroy,
-        .cache_context = true,      /* the renderer can't move to another device */
+        /* A reinit with the context cached keeps the device but rebuilds
+         * RetroArch's driver, and with it the render interface and the
+         * queue lock's handle the core holds: uncached, RetroArch lets the
+         * context go (the core stops) and makes another (it boots again). */
+        .cache_context = false,
     };
     static const struct retro_hw_render_context_negotiation_interface_vulkan iface = {
         .interface_type = RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN,

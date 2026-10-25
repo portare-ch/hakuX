@@ -177,6 +177,12 @@ def main():
              'RetroArch destroyed the context: the core stopped in', 'stop: the front end stopped the console',
              'back end started'),
             dict(os.environ, HARNESS_VULKAN='1', HARNESS_RESET_AT='20'))
+        # RetroArch rebuilding its video driver: the core stops off the old
+        # device and boots the game again on the new one, and says so.
+        run([args.harness, args.core, root / 'spin.iso', 60, root / 'saves'], 0,
+            ('video driver rebuilt at frame 20', 'RetroArch destroyed the context: the core stopped in',
+             'message: RetroArch rebuilt its video driver: the game starts again', 'ran 60 frames'),
+            dict(os.environ, HARNESS_VULKAN='1', HARNESS_REINIT_AT='20'))
         run([args.harness, args.core, root / 'relaunch.iso', 600, root / 'saves'], 0,
             ('relaunch into \\default.xbe', 'relaunch: the game boots again in RetroArch\'s process',
              'relaunch: the core stopped in', 'relaunch: \\Device\\CdRom0\\default.xbe', 'guest executed HLT',

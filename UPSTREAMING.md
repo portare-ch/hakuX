@@ -153,9 +153,10 @@ Steps 0, 1 and 6 help PortareOS on their own and need nobody outside.
 
 Progress, 2026-10-25: steps 1 and 0 are on the branches
 `portareos/upstream-1.1.0` (the merge) and `portareos/upstream-prep` (the
-fix-ups), not merged yet. Both build for Android with NDK r29. A video driver
-rebuild mid-game is still unchecked, because RetroArch's network commands
-can't trigger one on the Nova. Step 6 (M2) is on `m2-stop`.
+fix-ups), not merged yet. Both build for Android with NDK r29. Step 6 (M2)
+is on `m2-stop`. A video driver rebuild mid-game (`VIDEO_REINIT`, which
+PortareOS's RetroArch has) crashed RetroArch until the core stopped letting
+it cache the context.
 
 ## 6. If upstream doesn't take it
 

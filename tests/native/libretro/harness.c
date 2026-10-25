@@ -19,6 +19,9 @@
  * HARNESS_VULKAN=1: the core renders on a Vulkan device the harness's
  * frontend (vk.c) negotiates with it, as RetroArch does, without a window.
  * HARNESS_RESET_AT=N: retro_reset before the Nth retro_run.
+ * HARNESS_REINIT_AT=N (with HARNESS_VULKAN): before the Nth, the video
+ * driver rebuilt as RetroArch does it uncached: context_destroy, another
+ * device negotiated, context_reset.
  * HARNESS_CYCLES=N: the game loaded, run and unloaded N times, the core
  * closed and opened again between, as RetroArch does between games; after
  * each, the core closed, the threads, descriptors, memory and signal
@@ -390,11 +393,25 @@ static int play(const struct retro_game_info *game, long frames)
     const double t0 = (double)start.tv_sec * 1e9 + (double)start.tv_nsec;
     long ran = 0;
     const long reset_at = getenv("HARNESS_RESET_AT") ? atol(getenv("HARNESS_RESET_AT")) : -1;
+    const long reinit_at = getenv("HARNESS_REINIT_AT") ? atol(getenv("HARNESS_REINIT_AT")) : -1;
     for (; ran < frames && !g_shutdown; ran++) {
         if (ran == reset_at) {              /* RetroArch's Reset (Restart) */
             printf("reset at frame %ld\n", ran);
             fflush(stdout);
             p_retro_reset();
+        }
+        if (ran == reinit_at && g_hw.context_reset) {   /* RetroArch's video driver rebuilt, uncached */
+            printf("video driver rebuilt at frame %ld\n", ran);
+            fflush(stdout);
+            if (g_hw.context_destroy) {
+                g_hw.context_destroy();
+            }
+            hv_destroy();
+            if (!hv_create(g_neg)) {
+                fprintf(stderr, "FAIL: no Vulkan device for the core after the rebuild\n");
+                return 1;
+            }
+            g_hw.context_reset();
         }
         const unsigned before = g_video_calls;
         p_retro_run();
