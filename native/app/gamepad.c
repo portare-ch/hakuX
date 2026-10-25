@@ -1,6 +1,6 @@
 /*
  * hakuX native core, app front end — a modern gamepad read as the Duke
- * (shared by the Android and Linux front ends).
+ * (app_main.c's).
  */
 #include "native/app/app.h"
 

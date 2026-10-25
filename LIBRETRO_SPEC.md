@@ -102,8 +102,8 @@ native/core/lifecycle.c       stop, join and destroy, below both front ends
 tests/native/libretro/        a small frontend harness
 ```
 
-Shared mechanisms go below both front ends; `hakux` (standalone) stays for
-comparison and uses the same stop path instead of `_exit`.
+Shared mechanisms go below the front ends. The Linux standalone `hakux` was
+dropped in 0.4.0, as it wasn't tested; the core is the Linux front end.
 
 ## 5. Phase-locked frames
 
@@ -330,9 +330,8 @@ Data: the console's hard disk and caches live in the save directory
 RetroArch gives (`hdd/`, `cache/`); caches can be rebuilt, the disk cannot.
 On PortareOS that is `/storage/saves/xbox`, beside `/storage/roms/xbox` and
 `/storage/bios/xbox` (owner's layout, 2026-10-24): RetroArch's save
-directory for the core is set to it, and `start_hakux.sh` uses it too, so
-both front ends share one console disk. The standalone's
-`/storage/.config/hakux` (since portare-ch/portareos#752) moves there once. A lock keeps two sessions off the same disk. No `chdir`, no
+directory for the core is set to it. The old standalone's
+`/storage/.config/hakux` (since portare-ch/portareos#752) moved there once. A lock keeps two sessions off the same disk. No `chdir`, no
 `setenv` for paths after load: the renderer's mode and cache directory are
 set through `nc_hle_set_mode` and `nc_hle_set_base_path`. A title's relaunch stays in process (with `HAKUX_LR_STOP=0`, in PortareOS's build RetroArch starts again in its place, #11; in others the game closes).
 
@@ -382,11 +381,11 @@ flip traces (PORTAREOS_HANDOFF.md, "Issue #8"):
 libraries as PIC. See the [Linux build and packaging instructions](native/README.linux.md).
 
 The object exports only `retro_*`, needs no SDL, Android or build-tree
-RUNPATH, and embeds no Vulkan loader. Package as `hakux-lr` from a release,
-as `hakux-sa` is: `/usr/lib/libretro/hakux_libretro.so` and its `.info`
+RUNPATH, and embeds no Vulkan loader. PortareOS packages it as `hakux-lr`
+from a release: `/usr/lib/libretro/hakux_libretro.so` and its `.info`
 (RetroArch loads them from `/tmp/cores`), the SM8550 dependency, and the Xbox
-core registration; check the generated `es_systems.cfg`. Keep `hakux-sa` for
-comparison until the core passes its gates.
+core registration; check the generated `es_systems.cfg`. The release tarball
+holds only the core since 0.4.0.
 
 ## 14. Milestones
 

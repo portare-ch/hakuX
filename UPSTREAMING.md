@@ -64,7 +64,7 @@ licence is GPL-3.0-or-later, as here.
 | Console setting APIs | `native/kernel/ex.c`, `kernel.h` | rfandango/hakuX | `nc_kernel_set_av_region`; defaults keep the app's behaviour |
 | libretro core | `native/libretro/*`, `native/cmake/libretro.cmake` | rfandango/hakuX, in tree as PPSSPP does; or this fork (section 6) | Section 4 lists what it still lacks |
 | Tests | `tests/native/linux`, `tests/native/libretro` | With their targets | CTest; no device needed |
-| Linux standalone `hakux` and tools | `native/app/linux_main.c`, `present.c` and `gamepad.c` changes, `native/dev/apu/out_*.c`, `native/run/*` | rfandango/hakuX, optional | PortareOS no longer ships `hakux` |
+| Linux diagnostics, and the app's shared front-end code | `native/run/*`, `native/dev/apu/out_null.c`, the `present.c` and `gamepad.c` changes | rfandango/hakuX, optional | The Linux standalone `hakux` was dropped in 0.4.0: untested, and PortareOS no longer shipped it |
 | Release packaging | `tools/native/linux-package.sh`, `BUILD-INFO`, `linux-v*` tags | This fork, or portare-ch/distribution | What `hakux-lr` pins today |
 | Design documents | `SPEC.md`, `LIBRETRO_SPEC.md` | rfandango/hakuX, without the PortareOS specifics | Their device sections stay here |
 | PortareOS notes | `PORTAREOS_HANDOFF.md`, `README.md`'s PortareOS text, `CHANGELOG.md`'s `linux-v*` sections | This fork | Upstream gets a "Linux and RetroArch" section in its README; the `HANDOFF.md` edits are reverted |
@@ -94,9 +94,8 @@ licence is GPL-3.0-or-later, as here.
   each pull request should say whether it built.
 - **No PortareOS in shared code.** The libretro gate in `native/CMakeLists.txt`
   ("The libretro core is for Linux (PortareOS)") becomes Android and Linux. The
-  comments that cite PortareOS, the Nova or InputPlumber in `linux_main.c`,
-  `out_sdl.c`, `linux-app.cmake` and `core.c` become general or move to this
-  fork's notes.
+  comments that cite PortareOS, the Nova or InputPlumber in `core.c` become
+  general or move to this fork's notes.
 - **A way in.** With issues disabled, the first contact is a small pull request
   (the portability shims) that explains the series. Given #7 and #8, set a time
   limit; section 6 is the fallback.
@@ -144,7 +143,7 @@ licence is GPL-3.0-or-later, as here.
 | 2 | Pull request: portability shims and the Linux build | rfandango/hakuX | Upstream reviews it, or the time limit passes |
 | 3 | Pull request: exact vblank, shared-device Vulkan, console setting APIs | rfandango/hakuX | Android unchanged in upstream's own checks |
 | 4 | Pull request: the libretro target, its tests, the Linux docs | rfandango/hakuX | CTest in upstream's tree |
-| 5 | Pull request, optional: the Linux standalone and its tools | rfandango/hakuX | Only if upstream wants a Linux app |
+| 5 | Pull request, optional: the Linux diagnostics | rfandango/hakuX | Only if upstream wants them |
 | 6 | M2: stop, unload, load again, reset | Wherever the core lives | LIBRETRO_SPEC's M2 gate: 100 load/run/unload cycles in one process, nothing left behind |
 | 7 | libretro submission: CI file, info file, docs page | libretro-super, libretro's docs, the core's tree | The buildbot builds Linux AArch64 and Android arm64 |
 | 8 | PortareOS on the upstream source | portare-ch/distribution | `hakux-lr` builds or fetches the upstream core with the PortareOS build option, at a pinned commit |
@@ -175,8 +174,8 @@ PortareOS is unchanged either way.
    from the start.
 2. **M2's priority:** needed for general RetroArch, Android especially, though
    PortareOS gains nothing from it on its own.
-3. **The Linux standalone `hakux`:** offer it upstream, or keep it here as a
-   development tool.
+3. **The Linux standalone `hakux`:** dropped (2026-10-25), as it wasn't
+   tested.
 4. **First contact:** who approaches upstream, and how, with issues
    disabled.
 5. **`systemid`:** change it to `"xbox"` now. Neither portare-ch/distribution

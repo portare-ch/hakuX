@@ -2,8 +2,8 @@
  * hakuX native core — the APU's output in the libretro core: 48 kHz 16-bit
  * stereo, handed to RetroArch from retro_run.
  *
- * As out_sdl.c's: the frame thread pushes each EP frame into a ring, and one
- * consumer drains it (two counters). The consumer is retro_run, which takes
+ * The frame thread pushes each EP frame into a ring, and one consumer
+ * drains it (two counters). The consumer is retro_run, which takes
  * one emulated period's samples each call (800.8 frames on average at
  * 60000/1001 Hz, through a fractional accumulator): the APU sees it as a device's
  * callback of one period and keeps the ring between one and three of them,

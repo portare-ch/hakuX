@@ -3,15 +3,8 @@
 
 void nc_audio_set_paused(bool on);
 
-/* SDL's output (out_sdl.c) goes at its device's pace: SDL's dummy driver,
- * CTest's, runs a sixth slow; PipeWire on the Nova drains 57600 bytes. */
-#ifdef AUDIO_DEVICE_PACED
-#define MIN_DRAINED 40320
-#define MIN_CALLBACKS 20
-#else
 #define MIN_DRAINED 48000
 #define MIN_CALLBACKS 25
-#endif
 
 static void check(bool ok, const char *what)
 {

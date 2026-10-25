@@ -13,12 +13,14 @@ PR #5 as `1a058f38dd`, and day four, controls, in PR #6 as `8d32ef4afd`.
 Day five, the launcher, merged in PR #7 as `93bad3d7fe`; the libretro core
 and Vulkan handoff merged in PR #10 as `100e9fadef`.
 
-PortareOS defaults to RetroArch; the standalone remains selectable. Both
-use `/storage/saves/xbox` for the emulated disk and caches. The core still
-ends RetroArch on unload, and when RetroArch lets its Vulkan context go; a
-title's relaunch starts RetroArch again in its place (#11). It lacks reset,
-additional players and save states; its options are the render scale and
-the console's settings. Current usage: [native/README.linux.md](native/README.linux.md).
+Since 0.4.0 (2026-10-25), PortareOS runs Xbox games only through RetroArch
+with the core, which keeps the emulated disk and caches in
+`/storage/saves/xbox`. The Linux standalone `hakux` was dropped: it wasn't
+tested, and PortareOS had stopped shipping it in portare-ch/portareos#754.
+The sections on it below are history. The core stops and boots again in
+RetroArch's process (M2: unloading, a reset, a title's relaunch, a video
+driver rebuild). It lacks additional players and save states; its options
+are the render scale and the console's settings. Current usage: [native/README.linux.md](native/README.linux.md).
 Issue #8's display checks passed on the Nova on 2026-10-25: through
 RetroArch, Burnout 3 was shown for two refreshes per frame for 10 minutes
 (see "Issue #8" below).
