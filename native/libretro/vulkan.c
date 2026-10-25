@@ -190,6 +190,11 @@ static void context_destroy(void)
     g_vk = NULL;
 }
 
+void nc_lr_vk_reset(void)
+{
+    g_hw = false;           /* the next load negotiates again (a frontend without Vulkan reads back) */
+}
+
 void nc_lr_vk_park(void)
 {
     if (!g_vk) {

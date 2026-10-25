@@ -68,6 +68,9 @@ NcUsbDev *nc_usb_find(NcUsbDev *d, uint8_t addr);
 
 /* usb_hub.c: a hub with nports downstream ports (1-based). */
 NcUsbDev *nc_usb_hub_new(unsigned nports);
+/* A device made by nc_usb_hub_new or nc_xid_gamepad_new freed, with what
+ * hangs off it (NULL: nothing). */
+void nc_usb_dev_free(NcUsbDev *d);
 void nc_usb_hub_attach(NcUsbDev *hub, unsigned port, NcUsbDev *child);
 
 /* Savestates: a hub's ports (status and change, 1-based, up to 4) and the
@@ -105,6 +108,10 @@ void nc_pad_rumble(unsigned player, uint16_t *left, uint16_t *right);
  * for the players in NC_PAD_MASK (or NC_PADS from player 1; default 1). */
 struct NcVm;
 void nc_dev_ohci_init(struct NcVm *vm);
+/* The frame thread stopped and joined; then the controller's devices freed
+ * and its state cleared, for another init. */
+void nc_dev_ohci_stop(void);
+void nc_dev_ohci_free(void);
 
 #ifdef __cplusplus
 }

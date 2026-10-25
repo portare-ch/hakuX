@@ -56,7 +56,13 @@ void nc_hle_pipeline_progress(uint32_t *done, uint32_t *total);
  * dropped when nothing is translated yet. */
 extern HleCpu nc_hle_regs;
 void nc_hle_host_init(NcKernel *k, NcVm *vm, NcCpu *cpu);
+/* The core stopped (the renderer before it): the native side's state as in a
+ * new process (the pc sampler's SIGPROF handler gone, no fatal error, the
+ * HLE off), the front end's settings kept. */
+void nc_hle_native_reset(void);
+void nc_hle_host_reset(void);
 void nc_hle_dirty_init(NcVm *vm);
+void nc_hle_dirty_reset(void);
 void nc_hle_host_flush(void);
 void nc_hle_host_flush_discard(void);
 

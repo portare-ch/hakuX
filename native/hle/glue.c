@@ -256,3 +256,23 @@ void nc_hle_after_sysop(NcKernel *k)
     nc_hle_watch_rearm();
     nc_hle_host_flush();
 }
+
+void nc_hle_native_reset(void)
+{
+    if (g_smp_ready) {
+        struct sigaction dfl;
+        memset(&dfl, 0, sizeof(dfl));
+        dfl.sa_handler = SIG_DFL;
+        sigemptyset(&dfl.sa_mask);
+        sigaction(SMP_SIGNAL, &dfl, NULL);
+        g_hle_pc_sampler = NULL;
+        g_smp_ready = false;
+    }
+    memset(&g_smp_thread, 0, sizeof(g_smp_thread));
+    g_cpu = NULL;
+    g_fs_base = 0;
+    g_active = false;
+    g_fatal[0] = 0;
+    g_fatal_kind = NC_FATAL_NONE;
+    nc_hle_host_reset();
+}

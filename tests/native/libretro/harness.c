@@ -18,6 +18,7 @@
  *
  * HARNESS_VULKAN=1: the core renders on a Vulkan device the harness's
  * frontend (vk.c) negotiates with it, as RetroArch does, without a window.
+ * HARNESS_RESET_AT=N: retro_reset before the Nth retro_run.
  * HARNESS_CYCLES=N: the game loaded, run and unloaded N times, the core
  * closed and opened again between, as RetroArch does between games; each
  * cycle's threads, descriptors and memory are printed.
@@ -31,6 +32,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #define SYMS(X)                                                                                              \
     X(retro_api_version, unsigned (*)(void))                                                                 \
@@ -295,7 +297,13 @@ static int play(const struct retro_game_info *game, long frames)
     clock_gettime(CLOCK_MONOTONIC, &start);
     const double t0 = (double)start.tv_sec * 1e9 + (double)start.tv_nsec;
     long ran = 0;
+    const long reset_at = getenv("HARNESS_RESET_AT") ? atol(getenv("HARNESS_RESET_AT")) : -1;
     for (; ran < frames && !g_shutdown; ran++) {
+        if (ran == reset_at) {              /* RetroArch's Reset (Restart) */
+            printf("reset at frame %ld\n", ran);
+            fflush(stdout);
+            p_retro_reset();
+        }
         const unsigned before = g_video_calls;
         p_retro_run();
         g_ran = ran + 1;
@@ -369,6 +377,13 @@ int main(int argc, char **argv)
                    count_dir("/proc/self/task"), count_dir("/proc/self/fd"), status_kib("VmSize:"),
                    status_kib("VmRSS:"));
             fflush(stdout);
+            if (getenv("HARNESS_MAPS")) {   /* debug: the mappings after each cycle, to a file */
+                char cmd[256];
+                snprintf(cmd, sizeof(cmd), "cat /proc/%d/maps > %s.%d", (int)getpid(), getenv("HARNESS_MAPS"), c + 1);
+                if (system(cmd) != 0) {
+                    fprintf(stderr, "maps: %s failed\n", cmd);
+                }
+            }
         }
     }
     close_core();

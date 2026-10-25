@@ -3,6 +3,7 @@
 import argparse
 import os
 from pathlib import Path
+import re
 import struct
 import subprocess
 import sys
@@ -37,6 +38,27 @@ SETTINGS = (
     b'\xff\x15\x00\x0f\x01\x00'      # call [thunk 0]: ExQueryNonVolatileSetting
     b'\xf4'                          # hlt
 )
+
+
+def cycles(command, env, n):
+    """The harness's game cycles (HARNESS_CYCLES): each cycle's threads,
+    descriptors and memory; the last as the second, up to a margin (the
+    first may leave FEX's allocator a heap for the frontend's thread, once:
+    nc_cpu_destroy runs there)."""
+    result = subprocess.run([str(x) for x in command], env=dict(env, HARNESS_CYCLES=str(n)), capture_output=True,
+                            text=True, timeout=300)
+    rows = [tuple(int(v) for v in m) for m in re.findall(
+        r'cycle \d+: (\d+) threads, (\d+) descriptors, VmSize (\d+) KiB, VmRSS (\d+) KiB', result.stdout)]
+    stops = result.stdout.count('the core stopped in') + result.stderr.count('the core stopped in')
+    if result.returncode or len(rows) != n or stops < n:
+        print(result.stdout[-4000:], result.stderr[-4000:])
+        raise SystemExit(f'FAIL: {n} cycles of {command[2]}: exit {result.returncode}, {len(rows)} cycles, {stops} stops')
+    first, last = rows[1], rows[-1]
+    if last[0] != first[0] or last[1] != first[1] or last[2] - first[2] > 4096 or last[3] - first[3] > 64 * 1024:
+        raise SystemExit(f'FAIL: {n} cycles of {command[2]} left something behind: {first} then {last} '
+                         '(threads, descriptors, VmSize KiB, VmRSS KiB)')
+    print(f'PASS: {n} cycles of {Path(command[2]).name} in one process: {last[0]} thread(s) and {last[1]} '
+          f'descriptor(s) after each, VmSize {first[2]} to {last[2]} KiB, VmRSS {first[3]} to {last[3]} KiB')
 
 
 def dynamic_exports(path):
@@ -128,6 +150,21 @@ def main():
         run([args.harness, args.core, root / 'spin.iso', 60, root / 'saves'], 0,
             ('options: render scale 1x', 'message: Render Scale, Video Region: takes effect when the game starts next',
              'ran 60 frames'), env)
+        # M2: the core stops in the process and boots again, with the
+        # renderer off (its teardown is M2's next part): 100 games, a CPU in
+        # a loop that never enters the kernel, a reset, a title's relaunch.
+        m2 = dict(os.environ, HAKUX_HLE_MODE='off')
+        cycles([args.harness, args.core, root / 'halt.iso', 600, root / 'saves'], m2, 100)
+        cycles([args.harness, args.core, root / 'spin.iso', 20, root / 'saves'], m2, 20)
+        run([args.harness, args.core, root / 'spin.iso', 60, root / 'saves'], 0,
+            ('reset at frame 20', 'reset: the core stopped in', 'ran 60 frames', 'unload: the core stopped in',
+             'stop: the front end stopped the console'), dict(m2, HARNESS_RESET_AT='20'))
+        run([args.harness, args.core, root / 'relaunch.iso', 600, root / 'saves'], 0,
+            ('relaunch into \\default.xbe', 'relaunch: the game boots again in RetroArch\'s process',
+             'relaunch: the core stopped in', 'relaunch: \\Device\\CdRom0\\default.xbe', 'guest executed HLT',
+             'unload: the core stopped in'), m2)
+        if (root / 'saves' / 'relaunch.bin').exists():
+            raise SystemExit('FAIL: the relaunch in the process left its launch data page')
         # Outside PortareOS's build the emulation parks when the game closes,
         # the frontend runs on, and a second game is refused: after a title
         # that stopped, and with the CPU in a loop that never enters the

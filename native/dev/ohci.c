@@ -128,6 +128,12 @@ typedef struct Ohci {
 } Ohci;
 
 static Ohci g_ohci;
+/* The frame thread (outside Ohci, whose layout the savestate keeps): quit
+ * under g_ohci.lock (nc_dev_ohci_stop). */
+static struct {
+    pthread_t th;
+    bool started, quit;
+} g_ohci_thr;
 static bool g_trace; /* NC_TRACE_USB: every transfer but NAKed polls */
 
 static uint64_t now_ns(void)
@@ -518,12 +524,15 @@ static void *frame_thread(void *arg)
     struct timespec next;
     clock_gettime(CLOCK_MONOTONIC, &next);
     pthread_mutex_lock(&o->lock);
-    for (;;) {
-        while ((o->ctl & CTL_HCFS) != HCFS_OPERATIONAL) {
+    while (!g_ohci_thr.quit) {
+        while (!g_ohci_thr.quit && (o->ctl & CTL_HCFS) != HCFS_OPERATIONAL) {
             nc_pause_idle(true);            /* nothing to do until the guest starts the controller */
             pthread_cond_wait(&o->run, &o->lock);
             nc_pause_idle(false);
             clock_gettime(CLOCK_MONOTONIC, &next);
+        }
+        if (g_ohci_thr.quit) {
+            break;
         }
         frame(o);
         pthread_mutex_unlock(&o->lock);
@@ -540,6 +549,7 @@ static void *frame_thread(void *arg)
         }
         pthread_mutex_lock(&o->lock);
     }
+    pthread_mutex_unlock(&o->lock);
     return NULL;
 }
 
@@ -718,12 +728,36 @@ void nc_dev_ohci_init(struct NcVm *vm)
     };
     nc_mmio_register(&dev);
 
-    pthread_t t;
-    pthread_create(&t, NULL, frame_thread, o);
-    pthread_detach(t);
+    g_ohci_thr.quit = false;
+    g_ohci_thr.started = pthread_create(&g_ohci_thr.th, NULL, frame_thread, o) == 0;
     nc_log("hakuX-native-usb", "ohci: %u controller(s) (players %s%s%s%s)%s", players, mask & 1 ? "1" : "",
            mask & 2 ? "2" : "", mask & 4 ? "3" : "", mask & 8 ? "4" : "",
            front_hub ? " behind the front panel hub" : "");
+}
+
+void nc_dev_ohci_stop(void)
+{
+    Ohci *o = &g_ohci;
+    if (!g_ohci_thr.started) {
+        return;
+    }
+    pthread_mutex_lock(&o->lock);
+    g_ohci_thr.quit = true;
+    pthread_cond_broadcast(&o->run);
+    pthread_mutex_unlock(&o->lock);
+    pthread_join(g_ohci_thr.th, NULL);  /* within a frame (1 ms), or at once when idle */
+    g_ohci_thr.started = false;
+}
+
+void nc_dev_ohci_free(void)
+{
+    Ohci *o = &g_ohci;
+    for (unsigned p = 0; p < ROOT_PORTS; p++) {
+        nc_usb_dev_free(o->dev[p]);
+    }
+    pthread_mutex_destroy(&o->lock);
+    pthread_cond_destroy(&o->run);
+    memset(o, 0, sizeof(*o));
 }
 
 /* ---------------------------------------------------------- savestates */

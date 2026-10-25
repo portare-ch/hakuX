@@ -831,3 +831,10 @@ void nc_ex_register(NcKernel *k)
     nc_kernel_impl(k, "KeRestoreFloatingPointState", KeFloatingPointState);
     nc_kernel_impl(k, "KeInitializeDpc", KeInitializeDpc);
 }
+
+void nc_ex_reset(void)
+{
+    memset(g_eeprom, 0, sizeof(g_eeprom));
+    g_eeprom_ready = false;     /* the next title reads it again, with the front end's settings */
+    g_av_saved = 0;
+}

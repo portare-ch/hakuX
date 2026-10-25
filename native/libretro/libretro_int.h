@@ -47,6 +47,8 @@ void nc_lr_video_geometry(struct retro_game_geometry *g);
 void nc_lr_overscan(uint32_t w, uint32_t h, uint32_t *cx, uint32_t *cy);
 void nc_lr_video_size(uint32_t w, uint32_t h, uint32_t ow, uint32_t oh);
 void nc_lr_video_set_widescreen(bool on);
+/* The game unloaded: the frame state and its read-back buffer gone. */
+void nc_lr_video_reset(void);
 void nc_lr_video_set_crop(bool on);
 
 /* options.c — the core options: declared to the frontend
@@ -66,5 +68,7 @@ bool nc_lr_vk_run(retro_video_refresh_t video);
 /* The renderer off RetroArch's device for good (park), the frames' images
  * released: RetroArch may destroy the device after. */
 void nc_lr_vk_park(void);
+/* The game unloaded (after context_destroy): the negotiation forgotten. */
+void nc_lr_vk_reset(void);
 
 #endif

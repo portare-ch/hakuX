@@ -47,6 +47,12 @@ static float aspect_of(uint32_t w, uint32_t h)
     return fa >= 1.6f ? fa : g_v.widescreen ? 16.0f / 9.0f : 4.0f / 3.0f;
 }
 
+void nc_lr_video_reset(void)
+{
+    free(g_v.buf);
+    memset(&g_v, 0, sizeof(g_v));   /* the options set widescreen and the crop again at load */
+}
+
 void nc_lr_video_set_widescreen(bool on)
 {
     g_v.widescreen = on;

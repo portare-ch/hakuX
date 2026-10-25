@@ -96,6 +96,30 @@ bool nc_vm_init(NcVm *vm, uint32_t ram_size)
     return true;
 }
 
+void nc_vm_destroy(NcVm *vm)
+{
+    if (vm->phys) {
+        munmap(vm->phys, vm->ram_size);
+    }
+    if (vm->reservation) {
+        munmap(vm->reservation, vm->reservation_len);  /* every guest mapping with it */
+    }
+    if (vm->ram_fd >= 0) {
+        close(vm->ram_fd);
+    }
+    free(vm->page_used);
+    free(vm->pte);
+    free(vm->rmap);
+    free(vm->wp);
+    free(vm->pin);
+    free(g_na);
+    g_na = NULL;
+    memset(vm, 0, sizeof(*vm));
+    vm->ram_fd = -1;
+    nc_vm_write_hook = NULL;
+    memset(&nc_vm_dma, 0, sizeof(nc_vm_dma));
+}
+
 bool nc_vm_map(NcVm *vm, uint32_t va, uint32_t pa, uint32_t len)
 {
     if ((va | pa | len) & (NC_PAGE - 1) || (uint64_t)pa + len > vm->ram_size ||

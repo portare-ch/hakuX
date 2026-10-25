@@ -570,13 +570,15 @@ void nc_dev_nv2a_display_pickup(uint64_t ns)
 
 /* A frame after prev at the mode's exact rate (the vblank thread's: it
  * carries the fraction of a nanosecond). */
+static uint64_t g_frame_acc;
+
 static uint64_t frame_after(uint64_t prev, uint64_t frame)
 {
-    static uint64_t acc;
+    uint64_t acc = g_frame_acc;
     const uint64_t den = __atomic_load_n(&g_frame_den, __ATOMIC_RELAXED);
     acc += __atomic_load_n(&g_frame_rem, __ATOMIC_RELAXED);
     const uint64_t extra = den ? acc / den : 0;
-    acc = den ? acc % den : 0;
+    g_frame_acc = den ? acc % den : 0;
     return prev + frame + extra;
 }
 
@@ -652,11 +654,17 @@ static uint64_t wait_vblank(uint64_t next, uint64_t last)
     return next;
 }
 
+static struct {
+    pthread_t th;
+    bool started;
+    int quit;                   /* nc_dev_nv2a_stop */
+} g_vbt;
+
 static void *vblank_thread(void *arg)
 {
     nc_pause_register("vblank");
     uint64_t next = now_ns();
-    for (;;) {
+    while (!__atomic_load_n(&g_vbt.quit, __ATOMIC_ACQUIRE)) {
         if (nc_paused()) {
             /* the emulation paused: no vblanks, and from now on resuming
              * (not the ones missed meanwhile, one after the other) */
@@ -692,10 +700,19 @@ void nc_dev_nv2a_init(void)
     g_census.on = !strcmp(v, "1") || (e && !strcmp(e, "1"));
     const NcMmioDev dev = {"nv2a", NV2A_BASE, NV2A_SIZE, nv2a_read, nv2a_write, NULL};
     nc_mmio_register(&dev);
-    pthread_t t;
-    pthread_create(&t, NULL, vblank_thread, NULL);
-    pthread_detach(t);
+    g_vbt.quit = 0;
+    g_vbt.started = pthread_create(&g_vbt.th, NULL, vblank_thread, NULL) == 0;
 }
+
+void nc_dev_nv2a_stop(void)
+{
+    if (g_vbt.started) {
+        __atomic_store_n(&g_vbt.quit, 1, __ATOMIC_RELEASE);
+        pthread_join(g_vbt.th, NULL);   /* within a frame: it sleeps until the next vblank */
+        g_vbt.started = false;
+    }
+}
+
 
 /* ---- the HLE GPU's seams (hw/xbox/hle/host.h) ---- */
 
@@ -804,6 +821,29 @@ void nc_dev_misc_init(void)
     g_misc = calloc(1, MISC_SIZE);
     const NcMmioDev dev = {"misc", MISC_BASE, MISC_SIZE, misc_read, misc_write, NULL};
     nc_mmio_register(&dev);
+}
+
+void nc_dev_nv2a_free(void)
+{
+    free(g_regs);
+    g_regs = NULL;
+    g_vblanks = 0;
+    g_frame_ns = FRAME_NS;
+    g_frame_rem = 20000;
+    g_frame_den = 60000;
+    g_frame_acc = 0;
+    g_last_vblank_ns = 0;
+    g_disp_vsync_ns = g_disp_period_ns = 0;
+    g_pick_off_ns = -1;
+    g_pbmode = false;
+    memset(&g_census, 0, sizeof(g_census));
+    memset(g_gtr, 0, sizeof(g_gtr));
+    g_gtr_pos = 0;
+    memset(&g_dac, 0, sizeof(g_dac));
+    g_mode_hz = 60;
+    g_vblank_mul = 1;
+    free(g_misc);
+    g_misc = NULL;
 }
 
 /* ---------------------------------------------------------- savestates */

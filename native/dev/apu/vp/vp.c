@@ -2176,6 +2176,7 @@ static void *voice_worker_thread(void *arg)
         pthread_cond_wait(&self->cond, &vwd->lock);
     } while (!vwd->workers_should_exit);
 
+    pthread_mutex_unlock(&vwd->lock);   /* the next worker's wake-up takes it */
     return NULL;
 }
 
