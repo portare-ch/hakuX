@@ -99,23 +99,28 @@ the frame rate and the core's time per frame.
 ## What to check
 
 1. **Booting and playing:** the game gets to its menus and plays, with sound
-   and controller 1. Only player 1 is supported.
-2. **Speed:** play is smooth. With the statistics on, a 60 fps game shows
+   and controller 1.
+2. **More players:** a second controller (RetroArch's user 2) plays as player
+   2, and so on up to 4. Each port has a controller plugged in unless its
+   Device Type (Quick Menu → Controls → Port N Controls) is None. Setting
+   player 1's to None during the game pulls the controller out: most games
+   pause and ask for it. Setting it back plugs it in again.
+3. **Speed:** play is smooth. With the statistics on, a 60 fps game shows
    about 59.9 new frames a second and a 30 fps game about 30.
-3. **Restart** (Quick Menu → Restart): the game starts again from the
+4. **Restart** (Quick Menu → Restart): the game starts again from the
    beginning. This hasn't been confirmed in RetroArch yet; please report what
    you see either way.
-4. **Close Content:** the game closes without hanging. On PortareOS,
+5. **Close Content:** the game closes without hanging. On PortareOS,
    RetroArch then returns to the launcher. Elsewhere, load the same game or
    another in the same RetroArch session.
-5. **Core options** (Quick Menu → Core Options): Render Scale, Screen Format,
+6. **Core options** (Quick Menu → Core Options): Render Scale, Screen Format,
    Language and Video Region take effect the next time the game starts, and
    RetroArch says so. Crop Overscan changes at once.
-6. **Game saves:** what the game saves is still there after closing and
+7. **Game saves:** what the game saves is still there after closing and
    starting it again.
-7. **Games that start another of their programs** (some compilations and
+8. **Games that start another of their programs** (some compilations and
    demo discs): they continue without going back to the menu.
-8. **Video driver restarts:** some RetroArch video settings restart its video
+9. **Video driver restarts:** some RetroArch video settings restart its video
    driver. The game then starts again, with a message saying so.
 
 ## Reporting

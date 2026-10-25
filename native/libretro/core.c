@@ -260,6 +260,7 @@ RETRO_API void retro_init(void)
     if (dladdr((void *)retro_init, &self) && self.dli_fname) {
         dlopen(self.dli_fname, RTLD_NOW | RTLD_NOLOAD | RTLD_NODELETE);
     }
+    nc_lr_input_reset();    /* the library stays: its ports, not the last session's */
 }
 
 RETRO_API void retro_deinit(void)
@@ -286,6 +287,7 @@ RETRO_API void retro_get_system_av_info(struct retro_system_av_info *info)
 
 RETRO_API void retro_set_controller_port_device(unsigned port, unsigned device)
 {
+    nc_lr_input_set_device(port, device);
 }
 
 RETRO_API void retro_reset(void)

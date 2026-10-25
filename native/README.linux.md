@@ -111,7 +111,9 @@ an XISO `.iso` image ([TESTING.md](../TESTING.md) has the steps). The
 renderer shares RetroArch's Vulkan device and copies frames on the GPU; the
 diagnostic harness uses CPU readback.
 
-Only player 1 is supported; save states are not yet available. Run-ahead
+Ports 1-4 are players 1-4, each with a controller plugged in unless its
+Device Type is None; changing it during the game plugs the controller in or
+pulls it out. Rumble and save states are not yet available. Run-ahead
 must stay off. Closing the game stops the core in RetroArch's process, and
 the next game, a reset, a game that starts another of its programs and
 RetroArch rebuilding its video driver (the game then starts again) boot in

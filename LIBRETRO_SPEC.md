@@ -1,8 +1,8 @@
 # hakuX libretro core for PortareOS
 
 Status: design targets. The initial core and Vulkan handoff merged in PR #10.
-The core stops, unloads and loads again in RetroArch's process (M2); multiple
-players and save states remain unfinished. See [native/README.linux.md](native/README.linux.md) for current usage.
+The core stops, unloads and loads again in RetroArch's process (M2); ports
+1-4 are players 1-4; rumble and save states remain unfinished. See [native/README.linux.md](native/README.linux.md) for current usage.
 Written: 2026-10-24, from the owner's draft and its review against the source.
 Target: Retroid Pocket Nova (SM8550), AArch64 Linux, PortareOS, RetroArch
 Vulkan on KMS.
@@ -287,8 +287,16 @@ Read RetroPad state once per `retro_run` and publish it per port.
 | Thumb clicks | L3 / R3 |
 | Sticks | left and right analog, Y inverted, clamped |
 
-Ports 0-3 are separate players; the first playable core may enable port 0
-only, but never merges pads into player 1. Rumble goes through RetroArch's
+Ports 0-3 are separate players, never merged into player 1. Each port's
+types are "Xbox Controller" (`RETRO_DEVICE_JOYPAD`) and "None": a port has
+a controller plugged in unless RetroArch sets it to None, so by default all
+four are, as RetroArch puts a RetroPad on every port. RetroArch sets the
+ports after the guest started to boot (`retro_set_controller_port_device`
+after `context_reset`), and again when its menu changes one: before the
+controllers are made it decides which are, after it the controller is
+plugged into its root port or pulled out while the console runs, as on the
+hardware, and the title enumerates it again. The ports stay so for a reset,
+a relaunch and a video driver rebuild. Rumble goes through RetroArch's
 rumble interface on its thread; it not working must not stop play (the
 standalone's SDL rumble did not vibrate through InputPlumber's virtual pad).
 Home + Start stays PortareOS's; the core adds no exit chord.

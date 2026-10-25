@@ -22,6 +22,12 @@
  * HARNESS_REINIT_AT=N (with HARNESS_VULKAN): before the Nth, the video
  * driver rebuilt as RetroArch does it uncached: context_destroy, another
  * device negotiated, context_reset.
+ * HARNESS_PORTS=d1,d2,...: each port's device (RETRO_DEVICE_*: 1 a
+ * controller, 0 none) set as RetroArch sets them, after the video driver
+ * started (context_reset); HARNESS_PORTS_AT="N:d1,d2,...;M:..." sets them
+ * again before the Nth (Mth) retro_run, as RetroArch's menu does.
+ * HARNESS_PRESS="port:id:from:to,...": the RetroPad button id (0-based port,
+ * RETRO_DEVICE_ID_JOYPAD_*) held from the from'th retro_run until the to'th.
  * HARNESS_CYCLES=N: the game loaded, run and unloaded N times, the core
  * closed and opened again between, as RetroArch does between games; after
  * each, the core closed, the threads, descriptors, memory and signal
@@ -145,6 +151,25 @@ static bool environment(unsigned cmd, void *data)
     case RETRO_ENVIRONMENT_GET_CAN_DUPE:
         *(bool *)data = true;
         return true;
+    case RETRO_ENVIRONMENT_SET_CONTROLLER_INFO: {   /* the ports, and port 1's types if all have them */
+        const struct retro_controller_info *info = data;
+        char types[256] = "";
+        unsigned n = 0, same = 0;
+        for (; info[n].types; n++) {
+            char t[256] = "";
+            for (unsigned i = 0; i < info[n].num_types; i++) {
+                const size_t len = strlen(t);
+                snprintf(t + len, sizeof(t) - len, "%s%s (%u)", i ? ", " : "", info[n].types[i].desc,
+                         info[n].types[i].id);
+            }
+            if (!n) {
+                snprintf(types, sizeof(types), "%s", t);
+            }
+            same += !strcmp(t, types);
+        }
+        printf("controller info: %u ports, %s: %s\n", n, same == n ? "each" : "port 1", types);
+        return true;
+    }
     case RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS:
     case RETRO_ENVIRONMENT_SET_GEOMETRY:
     case RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME:
@@ -206,9 +231,38 @@ static void input_poll(void)
 {
 }
 
+/* HARNESS_PRESS's buttons, held for this retro_run. */
 static int16_t input_state(unsigned port, unsigned device, unsigned index, unsigned id)
 {
+    const char *p = getenv("HARNESS_PRESS");
+    if (device != RETRO_DEVICE_JOYPAD || !p) {
+        return 0;
+    }
+    unsigned pp, pid;
+    long from, to;
+    for (; *p; p = strchr(p, ',') ? strchr(p, ',') + 1 : "") {
+        if (sscanf(p, "%u:%u:%ld:%ld", &pp, &pid, &from, &to) == 4 && pp == port && pid == id && g_ran >= from &&
+            g_ran < to) {
+            return 1;
+        }
+    }
     return 0;
+}
+
+/* The ports' devices, "d1,d2,...", as RetroArch sets them. */
+static void set_ports(const char *spec)
+{
+    printf("ports:");
+    unsigned port = 0;
+    for (const char *p = spec; *p && *p != ';'; port++) {
+        char *end;
+        const unsigned device = (unsigned)strtoul(p, &end, 10);
+        printf(" %u", device);
+        p_retro_set_controller_port_device(port, device);
+        p = *end == ',' ? end + 1 : end;
+    }
+    printf("\n");
+    fflush(stdout);
 }
 
 static const char *g_core_path;
@@ -388,6 +442,9 @@ static int play(const struct retro_game_info *game, long frames)
         }
         g_hw.context_reset();
     }
+    if (getenv("HARNESS_PORTS")) {          /* RetroArch: after its drivers started */
+        set_ports(getenv("HARNESS_PORTS"));
+    }
     struct timespec start;
     clock_gettime(CLOCK_MONOTONIC, &start);
     const double t0 = (double)start.tv_sec * 1e9 + (double)start.tv_nsec;
@@ -395,6 +452,13 @@ static int play(const struct retro_game_info *game, long frames)
     const long reset_at = getenv("HARNESS_RESET_AT") ? atol(getenv("HARNESS_RESET_AT")) : -1;
     const long reinit_at = getenv("HARNESS_REINIT_AT") ? atol(getenv("HARNESS_REINIT_AT")) : -1;
     for (; ran < frames && !g_shutdown; ran++) {
+        for (const char *p = getenv("HARNESS_PORTS_AT"); p && *p; p = strchr(p, ';') ? strchr(p, ';') + 1 : "") {
+            char *end;
+            if (strtol(p, &end, 10) == ran && *end == ':') {   /* RetroArch's menu: a port's Device Type */
+                printf("frame %ld: ", ran);
+                set_ports(end + 1);
+            }
+        }
         if (ran == reset_at) {              /* RetroArch's Reset (Restart) */
             printf("reset at frame %ld\n", ran);
             fflush(stdout);
