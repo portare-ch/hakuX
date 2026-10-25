@@ -164,6 +164,23 @@ def main():
         run([args.harness, args.core, root / 'spin.iso', 60, root / 'saves'], 0,
             ('options: render scale 1x', 'message: Render Scale, Video Region: takes effect when the game starts next',
              'ran 60 frames'), env)
+        # Ports 1-4 are players 1-4, a controller on each by default. A port
+        # set to None in RetroArch's menu pulls its controller out while the
+        # game runs, and one set back plugs it in; the next boot (here a
+        # reset) has them as they are.
+        vk = dict(os.environ, HARNESS_VULKAN='1')
+        run([args.harness, args.core, root / 'spin.iso', 60, root / 'saves'], 0,
+            ('controller info: 4 ports, each: Xbox Controller (1), None (0)', 'ohci: 4 controller(s) (players 1234)',
+             'frame 25: ports: 1 0 0 1', 'port 2: none', "player 2's controller pulled out",
+             "player 3's controller pulled out", 'frame 35: ports: 1 1 0 1', "player 2's controller plugged in",
+             'reset at frame 45', 'ohci: 3 controller(s) (players 124)', 'ran 60 frames'),
+            dict(vk, HARNESS_PORTS_AT='25:1,0,0,1;35:1,1,0,1', HARNESS_RESET_AT='45'))
+        # RetroArch sets the ports as the game starts to boot: before the
+        # controllers are made or just after, the console has the same ones.
+        run([args.harness, args.core, root / 'spin.iso', 40, root / 'saves'], 0,
+            ('ports: 1 0 0 0', 'port 4: none', 'reset at frame 20', 'ohci: 1 controller(s) (players 1)',
+             'ran 40 frames'),
+            dict(vk, HARNESS_PORTS='1,0,0,0', HARNESS_RESET_AT='20'))
         # M2: the core stops in the process and boots again: 100 games, a
         # CPU in a loop that never enters the kernel, the renderer on a
         # device of its own and on the frontend's, a reset, a title's

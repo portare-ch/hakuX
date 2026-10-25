@@ -31,8 +31,13 @@ void nc_lr_audio_run(retro_audio_sample_batch_t batch);
 
 /* input.c — each port's RetroPad to its player (retro_run). */
 void nc_lr_input_run(retro_input_poll_t poll, retro_input_state_t state);
-/* The input descriptors and controller info (retro_set_environment). */
+/* The controller info and input descriptors (retro_load_game). */
 void nc_lr_input_describe(retro_environment_t env);
+/* A controller on every port (retro_init); the port's device from RetroArch,
+ * RETRO_DEVICE_NONE pulling its player's controller out
+ * (retro_set_controller_port_device). */
+void nc_lr_input_reset(void);
+void nc_lr_input_set_device(unsigned port, unsigned device);
 
 /* video.c — the newest front frame to RetroArch, exactly one video_cb
  * (retro_run); its source size and the aspect it is shown at; the overscan

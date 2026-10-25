@@ -9,7 +9,9 @@
  *
  * Topology (the 1.0 console's): the front panel hub on root port 1, and on
  * its ports 3, 4, 1, 2 one controller per player — a 3-port hub with the
- * gamepad on port 1.
+ * gamepad on port 1. By default the controllers go straight on root ports
+ * 3, 4, 1, 2, where they can be plugged in and pulled out while the console
+ * runs (nc_pad_plug).
  */
 #include "native/dev/usb.h"
 #include <stdio.h>
@@ -136,6 +138,19 @@ static struct {
 } g_ohci_thr;
 static bool g_trace; /* NC_TRACE_USB: every transfer but NAKed polls */
 
+/* Player n's controller is on root port k_port_map[n] (or the front panel
+ * hub's port). On the root ports all four are made at init, plugged in or
+ * not, so that nc_pad_plug can plug one in while the console runs; o->dev
+ * holds those plugged in. Outside Ohci, as the frame thread. Lock order:
+ * g_pads.lock, then g_ohci.lock. */
+static const unsigned k_port_map[4] = {3, 4, 1, 2};
+static struct {
+    pthread_mutex_t lock;
+    int mask;           /* nc_pad_plug's players (bit n: player n + 1); -1: not called yet */
+    bool live;          /* from init to free, on the root ports: plugging takes effect at once */
+    NcUsbDev *pad[4];   /* each controller: its hub, the gamepad on port 1 */
+} g_pads = {PTHREAD_MUTEX_INITIALIZER, -1};
+
 static uint64_t now_ns(void)
 {
     struct timespec ts;
@@ -196,6 +211,29 @@ static void port_attach(Ohci *o, unsigned i)
 {
     if (o->dev[i]) {
         o->port[i] |= PORT_CCS | PORT_CSC | (o->dev[i]->low_speed ? PORT_LSDA : 0);
+        set_interrupt(o, INT_RHSC);
+    }
+}
+
+/* A device plugged into root port i, or pulled out of it (d NULL), as QEMU's
+ * OHCI attaches and detaches one: the connection changes, and an enabled
+ * port is disabled. */
+static void port_plug(Ohci *o, unsigned i, NcUsbDev *d)
+{
+    const uint32_t old = o->port[i];
+    o->dev[i] = d;
+    if (d) {
+        nc_usb_reset(d);
+        o->port[i] = (o->port[i] & ~PORT_LSDA) | PORT_CCS | PORT_CSC | (d->low_speed ? PORT_LSDA : 0);
+    } else {
+        if (o->port[i] & PORT_CCS) {
+            o->port[i] = (o->port[i] & ~PORT_CCS) | PORT_CSC;
+        }
+        if (o->port[i] & PORT_PES) {
+            o->port[i] = (o->port[i] & ~(PORT_PES | PORT_PSS)) | PORT_PESC;
+        }
+    }
+    if (old != o->port[i]) {
         set_interrupt(o, INT_RHSC);
     }
 }
@@ -667,9 +705,24 @@ static void ohci_write(void *opaque, uint32_t off, uint64_t value, unsigned size
     pthread_mutex_unlock(&o->lock);
 }
 
-/* NC_PAD_MASK: which of players 1-4 have a controller plugged in (bit n:
- * player n + 1; hex, the app's controller slots); else NC_PADS, how many
- * from player 1 (default 1). */
+/* The players with a controller plugged in (bit n: player n + 1):
+ * nc_pad_plug's once called; else NC_PAD_MASK's (hex, the app's controller
+ * slots), else NC_PADS, how many from player 1 (default 1). Under
+ * g_pads.lock. */
+static unsigned pad_mask(void)
+{
+    if (g_pads.mask >= 0) {
+        return (unsigned)g_pads.mask;
+    }
+    const char *m = getenv("NC_PAD_MASK");
+    if (m) {
+        return (unsigned)strtoul(m, NULL, 16) & 0xF;
+    }
+    const char *e = getenv("NC_PADS");
+    const unsigned n = e ? (unsigned)atoi(e) : 1;
+    return n >= 4 ? 0xF : (1u << n) - 1;
+}
+
 void nc_dev_ohci_init(struct NcVm *vm)
 {
     Ohci *o = &g_ohci;
@@ -678,13 +731,8 @@ void nc_dev_ohci_init(struct NcVm *vm)
     pthread_cond_init(&o->run, NULL);
 
     g_trace = getenv("NC_TRACE_USB") != NULL;
-    const char *m = getenv("NC_PAD_MASK");
-    const char *e = getenv("NC_PADS");
-    unsigned mask = m ? (unsigned)strtoul(m, NULL, 16) & 0xF : 0;
-    if (!m) {
-        const unsigned n = e ? (unsigned)atoi(e) : 1;
-        mask = n >= 4 ? 0xF : (1u << n) - 1;
-    }
+    pthread_mutex_lock(&g_pads.lock);
+    const unsigned mask = pad_mask();
     unsigned players = 0;
     for (unsigned p = 0; p < 4; p++) {
         players += (mask >> p) & 1;
@@ -692,31 +740,35 @@ void nc_dev_ohci_init(struct NcVm *vm)
     /* Controllers straight on the root ports (players 1-4 on ports 3, 4, 1,
      * 2), as the later consoles wire them. NC_USB_FRONT_HUB=1 puts the 1.0
      * console's front panel hub in between, which the titles' USB stack
-     * doesn't enumerate past here yet. */
+     * doesn't enumerate past here yet; with it, only the controllers plugged
+     * in are made. */
     const char *fh = getenv("NC_USB_FRONT_HUB");
     const bool front_hub = fh && atoi(fh) != 0;
-    if (players) {
-        static const unsigned k_port_map[4] = {3, 4, 1, 2};
-        NcUsbDev *front = front_hub ? nc_usb_hub_new(4) : NULL;
+    if (front_hub && players) {
+        NcUsbDev *front = nc_usb_hub_new(4);
         for (unsigned p = 0; p < 4; p++) {
-            if (!((mask >> p) & 1)) {
-                continue;
-            }
-            NcUsbDev *pad_hub = nc_usb_hub_new(3);
-            nc_usb_hub_attach(pad_hub, 1, nc_xid_gamepad_new(p));
-            if (front) {
+            if ((mask >> p) & 1) {
+                NcUsbDev *pad_hub = nc_usb_hub_new(3);
+                nc_usb_hub_attach(pad_hub, 1, nc_xid_gamepad_new(p));
                 nc_usb_hub_attach(front, k_port_map[p], pad_hub);
-            } else {
-                o->dev[k_port_map[p] - 1] = pad_hub;
             }
         }
-        if (front) {
-            o->dev[0] = front;
+        o->dev[0] = front;
+    }
+    if (!front_hub) {
+        for (unsigned p = 0; p < 4; p++) {
+            g_pads.pad[p] = nc_usb_hub_new(3);
+            nc_usb_hub_attach(g_pads.pad[p], 1, nc_xid_gamepad_new(p));
+            if ((mask >> p) & 1) {
+                o->dev[k_port_map[p] - 1] = g_pads.pad[p];
+            }
         }
     }
     soft_reset(o);
     o->ctl = 0;
     roothub_reset(o);
+    g_pads.live = !front_hub;
+    pthread_mutex_unlock(&g_pads.lock);
 
     static NcMmioDev dev = {
         .name = "ohci0",
@@ -752,12 +804,41 @@ void nc_dev_ohci_stop(void)
 void nc_dev_ohci_free(void)
 {
     Ohci *o = &g_ohci;
-    for (unsigned p = 0; p < ROOT_PORTS; p++) {
-        nc_usb_dev_free(o->dev[p]);
+    pthread_mutex_lock(&g_pads.lock);
+    if (g_pads.live) {          /* every controller, plugged in or not */
+        for (unsigned p = 0; p < 4; p++) {
+            nc_usb_dev_free(g_pads.pad[p]);
+        }
+    } else {                    /* the front panel hub, with what is plugged into it */
+        for (unsigned p = 0; p < ROOT_PORTS; p++) {
+            nc_usb_dev_free(o->dev[p]);
+        }
     }
+    memset(g_pads.pad, 0, sizeof(g_pads.pad));
+    g_pads.live = false;
+    pthread_mutex_unlock(&g_pads.lock);
     pthread_mutex_destroy(&o->lock);
     pthread_cond_destroy(&o->run);
     memset(o, 0, sizeof(*o));
+}
+
+void nc_pad_plug(unsigned player, bool in)
+{
+    if (player >= 4) {
+        return;
+    }
+    pthread_mutex_lock(&g_pads.lock);
+    const unsigned old = pad_mask();
+    const unsigned mask = in ? old | 1u << player : old & ~(1u << player);
+    g_pads.mask = (int)mask;
+    if (mask != old && g_pads.live) {
+        Ohci *o = &g_ohci;
+        pthread_mutex_lock(&o->lock);
+        port_plug(o, k_port_map[player] - 1, in ? g_pads.pad[player] : NULL);
+        pthread_mutex_unlock(&o->lock);
+        nc_log("hakuX-native-usb", "player %u's controller %s", player + 1, in ? "plugged in" : "pulled out");
+    }
+    pthread_mutex_unlock(&g_pads.lock);
 }
 
 /* ---------------------------------------------------------- savestates */

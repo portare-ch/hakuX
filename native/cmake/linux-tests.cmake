@@ -7,6 +7,14 @@ target_include_directories(audio-smoke PRIVATE "${NC_REPO}")
 target_link_libraries(audio-smoke PRIVATE hakux_native)
 add_test(NAME audio-smoke COMMAND audio-smoke)
 set_tests_properties(audio-smoke PROPERTIES TIMEOUT 10)
+# The USB stack driven as the guest's would: enumeration, input, rumble, and
+# controllers plugged in and pulled out.
+add_executable(usb-smoke "${NC_REPO}/tests/native/usb/usb_test.c" "${NC_REPO}/native/dev/usb.c"
+                         "${NC_REPO}/native/dev/usb_hub.c" "${NC_REPO}/native/dev/xid.c")
+target_include_directories(usb-smoke PRIVATE "${NC_REPO}")
+target_link_libraries(usb-smoke PRIVATE Threads::Threads)
+add_test(NAME usb-smoke COMMAND usb-smoke)
+set_tests_properties(usb-smoke PROPERTIES TIMEOUT 10)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_test(NAME linux-boundaries
          COMMAND "${Python3_EXECUTABLE}" "${NC_REPO}/tests/native/linux/check.py" "$<TARGET_FILE_DIR:xboxrun>")
@@ -21,5 +29,5 @@ if(TARGET hakux_libretro)
   add_test(NAME libretro-smoke
            COMMAND "${Python3_EXECUTABLE}" "${NC_REPO}/tests/native/libretro/check.py"
                    "$<TARGET_FILE:libretro-harness>" "$<TARGET_FILE:hakux_libretro>")
-  set_tests_properties(libretro-smoke PROPERTIES TIMEOUT 60)
+  set_tests_properties(libretro-smoke PROPERTIES TIMEOUT 120)
 endif()

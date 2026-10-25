@@ -105,9 +105,15 @@ void nc_pad_set(unsigned player, const NcPadState *s);
 void nc_pad_rumble(unsigned player, uint16_t *left, uint16_t *right);
 
 /* ohci.c: the Xbox's first USB controller (0xFED00000, IRQ 1), with gamepads
- * for the players in NC_PAD_MASK (or NC_PADS from player 1; default 1). */
+ * for the players nc_pad_plug plugged in, or before it is called those in
+ * NC_PAD_MASK (or NC_PADS from player 1; default 1). */
 struct NcVm;
 void nc_dev_ohci_init(struct NcVm *vm);
+/* Player 0-3's controller plugged in or pulled out: before the boot, whether
+ * nc_dev_ohci_init plugs it in; while the console runs, the title sees it
+ * come or go (with NC_USB_FRONT_HUB=1, at the next boot). It stays so for
+ * every boot after. */
+void nc_pad_plug(unsigned player, bool in);
 /* The frame thread stopped and joined; then the controller's devices freed
  * and its state cleared, for another init. */
 void nc_dev_ohci_stop(void);

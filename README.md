@@ -13,7 +13,8 @@ Fork of [rfandango/hakuX](https://github.com/rfandango/hakuX); credit to upstrea
 
 No BIOS, MCPX ROM or hard disk image is needed.
 
-The core supports player 1 only, and save states are not yet available. It
+Ports 1-4 are players 1-4; a port set to None in RetroArch has no controller
+plugged in. Rumble and save states are not yet available. It
 stops and starts games within RetroArch's process: restarting a game, or a
 game starting another of its programs, no longer restarts RetroArch. On
 PortareOS, closing a game returns to the launcher, as with every core.

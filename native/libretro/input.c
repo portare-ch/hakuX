@@ -1,17 +1,25 @@
 /*
  * hakuX native core — the RetroPad as the Duke, in the libretro core.
  *
- * Each port is its own player (ports 0-3; port 0 for now). The buttons keep
- * their places: the Xbox's A, B, X, Y are the RetroPad's south, east, west
- * and north (B, A, Y, X), White and Black its L and R. The face buttons,
- * White and Black are pressure-sensitive on the Duke: fully pressed here.
- * The triggers are analog where RetroArch reports them so, else 0 or 255.
- * Remapping is RetroArch's.
+ * Ports 1-4 are players 1-4, each with a controller plugged in unless the
+ * port's Device Type in RetroArch is None: as RetroArch assumes, a RetroPad
+ * on every port. RetroArch sets the ports after the game started to boot
+ * (retro_set_controller_port_device after context_reset), and when its menu
+ * changes one: the title sees the controller come or go, as when one is
+ * plugged into the console.
+ *
+ * The buttons keep their places: the Xbox's A, B, X, Y are the RetroPad's
+ * south, east, west and north (B, A, Y, X), White and Black its L and R.
+ * The face buttons, White and Black are pressure-sensitive on the Duke:
+ * fully pressed here. The triggers are analog where RetroArch reports them
+ * so, else 0 or 255. Remapping is RetroArch's.
  */
 #include "native/libretro/libretro_int.h"
 #include "native/dev/usb.h"
 
-#define NC_LR_PORTS 1
+#define NC_LR_PORTS 4
+
+static unsigned g_ports = (1u << NC_LR_PORTS) - 1;  /* bit n: port n + 1 has a controller */
 
 static int16_t clamp16(int v)
 {
@@ -20,7 +28,14 @@ static int16_t clamp16(int v)
 
 void nc_lr_input_describe(retro_environment_t env)
 {
-    static const struct retro_input_descriptor d[] = {
+    static const struct retro_controller_description k_types[] = {
+        {"Xbox Controller", RETRO_DEVICE_JOYPAD},
+        {"None", RETRO_DEVICE_NONE},
+    };
+    static const struct retro_controller_info k_info[NC_LR_PORTS + 1] = {
+        {k_types, 2}, {k_types, 2}, {k_types, 2}, {k_types, 2}, {NULL, 0},
+    };
+    static const struct retro_input_descriptor k_pad[] = {
         {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "A"},
         {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "B"},
         {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "X"},
@@ -41,9 +56,36 @@ void nc_lr_input_describe(retro_environment_t env)
         {0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y, "Left Stick Y"},
         {0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X, "Right Stick X"},
         {0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y, "Right Stick Y"},
-        {0, 0, 0, 0, NULL},
     };
-    env(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, (void *)d);
+    enum { N = sizeof(k_pad) / sizeof(k_pad[0]) };
+    static struct retro_input_descriptor d[NC_LR_PORTS * N + 1];   /* the last zeroed */
+    for (unsigned port = 0; port < NC_LR_PORTS; port++) {
+        for (unsigned i = 0; i < N; i++) {
+            d[port * N + i] = k_pad[i];
+            d[port * N + i].port = port;
+        }
+    }
+    env(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, (void *)k_info);
+    env(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, d);
+}
+
+void nc_lr_input_reset(void)
+{
+    g_ports = (1u << NC_LR_PORTS) - 1;
+    for (unsigned port = 0; port < NC_LR_PORTS; port++) {
+        nc_pad_plug(port, true);
+    }
+}
+
+void nc_lr_input_set_device(unsigned port, unsigned device)
+{
+    if (port >= NC_LR_PORTS) {
+        return;
+    }
+    const bool in = (device & RETRO_DEVICE_MASK) != RETRO_DEVICE_NONE;
+    g_ports = in ? g_ports | 1u << port : g_ports & ~(1u << port);
+    nc_log("hakuX-libretro", "port %u: %s", port + 1, in ? "an Xbox controller" : "none");
+    nc_pad_plug(port, in);
 }
 
 /* A trigger: RetroArch's analog value (0..0x7fff) where the pad has one,
@@ -77,6 +119,9 @@ void nc_lr_input_run(retro_input_poll_t poll, retro_input_state_t state)
     }
     poll();
     for (unsigned port = 0; port < NC_LR_PORTS; port++) {
+        if (!(g_ports & 1u << port)) {
+            continue;
+        }
         NcPadState s = {0};
         for (unsigned i = 0; i < 6; i++) {
             s.analog[i] = state(port, RETRO_DEVICE_JOYPAD, 0, k_analog[i]) ? 0xFF : 0;

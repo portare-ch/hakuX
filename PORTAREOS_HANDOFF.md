@@ -19,7 +19,7 @@ with the core, which keeps the emulated disk and caches in
 tested, and PortareOS had stopped shipping it in portare-ch/portareos#754.
 The sections on it below are history. The core stops and boots again in
 RetroArch's process (M2: unloading, a reset, a title's relaunch, a video
-driver rebuild). It lacks additional players and save states; its options
+driver rebuild). Ports 1-4 are players 1-4. It lacks rumble and save states; its options
 are the render scale and the console's settings. Current usage: [native/README.linux.md](native/README.linux.md).
 Issue #8's display checks passed on the Nova on 2026-10-25: through
 RetroArch, Burnout 3 was shown for two refreshes per frame for 10 minutes
