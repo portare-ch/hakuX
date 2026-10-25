@@ -6,6 +6,7 @@
 
 - **Core options** — RetroArch's Quick Menu has options for the render scale (1x to 4x) and the console's settings: screen format (widescreen games then show 16:9), language (RetroArch's by default) and video region. They take effect the next time the game starts.
 - **PAL games at 60 Hz** — European games that offer 60 Hz now run at it.
+- **Upstream hakuX 1.1.0** — Includes upstream's emulator changes up to its version 1.1.0, mainly support for GPUs other than Adreno. Adreno GPUs, such as the Nova's, are unchanged.
 
 ### Current limitations
 
@@ -60,6 +61,23 @@ The first standalone hakuX release for PortareOS on the Retroid Pocket Nova, rep
 - **Audio** — Game audio plays through PipeWire.
 - **Controllers** — All connected gamepads control player 1. Press **Home + Start** to quit.
 - **PortareOS package** — Adds a script to create reproducible release archives for installation on PortareOS.
+
+## v1.1.0
+
+GPUs beyond Adreno (experimental).
+
+### GPUs
+- **Mali, Xclipse and PowerVR (experimental)** — hakuX runs on GPUs other than Adreno: features they lack are replaced (BC and 4444 textures decoded up front, standard border colours, the push block in a buffer, D32S8 depth), and known driver bugs are worked around (`hw/xbox/hle/vk/quirks.c`). Burnout 3 and Mercenaries run cleanly on a Pixel 8 (Mali-G715)
+- **Vulkan 1.1 drivers** — GPUs whose drivers stop at Vulkan 1.1 (Valhall Mali on older or vendor-capped drivers, Qualcomm's own older drivers, early Xclipse, PowerVR BXM) run through a compatibility layer (`hw/xbox/hle/vk/compat.c`)
+- **Older GPUs without descriptor indexing (experimental)** — Bifrost Mali (G71, G72, G76, G52) and PowerVR Rogue: each draw binds its own textures, and depth is clamped in the shader where the GPU can't
+- **Adreno** — unchanged: every replacement is off where the GPU has the feature.
+
+### App
+- **GPU driver** — a screen of its own (Settings → GPU driver): the system driver and the stored packages in one list, with their versions and authors. Packages are checked when added and can be deleted (deleting the one in use goes back to the system driver)
+- **Turnip recommended** — a Qualcomm phone running its own driver older than Vulkan 1.3 suggests a Turnip driver once, from the library
+- **Back key** — the device's back key opens the in-game menu, from any input, including the Retroid Pocket 5's own Back. A controller with both Back and Select keeps Back for the menu; on one without a Select key, Back is the Xbox Back button
+- **Dark theme** — Settings → Display → App theme: the phone's, light or dark; the in-game menus follow it, in the app's green rather than Android's teal
+- **Controller navigation** — the app works with a controller: the focused item stands out (a game is outlined in green), A selects, B goes back, and Y or Select opens a game's menu. The search field opens the keyboard only on A, the library has a refresh button, the mapping sliders move with left and right, release notes scroll, and X deletes a savestate from the in-game Load state list
 
 ## v1.0.0
 

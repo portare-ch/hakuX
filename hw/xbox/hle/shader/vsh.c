@@ -202,8 +202,8 @@ static void head(Buf *bp, const HleVshKey *k)
 {
     Buf b = *bp;
     const char *interp = k->flat ? "flat " : "";
-    put(&b, "#version 450\n" HLE_PUSH_GLSL
-            "layout(set = 1, binding = 0, std140) uniform VshConst { vec4 c[192]; "
+    put(&b, "#version 450\n%s", hle_push_glsl());
+    put(&b, "layout(set = 1, binding = 0, std140) uniform VshConst { vec4 c[192]; "
             "vec4 vcur[16]; };\n"
             "invariant gl_Position;\n");
     for (unsigned i = 0; i < 16; i++) {
@@ -352,6 +352,12 @@ static void tail(Buf *bp, const HleVshKey *k, bool fogw)
      * minimap at z far below 0), so the clip z only keeps w >= 0. */
     put(&b, "  gl_Position = vec4(ndc * w, %s, w);\n",
         k->wbuf || k->zfree ? "0.0" : "oPos.z * pc.zscale * w");
+    if (k->zclamp && g_hle_glsl_zclamp) {
+        put(&b, HLE_ZCLAMP_GLSL);
+    }
+    if (g_hle_glsl_zw) {
+        put(&b, HLE_ZW_NUDGE_GLSL);
+    }
     put(&b, "%s}\n", k->wbuf ? "  vW = w;\n" : "");
     *bp = b;
 }

@@ -11,6 +11,7 @@
   <string name="setup_disc_value">Games Folder: %1$s</string>
 
   <string name="library_search_hint">Search games</string>
+  <string name="library_refresh">Refresh</string>
   <string name="library_no_folder">No folder selected</string>
   <string name="library_loading_games">Loading games</string>
   <string name="library_loading_discs">Reading discs: %1$d of %2$d</string>
@@ -35,29 +36,58 @@
   <string name="game_settings_on">On</string>
   <string name="game_settings_off">Off</string>
 
+  <string name="common_back">Back</string>
+  <string name="common_delete">Delete</string>
+
   <string name="settings_title">Settings</string>
 
-  <string name="settings_gpu_driver_title">GPU Driver</string>
-  <string name="settings_gpu_driver_system">Active driver: System default</string>
-  <string name="settings_gpu_driver_active">Active driver: %1$s</string>
-  <string name="settings_gpu_driver_not_supported">Custom GPU driver loading is not supported on this device.</string>
-  <string name="settings_gpu_driver_install">Install Driver from ZIP</string>
-  <string name="settings_gpu_driver_select_title">Select a GPU Driver</string>
-  <string name="settings_gpu_driver_system_choice">System driver</string>
+  <string name="settings_gpu_driver_title">GPU driver</string>
+  <string name="settings_gpu_driver_system">System driver</string>
+  <string name="settings_gpu_driver_custom">Custom driver</string>
+  <string name="settings_gpu_driver_active_version">%1$s (%2$s)</string>
+  <string name="settings_gpu_driver_not_supported">System driver. Other drivers can only be loaded on phones with an Adreno GPU.</string>
+  <string name="gpu_driver_desc">The Vulkan driver hakuX draws the Xbox\'s graphics with. A Turnip driver (Mesa\'s driver for Adreno GPUs) can be more accurate and faster than the one that came with the phone. A change takes effect at the next game start.</string>
+  <string name="gpu_driver_section">Drivers</string>
+  <string name="gpu_driver_system_choice">System driver</string>
+  <string name="gpu_driver_system_desc">The driver that came with the phone</string>
+  <string name="gpu_driver_version">Version %1$s</string>
+  <string name="gpu_driver_by">by %1$s</string>
+  <string name="gpu_driver_no_package">In use. Its package isn\'t on this phone anymore.</string>
+  <string name="gpu_driver_add">Add a driver</string>
+  <string name="gpu_driver_add_desc">A driver package: a ZIP with a meta.json, such as a Turnip release. A package with the same file name is replaced.</string>
+  <string name="gpu_driver_delete">Delete driver</string>
+  <string name="gpu_driver_delete_text">%1$s will be deleted from the phone.</string>
+  <string name="gpu_driver_delete_text_in_use">%1$s will be deleted from the phone, and hakuX goes back to the system driver.</string>
+  <string name="gpu_driver_selected">%1$s selected. It takes effect at the next game start.</string>
+  <string name="gpu_driver_system_selected">System driver selected. It takes effect at the next game start.</string>
+  <string name="gpu_driver_added">%1$s added and selected. It takes effect at the next game start.</string>
+  <string name="gpu_driver_deleted">%1$s deleted.</string>
+  <string name="gpu_driver_deleted_in_use">%1$s deleted. The system driver is in use again.</string>
+  <string name="gpu_driver_err_unreadable">That file couldn\'t be read.</string>
+  <string name="gpu_driver_err_not_driver">That file isn\'t a driver package: it has no meta.json.</string>
+  <string name="gpu_driver_err_no_library">That package doesn\'t contain the driver library its meta.json names.</string>
+  <string name="gpu_driver_err_api">That driver needs Android API level %1$d. This phone has %2$d.</string>
+  <string name="gpu_driver_err_unpack">%1$s couldn\'t be unpacked. The driver in use stays.</string>
+  <string name="turnip_note_title">A Turnip driver is recommended</string>
+  <string name="turnip_note_text">This phone\'s own graphics driver is older than Vulkan 1.3, so hakuX runs games through its compatibility path, which can be slower. A Turnip driver (Mesa\'s driver for Adreno 6xx and newer GPUs) is what hakuX is made for. You can add one in Settings → GPU driver.\n\nThis note won\'t show again.</string>
+  <string name="turnip_note_open">GPU driver</string>
+  <string name="turnip_note_later">Not now</string>
   <string name="native_fatal_title">This game can\'t run with this GPU driver</string>
-  <string name="native_fatal_gpu">The graphics driver %1$s, which hakuX\'s Xbox GPU needs.\n\nChoose a Turnip driver in Settings → GPU Driver and start the game again.</string>
+  <string name="native_fatal_gpu">The graphics driver %1$s, which hakuX\'s Xbox GPU needs.\n\nChoose a Turnip driver in Settings → GPU driver and start the game again.</string>
+  <string name="native_fatal_gpu_system">The graphics driver %1$s, which hakuX\'s Xbox GPU needs.\n\nA system update may bring a newer driver.</string>
   <string name="native_gpu_lost_title">The GPU driver stopped</string>
-  <string name="native_gpu_lost">The graphics driver %1$s, so the game can\'t go on.\n\nStart the game again. If it keeps happening, try another GPU driver in Settings → GPU Driver.</string>
+  <string name="native_gpu_lost">The graphics driver %1$s, so the game can\'t go on.\n\nStart the game again. If it keeps happening, try another GPU driver in Settings → GPU driver.</string>
+  <string name="native_gpu_lost_system">The graphics driver %1$s, so the game can\'t go on.\n\nStart the game again.</string>
   <string name="native_boot_failed_title">This game can\'t start</string>
   <string name="native_boot_failed">%1$s\n\nSettings → Export logs saves the details, to report it.</string>
   <string name="native_incompatible_title">This game isn\'t compatible yet</string>
   <string name="native_incompatible">hakuX doesn\'t support this game yet, so it can\'t run.</string>
-  <string name="settings_gpu_driver_installed">Driver installed successfully. Applied on next game launch.</string>
-  <string name="settings_gpu_driver_install_failed">Failed to install driver. The ZIP may be invalid or incompatible.</string>
 
   <string name="settings_show_fps">Show FPS counter</string>
 
   <string name="settings_show_fps_desc">Frame rate and frame time overlay while playing.</string>
+  <string name="settings_show_hitches">Show stutter monitor</string>
+  <string name="settings_show_hitches_desc">Debug builds: stutters, hangs and dropped frames with their causes, under the FPS counter.</string>
 
   <!-- System Files -->
   <string name="settings_games_folder_title">Games Folder</string>
@@ -72,6 +102,10 @@
   <!-- Compose settings screen -->
   <string name="settings_section_games">Games</string>
   <string name="settings_section_display">Display</string>
+  <string name="settings_theme">App theme</string>
+  <string name="settings_theme_system">Same as the phone</string>
+  <string name="settings_theme_light">Light</string>
+  <string name="settings_theme_dark">Dark</string>
   <string name="settings_section_graphics">Graphics</string>
   <string name="settings_section_logs">Logs</string>
   <string name="settings_export_logs">Export logs</string>
@@ -324,6 +358,7 @@
   </plurals>
   <string name="hdd_cache_empty">Empty</string>
   <string name="hdd_cache_clear">Clear</string>
+  <string name="hdd_cache_clear_title">Clear this cache drive?</string>
   <string name="hdd_cache_clear_desc">Drive %1$s will be emptied. A savestate that uses it brings its copy back when it loads.</string>
   <string name="hdd_states">Savestates</string>
   <plurals name="hdd_states_count">
@@ -372,7 +407,7 @@
     <item quantity="one">%1$d entry was left out (a name the other side can\'t hold):\n%2$s</item>
     <item quantity="other">%1$d entries were left out (names the other side can\'t hold):\n%2$s</item>
   </plurals>
-  <string name="hdd_confirm">Continue</string>
+  <string name="hdd_import_replace">Replace</string>
   <string name="library_load_state_title">Load state: %1$s</string>
   <string name="controllers_title">Physical controllers</string>
   <string name="controllers_settings_desc">Which controller plays as which of the four players, and each controller\'s buttons.</string>
@@ -398,6 +433,7 @@
   <string name="controllers_own">Only this controller</string>
   <string name="controllers_own_desc">Give this controller buttons of its own instead of every controller of its model. Identical wired controllers can trade them when they are connected in another order.</string>
   <string name="controllers_reset">Reset</string>
+  <string name="controllers_reset_desc">Back to the default buttons, or to the model\'s mapping for this controller\'s own</string>
   <string name="controllers_swap_face">Swap A/B and X/Y</string>
   <string name="controllers_inputs">Xbox controller</string>
   <string name="controllers_unbound">Not set</string>
