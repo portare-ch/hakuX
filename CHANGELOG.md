@@ -1,5 +1,20 @@
 # Changelog
 
+## linux-v0.5.0 (PortareOS)
+
+Players 2-4 in the RetroArch core.
+
+### What's new
+
+- **Players 2-4** — RetroArch's ports 1-4 are players 1-4: a second controller plays as player 2, and so on up to four. Each port has a controller plugged in unless its Device Type (Quick Menu → Controls → Port N Controls) is None.
+- **Plugging in and out** — Changing a port's Device Type during the game plugs its controller in or pulls it out, and the game sees it as on a console: most games pause when player 1's controller goes. The ports stay so when the game restarts.
+
+### Current limitations
+
+- Rumble is not passed on to the controllers yet.
+- Save states are not yet available.
+- Games must be `.iso` disc images.
+
 ## linux-v0.4.0 (PortareOS)
 
 The RetroArch core stops and starts games inside RetroArch, and the Linux standalone is gone.
