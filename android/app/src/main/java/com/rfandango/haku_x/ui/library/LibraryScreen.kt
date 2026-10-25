@@ -27,9 +27,13 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
@@ -39,7 +43,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -48,22 +51,36 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -91,6 +108,11 @@ import com.rfandango.haku_x.data.ModCatalog
 import com.rfandango.haku_x.data.SaveStateStore
 import com.rfandango.haku_x.data.Updates
 import com.rfandango.haku_x.data.XisoConverter
+import com.rfandango.haku_x.ui.common.ConfirmDialog
+import com.rfandango.haku_x.ui.common.ProgressBlock
+import com.rfandango.haku_x.ui.common.ThumbnailShape
+import com.rfandango.haku_x.ui.common.fractionOf
+import com.rfandango.haku_x.ui.common.rememberFocusOnShow
 import com.rfandango.haku_x.ui.update.UpdateDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -131,7 +153,11 @@ fun LibraryScreen(
             )
           }
         }
-        IconButton(onClick = onOpenSettings, modifier = Modifier.padding(start = 4.dp)) {
+        // the folders listed again, as a pull does (a controller can't pull)
+        IconButton(onClick = vm::refresh, modifier = Modifier.padding(start = 4.dp)) {
+          Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.library_refresh))
+        }
+        IconButton(onClick = onOpenSettings) {
           Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.settings_title))
         }
       }
@@ -173,6 +199,8 @@ fun LibraryScreen(
  * box rather than an OutlinedCard's Surface, its icon a bitmap the view model
  * decoded, the ID and the region flags one text, painters and strings shared
  * by every card, and the long-press menu composed only while it is open.
+ * With a controller the focused card is outlined in green; A starts its game,
+ * Y or select (or holding A) opens its menu.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -196,7 +224,7 @@ private fun GameList(
   val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
   val colors = MaterialTheme.colorScheme
   val shape = remember { RoundedCornerShape(12.dp) }
-  val iconShape = remember { RoundedCornerShape(10.dp) }
+  val iconShape = ThumbnailShape
   val titleStyle = MaterialTheme.typography.titleMedium.copy(color = colors.onSurface)
   val idStyle = SMALL_PRINT.copy(fontFamily = FontFamily.Monospace, color = colors.onSurfaceVariant)
   LazyVerticalGrid(
@@ -208,13 +236,21 @@ private fun GameList(
   ) {
     items(games, key = { it.uri.toString() }) { game ->
       val disc = info[game.uri]
+      var focused by remember { mutableStateOf(false) }
       Box {
         Row(
           Modifier
             .fillMaxWidth()
             .clip(shape)
             .background(colors.surface)
-            .border(1.dp, colors.outlineVariant, shape)
+            .border(if (focused) 2.dp else 1.dp, if (focused) colors.primary else colors.outlineVariant, shape)
+            .onFocusChanged { focused = it.isFocused }
+            // a controller's Y, or its select (sent as Menu), opens the menu
+            .onKeyEvent { e ->
+              if (e.key != Key.ButtonY && e.key != Key.Menu) return@onKeyEvent false
+              if (e.type == KeyEventType.KeyUp) menuFor = game.uri
+              true
+            }
             .combinedClickable(
               onClick = { onLaunch(game) },
               onLongClick = {
@@ -250,6 +286,7 @@ private fun GameList(
             DropdownMenuItem(
               text = { Text(stringResource(R.string.library_menu_settings)) },
               leadingIcon = { Icon(Icons.Filled.Settings, contentDescription = null) },
+              modifier = Modifier.focusRequester(rememberFocusOnShow()),
               onClick = {
                 menuFor = null
                 onGameSettings(game, disc)
@@ -339,14 +376,12 @@ private fun ConversionDialog(c: Conversion, vm: LibraryViewModel) {
   val context = LocalContext.current
   val title = c.game.title
   when (c.phase) {
-    Conversion.Phase.CONFIRM -> AlertDialog(
-      onDismissRequest = vm::dismissConversion,
-      title = { Text(stringResource(R.string.library_convert_title)) },
-      text = {
-        Text(stringResource(R.string.library_convert_message, title, c.output, XisoConverter.ORIGINALS_FOLDER))
-      },
-      confirmButton = { TextButton(onClick = vm::startConversion) { Text(stringResource(R.string.library_convert_action)) } },
-      dismissButton = { TextButton(onClick = vm::dismissConversion) { Text(stringResource(android.R.string.cancel)) } },
+    Conversion.Phase.CONFIRM -> ConfirmDialog(
+      title = stringResource(R.string.library_convert_title),
+      text = stringResource(R.string.library_convert_message, title, c.output, XisoConverter.ORIGINALS_FOLDER),
+      confirm = stringResource(R.string.library_convert_action),
+      onConfirm = vm::startConversion,
+      onDismiss = vm::dismissConversion,
     )
     Conversion.Phase.RUNNING -> {
       // The screen stays on: leaving the app mid-conversion risks it being stopped.
@@ -363,21 +398,16 @@ private fun ConversionDialog(c: Conversion, vm: LibraryViewModel) {
           Column {
             Text(title, style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(12.dp))
-            if (c.total > 0) {
-              LinearProgressIndicator(progress = { c.done.toFloat() / c.total }, modifier = Modifier.fillMaxWidth())
-              Spacer(Modifier.height(6.dp))
-              Text(
+            ProgressBlock(
+              fractionOf(c.done, c.total),
+              if (c.total > 0) {
                 stringResource(
                   R.string.library_convert_progress,
                   Formatter.formatShortFileSize(context, c.done),
                   Formatter.formatShortFileSize(context, c.total),
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-            } else {
-              LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
+                )
+              } else null,
+            )
           }
         },
         confirmButton = {},
@@ -449,43 +479,89 @@ private fun TitleIcon(game: Game, icon: ImageBitmap?, shape: Shape, background: 
   }
 }
 
-/** The search field, slimmer than an OutlinedTextField's 56 dp minimum. */
+/**
+ * The search field (query: its text to start with), slimmer than an OutlinedTextField's 56 dp
+ * minimum. A controller's d-pad passes through it (sideways too while it's empty) and its A opens
+ * the keyboard: the focus alone doesn't, which would cover the screen on the way to the buttons
+ * beside it; a tap does. It is the state-based field: the value-based one opens the keyboard on any
+ * focus.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SearchField(query: String, onQueryChange: (String) -> Unit, modifier: Modifier = Modifier) {
   val interaction = remember { MutableInteractionSource() }
   val shape = RoundedCornerShape(22.dp)
+  val state = rememberTextFieldState(query)
+  val change by rememberUpdatedState(onQueryChange)
+  LaunchedEffect(state) {
+    snapshotFlow { state.text.toString() }.collect { change(it) }
+  }
+  val focus = LocalFocusManager.current
+  val keyboard = LocalSoftwareKeyboardController.current
+  // A pressed: the keyboard on focus, which starts the field's input session now; off as it leaves
+  var typing by remember { mutableStateOf(false) }
   BasicTextField(
-    value = query,
-    onValueChange = onQueryChange,
-    modifier = modifier.height(44.dp),
-    singleLine = true,
+    state = state,
+    modifier = modifier
+      .height(44.dp)
+      .onFocusChanged { if (!it.isFocused) typing = false }
+      .onPreviewKeyEvent { e ->
+        val direction = when (e.key) {
+          Key.DirectionUp -> FocusDirection.Up
+          Key.DirectionDown -> FocusDirection.Down
+          Key.DirectionLeft -> FocusDirection.Left.takeIf { state.text.isEmpty() }
+          Key.DirectionRight -> FocusDirection.Right.takeIf { state.text.isEmpty() }
+          Key.DirectionCenter, Key.ButtonA -> {
+            if (e.type == KeyEventType.KeyUp) {
+              typing = true
+              keyboard?.show() // its session open already (the keyboard closed by back): shown again
+            }
+            return@onPreviewKeyEvent true
+          }
+          else -> null
+        } ?: return@onPreviewKeyEvent false
+        if (e.type == KeyEventType.KeyDown) focus.moveFocus(direction)
+        true
+      },
+    keyboardOptions = KeyboardOptions(showKeyboardOnFocus = typing),
+    lineLimits = TextFieldLineLimits.SingleLine,
     textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
     interactionSource = interaction,
-  ) { innerTextField ->
-    OutlinedTextFieldDefaults.DecorationBox(
-      value = query,
-      innerTextField = innerTextField,
-      enabled = true,
-      singleLine = true,
-      visualTransformation = VisualTransformation.None,
-      interactionSource = interaction,
-      placeholder = {
-        Text(stringResource(R.string.library_search_hint), style = MaterialTheme.typography.bodyMedium)
-      },
-      leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
-      contentPadding = PaddingValues(start = 4.dp, end = 16.dp),
-      container = {
-        OutlinedTextFieldDefaults.Container(
-          enabled = true,
-          isError = false,
-          interactionSource = interaction,
-          shape = shape,
-        )
-      },
-    )
-  }
+    decorator = { innerTextField -> SearchDecoration(state.text.toString(), innerTextField, interaction, shape) },
+  )
+}
+
+/** The search field's outline, icon and placeholder, as an outlined text field's. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SearchDecoration(
+  query: String,
+  innerTextField: @Composable () -> Unit,
+  interaction: MutableInteractionSource,
+  shape: Shape,
+) {
+  OutlinedTextFieldDefaults.DecorationBox(
+    value = query,
+    innerTextField = innerTextField,
+    enabled = true,
+    singleLine = true,
+    visualTransformation = VisualTransformation.None,
+    interactionSource = interaction,
+    placeholder = {
+      Text(stringResource(R.string.library_search_hint), style = MaterialTheme.typography.bodyMedium)
+    },
+    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
+    contentPadding = PaddingValues(start = 4.dp, end = 16.dp),
+    container = {
+      OutlinedTextFieldDefaults.Container(
+        enabled = true,
+        isError = false,
+        interactionSource = interaction,
+        shape = shape,
+      )
+    },
+  )
 }
 
 /** The library refreshing: the folder listed, then the discs not read before. */
@@ -496,20 +572,11 @@ private fun LoadingDialog(read: Int, toRead: Int) {
     properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
     title = { Text(stringResource(R.string.library_loading_games)) },
     text = {
-      Column {
-        if (toRead > 0) {
-          LinearProgressIndicator(progress = { read.toFloat() / toRead }, modifier = Modifier.fillMaxWidth())
-          Spacer(Modifier.height(6.dp))
-          Text(
-            stringResource(R.string.library_loading_discs, read, toRead),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-        } else {
-          // Listing the folder: how many discs there are isn't known yet.
-          LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        }
-      }
+      // Listing the folder: how many discs there are isn't known yet.
+      ProgressBlock(
+        fractionOf(read.toLong(), toRead.toLong()),
+        if (toRead > 0) stringResource(R.string.library_loading_discs, read, toRead) else null,
+      )
     },
     confirmButton = {},
   )

@@ -4,20 +4,29 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.rfandango.haku_x.GpuDriverHelper
 import com.rfandango.haku_x.R
+import com.rfandango.haku_x.data.AppPrefs
 import com.rfandango.haku_x.data.Game
 import com.rfandango.haku_x.data.GameOverrides
 import com.rfandango.haku_x.data.SaveStateStore
 import com.rfandango.haku_x.data.Updates
 import com.rfandango.haku_x.ui.controllers.ControllerMappingScreen
 import com.rfandango.haku_x.ui.controllers.ControllersScreen
+import com.rfandango.haku_x.ui.common.ConfirmDialog
 import com.rfandango.haku_x.ui.controls.ControlsEditorScreen
+import com.rfandango.haku_x.ui.driver.GpuDriverScreen
 import com.rfandango.haku_x.ui.hdd.HddScreen
 import com.rfandango.haku_x.ui.library.LibraryScreen
 import com.rfandango.haku_x.ui.mods.ModsScreen
@@ -25,6 +34,8 @@ import com.rfandango.haku_x.ui.settings.GameSettingsScreen
 import com.rfandango.haku_x.ui.settings.SettingsScreen
 import com.rfandango.haku_x.ui.setup.MigrateScreen
 import com.rfandango.haku_x.ui.setup.SetupScreen
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private object Routes {
   const val MIGRATE = "migrate"
@@ -36,6 +47,7 @@ private object Routes {
   const val CONTROLS = "controls"
   const val CONTROLLERS = "controllers"
   const val HDD = "hdd"
+  const val GPU_DRIVER = "gpu_driver"
   /** One controller's mapping: its input device id. */
   const val MAPPING = "mapping/{id}"
 
@@ -88,6 +100,28 @@ fun HakuXApp(
       })
     }
     composable(Routes.LIBRARY) {
+      // once, on a Qualcomm phone running on its own driver older than Vulkan 1.3: Turnip recommended
+      var turnipNote by remember { mutableStateOf(false) }
+      LaunchedEffect(Unit) {
+        val prefs = AppPrefs(context)
+        if (!prefs.turnipNoteShown && withContext(Dispatchers.IO) { GpuDriverHelper.turnipRecommended(context) }) {
+          prefs.turnipNoteShown = true
+          turnipNote = true
+        }
+      }
+      if (turnipNote) {
+        ConfirmDialog(
+          title = stringResource(R.string.turnip_note_title),
+          text = stringResource(R.string.turnip_note_text),
+          confirm = stringResource(R.string.turnip_note_open),
+          dismiss = stringResource(R.string.turnip_note_later),
+          onConfirm = {
+            turnipNote = false
+            nav.navigate(Routes.GPU_DRIVER)
+          },
+          onDismiss = { turnipNote = false },
+        )
+      }
       LibraryScreen(
         onLaunch = onLaunchGame,
         onLoadState = onLaunchState,
@@ -121,8 +155,12 @@ fun HakuXApp(
         onEditControls = { nav.navigate(Routes.CONTROLS) },
         onControllers = { nav.navigate(Routes.CONTROLLERS) },
         onHardDisk = { nav.navigate(Routes.HDD) },
+        onGpuDriver = { nav.navigate(Routes.GPU_DRIVER) },
         onMigrate = { nav.navigate(Routes.MIGRATE_AGAIN) },
       )
+    }
+    composable(Routes.GPU_DRIVER) {
+      GpuDriverScreen(onBack = { nav.popBackStack() })
     }
     composable(Routes.MIGRATE_AGAIN) {
       MigrateScreen(onDone = { nav.popBackStack() })

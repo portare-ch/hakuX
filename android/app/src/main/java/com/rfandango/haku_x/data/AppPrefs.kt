@@ -65,6 +65,21 @@ class AppPrefs(context: Context) {
     get() = sp.getBoolean(KEY_SHOW_FPS, true)
     set(value) = sp.edit { putBoolean(KEY_SHOW_FPS, value) }
 
+  /** The library's note recommending a Turnip driver was shown (once: GpuDriverHelper.turnipRecommended). */
+  var turnipNoteShown: Boolean
+    get() = sp.getBoolean(KEY_TURNIP_NOTE, false)
+    set(value) = sp.edit { putBoolean(KEY_TURNIP_NOTE, value) }
+
+  /** The app's look: the phone's (light or dark as it is), light or dark (ui/theme AppTheme). */
+  var theme: String
+    get() = sp.getString(KEY_THEME, THEME_SYSTEM) ?: THEME_SYSTEM
+    set(value) = sp.edit { putString(KEY_THEME, value) }
+
+  /** Debug builds: the HLE GPU's stutter and hang monitor over the game (NativeCoreActivity). */
+  var showHitches: Boolean
+    get() = sp.getBoolean(NativeCoreActivity.PREF_SHOW_HITCHES, true)
+    set(value) = sp.edit { putBoolean(NativeCoreActivity.PREF_SHOW_HITCHES, value) }
+
   /** The HLE GPU's render scale, 1-4x the title's resolution (read at game start). */
   var renderScale: Int
     get() = sp.getInt(NativeCoreActivity.PREF_SCALE, NativeCoreActivity.DEFAULT_SCALE)
@@ -177,6 +192,11 @@ class AppPrefs(context: Context) {
     private const val KEY_SETUP_COMPLETE = "setup_complete"
     private const val KEY_PREVIOUS_MIGRATED = "previous_version_migrated"
     private const val KEY_SHOW_FPS = "show_fps"
+    private const val KEY_THEME = "app_theme"
+    private const val KEY_TURNIP_NOTE = "turnip_note_shown"
+    const val THEME_SYSTEM = "system"
+    const val THEME_LIGHT = "light"
+    const val THEME_DARK = "dark"
     private const val KEY_DVD_URI = "dvdUri"
     private const val KEY_DVD_PATH = "dvdPath"
     private const val KEY_SCREEN_FORMAT = "video_screen_format"

@@ -12,6 +12,7 @@
 #ifndef HW_XBOX_HLE_SHADER_FF_H
 #define HW_XBOX_HLE_SHADER_FF_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -185,13 +186,48 @@ typedef struct HleFfPush {
                                          a quarter as much as the rest) */
 } HleFfPush;
 
-#define HLE_PUSH_GLSL \
-    "layout(push_constant, std430) uniform Push {\n" \
+#define HLE_PUSH_MEMBERS_GLSL \
     "  mat4 mvp;\n  vec2 vp;\n  uvec2 bump3;\n  uvec4 tex;\n  uint tfactor;\n" \
     "  uint bumpl[3];\n" \
     "  float alpha_ref;\n  uint flags;\n  float zscale;\n  uint fog_color;\n" \
-    "  vec4 fog;\n  uint psc[20];\n  vec4 scr;\n  uvec4 bump;\n" \
-    "} pc;\n"
+    "  vec4 fog;\n  uint psc[20];\n  vec4 scr;\n  uvec4 bump;\n"
+#define HLE_PUSH_GLSL \
+    "layout(push_constant, std430) uniform Push {\n" HLE_PUSH_MEMBERS_GLSL "} pc;\n"
+/* The same block where the push constants are smaller (Xclipse's 128 bytes):
+ * a storage buffer, std430 as well (vk/draw.c, set 3) */
+#define HLE_PUSH_SSBO_GLSL \
+    "layout(set = 3, binding = 0, std430) readonly buffer Push {\n" HLE_PUSH_MEMBERS_GLSL "} pc;\n"
+
+/* The block in a storage buffer (set by the back end before any shader is made) */
+extern bool g_hle_push_ssbo;
+
+/* Mali (vk/quirks.h HLE_QUIRK_Z_EQ_W, set with g_hle_push_ssbo): a clip-space
+ * z equal to w corrupts the depth buffer (PPSSPP's EQUAL_WZ_CORRUPTS_DEPTH,
+ * ARMSX2): the vertex shaders end by moving such a vertex a hair inside. */
+extern bool g_hle_glsl_zw;
+#define HLE_ZW_NUDGE_GLSL "  if (gl_Position.z == gl_Position.w) gl_Position.z *= 0.999999;\n"
+
+/* No depthClamp (vk/vkdev.h HleCaps.depth_clamp off: Mali's Bifrost): a
+ * z-clamped draw's vertices (the key's zclamp) are clamped to the depth range
+ * instead, so the near and far planes don't clip them; depth across a
+ * primitive that crosses them comes from its clamped corners. */
+extern bool g_hle_glsl_zclamp;
+#define HLE_ZCLAMP_GLSL \
+    "  if (gl_Position.w > 0.0) gl_Position.z = clamp(gl_Position.z, 0.0, gl_Position.w);\n"
+
+/* No descriptor indexing (HleCaps.bindless off: Mali's Bifrost, PowerVR's
+ * Rogue): a pixel shader's bindless arrays become the draw's own set (vk/draw.c
+ * fixed_bind): sized (each stage's images, then the default sampler and each
+ * stage's), indexed without nonuniformEXT (the push block's indices, the same
+ * for the whole draw). g_hle_glsl_fixed: hle_glsl_fixed_slots rewrites the
+ * generated text; its new length, 0 if it doesn't fit in cap. */
+extern bool g_hle_glsl_fixed;
+size_t hle_glsl_fixed_slots(char *src, size_t cap);
+
+static inline const char *hle_push_glsl(void)
+{
+    return g_hle_push_ssbo ? HLE_PUSH_SSBO_GLSL : HLE_PUSH_GLSL;
+}
 
 /* W-buffering (D3DRS_ZENABLE = D3DZB_USEW, NV2A z_perspective): the stored
  * depth is the perspective-correct w (in depth units, as the vertex program
