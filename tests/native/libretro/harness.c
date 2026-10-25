@@ -6,10 +6,13 @@
  * Loads the core as RetroArch does (dlopen, every retro_* symbol), reports
  * its system and AV info, and with a disc loads it and calls retro_run at
  * the core's rate, checking that each call hands over exactly one video
- * frame. It stops after <frames>, or when the core asks to shut down; the
- * summary is printed before retro_unload_game (which ends the process
- * until the core can stop, or after a title's relaunch starts the harness
- * again, as it would RetroArch).
+ * frame. Core options are the core's defaults, or HARNESS_OPTIONS's
+ * ("key=value;..."), and from the 30th call HARNESS_OPTIONS_LATER's, as
+ * if changed in RetroArch's menu; RetroArch's language is HARNESS_LANGUAGE's
+ * (RETRO_LANGUAGE_*, English without it). It stops after <frames>, or when
+ * the core asks to shut down; the summary is printed before
+ * retro_unload_game (which ends the process until the core can stop, or
+ * after a title's relaunch starts the harness again, as it would RetroArch).
  */
 #include "native/libretro/libretro.h"
 
@@ -53,10 +56,60 @@ static const char *g_save_dir;
 static bool g_shutdown;
 static unsigned g_video_calls, g_new_frames, g_dupes, g_frame_w, g_frame_h;
 static size_t g_audio_frames;
+static const struct retro_core_option_v2_definition *g_options;
+static long g_ran;              /* retro_run calls so far */
+static bool g_options_changed;  /* HARNESS_OPTIONS_LATER's, once */
+
+/* The core option's value: HARNESS_OPTIONS's ("key=value;..."), else its
+ * default. */
+static const char *option(const char *key)
+{
+    static char value[256];
+    const char *set = getenv(g_options_changed ? "HARNESS_OPTIONS_LATER" : "HARNESS_OPTIONS");
+    const size_t n = strlen(key);
+    for (const char *p = set; p && *p; p = strchr(p, ';') ? strchr(p, ';') + 1 : "") {
+        if (!strncmp(p, key, n) && p[n] == '=') {
+            const char *end = strchr(p + n + 1, ';');
+            snprintf(value, sizeof(value), "%.*s", (int)(end ? end - (p + n + 1) : (long)strlen(p + n + 1)),
+                     p + n + 1);
+            return value;
+        }
+    }
+    for (const struct retro_core_option_v2_definition *d = g_options; d && d->key; d++) {
+        if (!strcmp(d->key, key)) {
+            return d->default_value;
+        }
+    }
+    return NULL;
+}
 
 static bool environment(unsigned cmd, void *data)
 {
     switch (cmd) {
+    case RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION:
+        *(unsigned *)data = 2;
+        return true;
+    case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2:
+        g_options = ((const struct retro_core_options_v2 *)data)->definitions;
+        for (const struct retro_core_option_v2_definition *d = g_options; d->key; d++) {
+            printf("option: %s (%s), default %s\n", d->key, d->desc, d->default_value);
+        }
+        return true;
+    case RETRO_ENVIRONMENT_GET_VARIABLE: {
+        struct retro_variable *v = data;
+        v->value = option(v->key);
+        return v->value != NULL;
+    }
+    case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
+        *(bool *)data = !g_options_changed && g_ran >= 30 && getenv("HARNESS_OPTIONS_LATER");
+        g_options_changed |= *(bool *)data;
+        return true;
+    case RETRO_ENVIRONMENT_SET_MESSAGE:
+        printf("message: %s\n", ((const struct retro_message *)data)->msg);
+        return true;
+    case RETRO_ENVIRONMENT_GET_LANGUAGE:   /* HARNESS_LANGUAGE: RetroArch's (RETRO_LANGUAGE_*) */
+        *(unsigned *)data = getenv("HARNESS_LANGUAGE") ? (unsigned)atoi(getenv("HARNESS_LANGUAGE")) : 0;
+        return true;
     case RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY:
     case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY:
         *(const char **)data = g_save_dir;
@@ -163,6 +216,9 @@ int main(int argc, char **argv)
         dlclose(core);
         return 3;
     }
+    p_retro_get_system_av_info(&av);
+    printf("loaded: %ux%u, aspect %.3f\n", av.geometry.base_width, av.geometry.base_height,
+           av.geometry.aspect_ratio);
     const long frames = atol(argv[3]);
     struct timespec start;
     clock_gettime(CLOCK_MONOTONIC, &start);
@@ -171,6 +227,7 @@ int main(int argc, char **argv)
     for (; ran < frames && !g_shutdown; ran++) {
         const unsigned before = g_video_calls;
         p_retro_run();
+        g_ran = ran + 1;
         if (g_video_calls != before + 1) {
             fprintf(stderr, "FAIL: retro_run %ld made %u video calls\n", ran, g_video_calls - before);
             return 1;

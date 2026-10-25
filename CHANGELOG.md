@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased (PortareOS)
+
+### What's new
+
+- **Core options** — RetroArch's Quick Menu has options for the render scale (1x to 4x) and the console's settings: screen format (widescreen games then show 16:9), language (RetroArch's by default) and video region. They take effect the next time the game starts.
+- **PAL games at 60 Hz** — European games that offer 60 Hz now run at it.
+
+### Current limitations
+
+- Closing a game also closes RetroArch.
+- Only player 1 is supported.
+- Reset and save states are not yet available.
+- Games must be XISO disc images with a `.iso` extension.
+
 ## linux-v0.2.1 (PortareOS)
 
 Two fixes for the RetroArch core.

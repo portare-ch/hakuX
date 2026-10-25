@@ -141,8 +141,24 @@ Load `hakux_libretro.so` in RetroArch with its Vulkan video driver and open
 an XISO `.iso` image. The renderer shares RetroArch's Vulkan device and
 copies frames on the GPU; the diagnostic harness uses CPU readback.
 
-Closing a game closes RetroArch. Only player 1 is supported; reset, core
-options and save states are not yet available. Run-ahead must stay off.
+Closing a game closes RetroArch. Only player 1 is supported; reset and save
+states are not yet available. Run-ahead must stay off.
+
+Core options (`native/libretro/options.c`), read once before the console
+boots, so a change takes effect when the game starts next:
+
+| Key | Values | Default |
+| --- | --- | --- |
+| `hakux_render_scale` | `1`-`4`: the renderer's resolution, times the game's | `1` |
+| `hakux_screen_format` | `normal`, `widescreen` (shown 16:9), `letterbox` | `normal` |
+| `hakux_language` | `auto` (RetroArch's), `english`, `japanese`, `german`, `french`, `spanish`, `italian`, `korean`, `chinese`, `portuguese` | `auto` |
+| `hakux_video_region` | `auto` (the game's region), `ntsc-m`, `ntsc-j`, `pal` | `auto` |
+
+PAL games are offered 60 Hz (the console's PAL60 setting) whatever the
+options. 480p, 720p and 1080i stay off. Filters (FXAA) and the picture's
+shape on screen are RetroArch's: its shaders and its aspect ratio setting
+("Core provided" shows the core's 4:3 or 16:9).
+
 The remaining design targets are in [LIBRETRO_SPEC.md](../LIBRETRO_SPEC.md).
 
 `HAKUX_LR_STATS=1` logs the core's time in `retro_run`, and

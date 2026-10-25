@@ -346,6 +346,13 @@ void nc_kernel_title_fixups(NcKernel *k, const struct HleXbeInfo *xbe);
 #define NC_VIDEO_PAL60      0x00400000u
 enum { NC_AV_PACK_HDTV, NC_AV_PACK_STANDARD, NC_AV_PACK_SVIDEO, NC_AV_PACK_SCART, NC_AV_PACK_VGA };
 void nc_kernel_set_video(int64_t flags, int av_pack);
+/* ex.c: the console's TV standard, the EEPROM's XC_FACTORY_AV_REGION
+ * (NC_AV_REGION_*). Before the title starts; 0 follows the title's region,
+ * as a new console does: PAL for a European title, NTSC-M otherwise. */
+#define NC_AV_REGION_NTSC_M 0x00400100u
+#define NC_AV_REGION_NTSC_J 0x00400200u
+#define NC_AV_REGION_PAL_I  0x00800300u
+void nc_kernel_set_av_region(uint32_t region);
 
 /* ex.c: the console's language, the EEPROM's XC_LANGUAGE that XGetLanguage
  * returns: 1 English, 2 Japanese, 3 German, 4 French, 5 Spanish, 6 Italian,

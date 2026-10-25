@@ -1,7 +1,8 @@
 /*
  * hakuX native core — the libretro core's parts (LIBRETRO_SPEC.md):
  * core.c the ABI and the game's lifecycle, audio.c the APU's output,
- * input.c the RetroPad as the Duke, video.c the frames to RetroArch.
+ * input.c the RetroPad as the Duke, video.c the frames to RetroArch,
+ * options.c the core options.
  */
 #ifndef NATIVE_LIBRETRO_LIBRETRO_INT_H
 #define NATIVE_LIBRETRO_LIBRETRO_INT_H
@@ -36,11 +37,22 @@ void nc_lr_input_describe(retro_environment_t env);
 /* video.c — the newest front frame to RetroArch, exactly one video_cb
  * (retro_run); its source size and the aspect it is shown at; the overscan
  * a TV hid, on each side of a w x h frame; a frame of w x h shown as ow x oh
- * (RetroArch told when that changes). */
+ * (RetroArch told when that changes); the console set to widescreen, which
+ * shows a standard-definition frame 16:9 (before the first frame). */
 void nc_lr_video_run(retro_video_refresh_t video, uint64_t now_ns);
 void nc_lr_video_geometry(struct retro_game_geometry *g);
 void nc_lr_overscan(uint32_t w, uint32_t h, uint32_t *cx, uint32_t *cy);
 void nc_lr_video_size(uint32_t w, uint32_t h, uint32_t ow, uint32_t oh);
+void nc_lr_video_set_widescreen(bool on);
+
+/* options.c — the core options: declared to the frontend
+ * (retro_set_environment), applied to the console before it boots
+ * (retro_load_game), and a change during the game noted (retro_run): every
+ * option takes effect when the game starts next, as the core can't boot
+ * again in its process (M2). */
+void nc_lr_options_declare(retro_environment_t env);
+void nc_lr_options_apply(void);
+void nc_lr_options_run(void);
 
 /* vulkan.c — the renderer on RetroArch's Vulkan device, the guest booted in
  * its context_reset (load: false when the frontend has none, the frames then

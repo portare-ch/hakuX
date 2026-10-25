@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check the libretro core: its exports, its info, and a synthetic title run through it."""
 import argparse
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -23,6 +24,19 @@ RELAUNCH = (
     b'\xeb\xfe'                      # jmp $
     b'\xf4'                          # halt: hlt
 ).ljust(0x1000, b'\0') + struct.pack('<II', 1, 0) + b'\\Device\\CdRom0;default.xbe'
+
+# A title that reads the console's language (ExQueryNonVolatileSetting, which
+# logs the EEPROM's video flags, AV region and language), then halts.
+SETTINGS = (
+    b'\x83\xec\x0c'                  # sub esp, 12: type, value, result length
+    b'\x8d\x44\x24\x08\x50'          # push &result length
+    b'\x6a\x04'                      # push 4
+    b'\x8d\x44\x24\x0c\x50'          # push &value
+    b'\x8d\x44\x24\x0c\x50'          # push &type
+    b'\x6a\x07'                      # push 7: XC_LANGUAGE
+    b'\xff\x15\x00\x0f\x01\x00'      # call [thunk 0]: ExQueryNonVolatileSetting
+    b'\xf4'                          # hlt
+)
 
 
 def dynamic_exports(path):
@@ -58,7 +72,11 @@ def main():
         raise SystemExit(f'FAIL: {args.core.name} exports {len(exports)} symbols; not libretro: {stray[:10]}')
     print(f'PASS: {args.core.name} exports only retro_* ({len(exports)})')
     run([args.harness, args.core], 0, ('core: hakuX', 'extensions iso, need_fullpath 1, block_extract 1',
-                                       'av: 59.940060 fps, 48000 Hz', 'serialize size: 0', 'unloaded without a game'))
+                                       'av: 59.940060 fps, 48000 Hz', 'serialize size: 0', 'unloaded without a game',
+                                       'option: hakux_render_scale (Render Scale), default 1',
+                                       'option: hakux_screen_format (Screen Format), default normal',
+                                       'option: hakux_language (Language), default auto',
+                                       'option: hakux_video_region (Video Region), default auto'))
     with tempfile.TemporaryDirectory(prefix='hakux-libretro-') as folder:
         root = Path(folder)
         (root / 'saves').mkdir()
@@ -78,6 +96,31 @@ def main():
              'relaunch: \\Device\\CdRom0\\default.xbe', 'guest executed HLT', 'the core cannot stop yet'))
         if (root / 'saves' / 'relaunch.bin').exists():
             raise SystemExit('FAIL: the relaunch left its launch data page')
+        # The core options reach the console before it boots: the defaults,
+        # with RetroArch in German (RETRO_LANGUAGE_GERMAN, XC_LANGUAGE 3),
+        # then each set.
+        disc(root / 'settings.iso', SETTINGS, imports=(24,))
+        env = dict(os.environ, HARNESS_LANGUAGE='4')
+        run([args.harness, args.core, root / 'settings.iso', 600, root / 'saves'], 0,
+            ('options: render scale 1x, screen normal, language 3 (auto), video region auto', 'aspect 1.333',
+             'ex: video flags 00400000, AV pack 0, AV region 00400100, language 3', 'guest executed HLT'), env)
+        env['HARNESS_OPTIONS'] = ('hakux_render_scale=2;hakux_screen_format=widescreen;hakux_language=french;'
+                                  'hakux_video_region=ntsc-j')
+        run([args.harness, args.core, root / 'settings.iso', 600, root / 'saves'], 0,
+            ('options: render scale 2x, screen widescreen, language 4 (french), video region ntsc-j',
+             'aspect 1.778', 'ex: video flags 00410000, AV pack 0, AV region 00400200, language 4',
+             'guest executed HLT'), env)
+        # A value the core doesn't know is its default.
+        env['HARNESS_OPTIONS'] = 'hakux_render_scale=9;hakux_video_region=pal'
+        run([args.harness, args.core, root / 'settings.iso', 600, root / 'saves'], 0,
+            ('options: render scale 1x, screen normal, language 3 (auto), video region pal',
+             'ex: video flags 00400000, AV pack 0, AV region 00800300, language 3'), env)
+        # Changed during the game (the menu), they wait for the next start.
+        disc(root / 'spin.iso', b'\xeb\xfe')
+        env = dict(os.environ, HARNESS_OPTIONS_LATER='hakux_render_scale=3;hakux_video_region=pal')
+        run([args.harness, args.core, root / 'spin.iso', 60, root / 'saves'], 0,
+            ('options: render scale 1x', 'message: Render Scale, Video Region: takes effect when the game starts next',
+             'ran 60 frames'), env)
         print('PASS: the relaunch booted the XBE its page named')
 
 

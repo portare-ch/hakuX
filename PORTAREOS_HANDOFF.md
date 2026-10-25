@@ -17,7 +17,8 @@ PortareOS defaults to RetroArch; the standalone remains selectable. Both
 use `/storage/saves/xbox` for the emulated disk and caches. The core still
 ends RetroArch on unload, and when RetroArch lets its Vulkan context go; a
 title's relaunch starts RetroArch again in its place (#11). It lacks reset,
-additional players, core options and save states. Current usage: [native/README.linux.md](native/README.linux.md).
+additional players and save states; its options are the render scale and
+the console's settings. Current usage: [native/README.linux.md](native/README.linux.md).
 Issue #8's display checks passed on the Nova on 2026-10-25: through
 RetroArch, Burnout 3 was shown for two refreshes per frame for 10 minutes
 (see "Issue #8" below).
@@ -356,7 +357,7 @@ host (untracked). The runs' files were removed from the Nova afterwards.
 
 - In-process core shutdown, unload/reload and reset; see
   [LIBRETRO_SPEC.md](LIBRETRO_SPEC.md) for the lifecycle and validation targets.
-- Additional controller ports, core options and save states.
+- Additional controller ports and save states.
 - Complete the long-run audio, pause/resume and relaunch checks in the
   libretro design (the display's, #8, are done); investigate rumble when
   prioritized.

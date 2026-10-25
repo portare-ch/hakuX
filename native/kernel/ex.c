@@ -134,6 +134,14 @@ void nc_kernel_set_video(int64_t flags, int av_pack)
     g_av_pack = av_pack;
 }
 
+/* The front end's TV standard (nc_kernel_set_av_region); 0 follows the title. */
+static uint32_t g_av_region;
+
+void nc_kernel_set_av_region(uint32_t region)
+{
+    g_av_region = region;
+}
+
 /* The app's language (nc_kernel_set_language); 0 keeps the stored one. */
 static int g_language;
 
@@ -224,7 +232,7 @@ static uint8_t *eeprom(NcKernel *k)
          * same image. */
         const bool pal = k->game_region == 4;
         nc_wr32(g_eeprom + 0x2C, k->game_region ? k->game_region : 1);
-        nc_wr32(g_eeprom + 0x58, pal ? 0x00800300u : 0x00400100u);
+        nc_wr32(g_eeprom + 0x58, g_av_region ? g_av_region : pal ? NC_AV_REGION_PAL_I : NC_AV_REGION_NTSC_M);
         nc_wr32(g_eeprom + 0xBC, pal ? 2 : 1);
         /* So do the video settings: the app's (widescreen, 480p...). */
         if (g_video_flags >= 0) {
@@ -242,8 +250,9 @@ static uint8_t *eeprom(NcKernel *k)
         memset(g_eeprom + 0x88, 0, 8);
         eeprom_seal();
         g_eeprom_ready = true;
-        nc_log("hakuX-native", "ex: video flags %08x, AV pack %d, language %u, time zone bias %d min",
-               nc_rd32(g_eeprom + 0x94), g_av_pack, nc_rd32(g_eeprom + 0x90), (int32_t)nc_rd32(g_eeprom + 0x64));
+        nc_log("hakuX-native", "ex: video flags %08x, AV pack %d, AV region %08x, language %u, time zone bias %d min",
+               nc_rd32(g_eeprom + 0x94), g_av_pack, nc_rd32(g_eeprom + 0x58), nc_rd32(g_eeprom + 0x90),
+               (int32_t)nc_rd32(g_eeprom + 0x64));
     }
     return g_eeprom;
 }
