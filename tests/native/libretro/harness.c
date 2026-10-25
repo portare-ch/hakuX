@@ -11,8 +11,10 @@
  * if changed in RetroArch's menu; RetroArch's language is HARNESS_LANGUAGE's
  * (RETRO_LANGUAGE_*, English without it). It stops after <frames>, or when
  * the core asks to shut down; the summary is printed before
- * retro_unload_game (which ends the process until the core can stop, or
- * after a title's relaunch starts the harness again, as it would RetroArch).
+ * retro_unload_game (which in PortareOS's build ends the process until the
+ * core can stop, or after a title's relaunch starts the harness again, as it
+ * would RetroArch). HARNESS_LOAD_AGAIN: the core is opened again after it and
+ * a second game loaded, as RetroArch would.
  */
 #include "native/libretro/libretro.h"
 
@@ -245,5 +247,18 @@ int main(int argc, char **argv)
     p_retro_deinit();
     dlclose(core);
     printf("unloaded\n");
+    if (getenv("HARNESS_LOAD_AGAIN")) {     /* a second game, as RetroArch loads one: the core opened again */
+        fflush(stdout);
+        if (!(core = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL))) {
+            fprintf(stderr, "FAIL: dlopen again: %s\n", dlerror());
+            return 1;
+        }
+        SYMS(RESOLVE)
+        p_retro_set_environment(environment);
+        p_retro_init();
+        printf("load again: %s\n", p_retro_load_game(&game) ? "loaded" : "refused");
+        p_retro_deinit();
+        dlclose(core);
+    }
     return 0;
 }

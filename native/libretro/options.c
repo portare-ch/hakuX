@@ -4,11 +4,12 @@
  * settings as its dashboard keeps them. The picture's filters and its shape
  * on screen are RetroArch's (its shaders, its aspect setting).
  *
- * Each option is read once, before the console boots: the render scale sizes
- * the renderer's targets, and the console's settings are in the EEPROM the
- * title reads as it starts. The core can't boot again in its process (M2),
- * so a change during the game takes effect when the game starts next, and
- * RetroArch shows a message saying so.
+ * Each option but the overscan crop is read once, before the console boots:
+ * the render scale sizes the renderer's targets, and the console's settings
+ * are in the EEPROM the title reads as it starts. The core can't boot again
+ * in its process (M2), so a change to one during the game takes effect when
+ * the game starts next, and RetroArch shows a message saying so. The crop
+ * changes at once (video.c).
  */
 #include "native/libretro/libretro_int.h"
 #include "native/hle/hle_native.h"
@@ -20,7 +21,7 @@
 
 #define NEXT " Takes effect when the game starts next."
 
-enum { OPT_SCALE, OPT_FORMAT, OPT_LANGUAGE, OPT_REGION, OPT_COUNT };
+enum { OPT_SCALE, OPT_CROP, OPT_FORMAT, OPT_LANGUAGE, OPT_REGION, OPT_COUNT };
 
 /* The language values follow XC_LANGUAGE after auto: english is 1. */
 static struct retro_core_option_v2_definition g_defs[OPT_COUNT + 1] = {
@@ -31,6 +32,13 @@ static struct retro_core_option_v2_definition g_defs[OPT_COUNT + 1] = {
         NULL, NULL,
         {{"1", "1x (Xbox)"}, {"2", "2x"}, {"3", "3x"}, {"4", "4x"}, {NULL, NULL}},
         "1"},
+    [OPT_CROP] = {
+        "hakux_crop_overscan", "Crop Overscan", NULL,
+        "Hides the border a TV hid, 1/30 of the picture on each side, so a standard-definition game fills a "
+        "4:3 screen. Off shows the whole frame.",
+        NULL, NULL,
+        {{"enabled", "On"}, {"disabled", "Off"}, {NULL, NULL}},
+        "enabled"},
     [OPT_FORMAT] = {
         "hakux_screen_format", "Screen Format", NULL,
         "The TV the console is set up for. Widescreen games then render 16:9 and are shown so, letterbox "
@@ -145,6 +153,8 @@ void nc_lr_options_apply(void)
     }
     const int scale = atoi(g_defs[OPT_SCALE].values[g_applied[OPT_SCALE]].value);
     nc_hle_set_render_scale(scale);
+    const bool crop = strcmp(g_defs[OPT_CROP].values[g_applied[OPT_CROP]].value, "disabled") != 0;
+    nc_lr_video_set_crop(crop);
 
     /* PAL60 always: RetroArch runs at 59.94 Hz, and an NTSC title ignores it.
      * No 480p, 720p or 1080i, as before the options. */
@@ -163,8 +173,9 @@ void nc_lr_options_apply(void)
                             : !strcmp(region, "ntsc-j") ? NC_AV_REGION_NTSC_J
                             : !strcmp(region, "pal")    ? NC_AV_REGION_PAL_I
                                                         : 0);
-    nc_log("hakuX-libretro", "options: render scale %dx, screen %s, language %d (%s), video region %s", scale,
-           format, language, g_defs[OPT_LANGUAGE].values[g_applied[OPT_LANGUAGE]].value, region);
+    nc_log("hakuX-libretro", "options: render scale %dx, overscan %s, screen %s, language %d (%s), video region %s",
+           scale, crop ? "cropped" : "shown", format, language,
+           g_defs[OPT_LANGUAGE].values[g_applied[OPT_LANGUAGE]].value, region);
 }
 
 void nc_lr_options_run(void)
@@ -173,10 +184,15 @@ void nc_lr_options_run(void)
     if (!nc_lr_env(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &changed) || !changed) {
         return;
     }
+    const int crop = value_of(OPT_CROP);
+    if (crop != g_applied[OPT_CROP]) {
+        g_applied[OPT_CROP] = crop;
+        nc_lr_video_set_crop(strcmp(g_defs[OPT_CROP].values[crop].value, "disabled") != 0);
+    }
     char names[256] = "";
     size_t n = 0;
     for (int i = 0; i < OPT_COUNT; i++) {
-        if (value_of(i) != g_applied[i] && n < sizeof(names)) {
+        if (i != OPT_CROP && value_of(i) != g_applied[i] && n < sizeof(names)) {
             n += (size_t)snprintf(names + n, sizeof(names) - n, "%s%s", n ? ", " : "", g_defs[i].desc);
         }
     }

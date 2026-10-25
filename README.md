@@ -18,10 +18,10 @@ closes RetroArch. A game that starts another of its programs restarts
 RetroArch on the same game and continues there, without returning to the
 launcher. Reset and save states are not yet available.
 
-The core's options, in RetroArch's Quick Menu, are the render scale and the
-console's own settings: screen format (widescreen), language and video
-region. They take effect when the game starts next. Filters such as FXAA
-are RetroArch's shaders.
+The core's options, in RetroArch's Quick Menu, are the render scale, the
+overscan crop, and the console's own settings: screen format (widescreen),
+language and video region. All but the crop take effect when the game starts
+next. Filters such as FXAA are RetroArch's shaders.
 
 ## Building
 

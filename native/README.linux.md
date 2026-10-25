@@ -141,15 +141,24 @@ Load `hakux_libretro.so` in RetroArch with its Vulkan video driver and open
 an XISO `.iso` image. The renderer shares RetroArch's Vulkan device and
 copies frames on the GPU; the diagnostic harness uses CPU readback.
 
-Closing a game closes RetroArch. Only player 1 is supported; reset and save
-states are not yet available. Run-ahead must stay off.
+Only player 1 is supported; reset and save states are not yet available.
+Run-ahead must stay off. The core can't stop yet, so it plays one game per
+RetroArch session. What a closed game does depends on the build option
+`HAKUX_LR_END_PROCESS`:
+- **On (PortareOS's build, `linux-build.sh`):** closing the game closes
+  RetroArch, and a game that starts another of its programs starts RetroArch
+  again on it.
+- **Off (the default):** closing the game parks the emulation for good, and
+  RetroArch runs on. Loading a second game is refused until RetroArch
+  restarts.
 
-Core options (`native/libretro/options.c`), read once before the console
-boots, so a change takes effect when the game starts next:
+Core options (`native/libretro/options.c`). All but the crop are read once,
+before the console boots, so a change takes effect when the game starts next:
 
 | Key | Values | Default |
 | --- | --- | --- |
 | `hakux_render_scale` | `1`-`4`: the renderer's resolution, times the game's | `1` |
+| `hakux_crop_overscan` | `enabled`, `disabled` (the whole frame); changes at once | `enabled` |
 | `hakux_screen_format` | `normal`, `widescreen` (shown 16:9), `letterbox` | `normal` |
 | `hakux_language` | `auto` (RetroArch's), `english`, `japanese`, `german`, `french`, `spanish`, `italian`, `korean`, `chinese`, `portuguese` | `auto` |
 | `hakux_video_region` | `auto` (the game's region), `ntsc-m`, `ntsc-j`, `pal` | `auto` |

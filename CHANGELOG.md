@@ -5,6 +5,7 @@
 ### What's new
 
 - **Core options** — RetroArch's Quick Menu has options for the render scale (1x to 4x) and the console's settings: screen format (widescreen games then show 16:9), language (RetroArch's by default) and video region. They take effect the next time the game starts.
+- **Overscan crop option** — The border a TV hid is still cropped by default; turning the option off shows the whole picture, at once.
 - **PAL games at 60 Hz** — European games that offer 60 Hz now run at it.
 - **Upstream hakuX 1.1.0** — Includes upstream's emulator changes up to its version 1.1.0, mainly support for GPUs other than Adreno. Adreno GPUs, such as the Nova's, are unchanged.
 

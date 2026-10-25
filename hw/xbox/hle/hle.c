@@ -371,7 +371,8 @@ void hle_prof_diag(void)
 void hle_init(void)
 {
     memset(&g_hle, 0, sizeof(g_hle));
-    g_hle.posture = parse_posture(getenv("HAKUX_HLE_MODE"));
+    const char *mode = getenv("HAKUX_HLE_MODE");
+    g_hle.posture = parse_posture(mode ? mode : hle_host_hle_mode());
     hle_prof_init();
     hle_barrier_init(hle_ram_size());
     hle_log("hakuX-hle", "init posture=%s", hle_posture_name(g_hle.posture));
