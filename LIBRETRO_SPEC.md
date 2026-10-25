@@ -195,7 +195,10 @@ the same process.
   behind, about 1 GiB of address space (measured). Kept, the next load
   reuses them and finds the statics as the stop reset them.
 - A video driver rebuild boots the game again on RetroArch's new device,
-  with a message saying so.
+  with a message saying so. The core doesn't let RetroArch cache the
+  context (`cache_context`): a cached reinit kept the device but rebuilt
+  RetroArch's driver, freeing the render interface and the queue lock's
+  handle the core held, and RetroArch crashed (`VIDEO_REINIT` on the Nova).
 - Known leftovers: FEX's `LookupCache` leaves its block-link buffers mapped
   (about 300 KiB a boot on Burnout 3: `named_monotonic_page_buffer_resource`
   has no destructor), and glibc and the Vulkan loader keep a few KiB a
