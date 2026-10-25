@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased (PortareOS)
+## linux-v0.3.0 (PortareOS)
+
+Core options for the RetroArch core, and upstream hakuX 1.1.0.
 
 ### What's new
 
