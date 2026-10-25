@@ -1,7 +1,7 @@
 #!/bin/sh
-# PortareOS's hakux-sa and hakux-lr packages' input: the Linux front end and
-# the libretro core with its core info, stripped, with the licences and the
-# revisions they were built from, as build/package/hakux-<version>-aarch64.tar.gz.
+# PortareOS's hakux-lr package's input: the libretro core with its core
+# info, stripped, with the licences and the revisions it was built from, as
+# build/package/hakux-<version>-aarch64.tar.gz.
 # Run after linux-build.sh, in the same image, on a clean checkout: the
 # archive is the commit's.
 set -eu
@@ -18,8 +18,7 @@ fi
 out=$repo/build/package
 name=hakux-$version
 rm -rf "${out:?}/$name"
-mkdir -p "$out/$name/bin" "$out/$name/lib/libretro" "$out/$name/share/licenses/hakux"
-"${STRIP:-llvm-strip-19}" -o "$out/$name/bin/hakux" "$build/hakux"
+mkdir -p "$out/$name/lib/libretro" "$out/$name/share/licenses/hakux"
 "${STRIP:-llvm-strip-19}" -o "$out/$name/lib/libretro/hakux_libretro.so" "$build/hakux_libretro.so"
 sed "s/^display_version = .*/display_version = \"$version\"/" native/libretro/hakux_libretro.info \
     > "$out/$name/lib/libretro/hakux_libretro.info"
@@ -28,7 +27,7 @@ cp LICENSE COPYING licenses/* "$out/$name/share/licenses/hakux/"
     echo "hakuX $version"
     echo "source $(git rev-parse HEAD) (https://github.com/portare-ch/hakuX)"
     echo "compiler $("${CC:-clang}" --version | head -1)"
-    echo "runtime libSDL3.so.0, libz, libstdc++, libm, libgcc_s, glibc (aarch64)"
+    echo "runtime libz, libstdc++, libm, libgcc_s, glibc 2.38 (aarch64); libvulkan.so.1 loaded at run time"
     echo "dependencies (tools/native/linux-deps.json):"
     cat tools/native/linux-deps.json
 } > "$out/$name/BUILD-INFO"

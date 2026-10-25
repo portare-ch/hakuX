@@ -22,8 +22,7 @@ endif()
 if(NOT ANDROID)
   target_compile_definitions(nc_platform INTERFACE _GNU_SOURCE)
 endif()
-option(HAKUX_BUILD_APP "Build the app: the Android SDL library, or the Linux front end (hakux)" ${ANDROID})
-option(HAKUX_DIAGNOSTIC_AUDIO "Linux: hakux uses the paced silent sink, as the diagnostics do, instead of SDL audio" OFF)
+option(HAKUX_BUILD_APP "Android: build the app's native library (hakuxcore)" ${ANDROID})
 option(HAKUX_BUILD_TESTS "Build native Linux smoke tests" ON)
 option(HAKUX_BUILD_LIBRETRO "Linux: build the libretro core (hakux_libretro.so), everything as PIC" OFF)
 option(HAKUX_LR_END_PROCESS "libretro, PortareOS's build: a stop that hangs ends RetroArch's process, and HAKUX_LR_STOP=0 brings back ending it when the game closes (a title's relaunch then starts it again)" OFF)
@@ -118,14 +117,9 @@ if(NOT ANDROID)
   target_link_libraries(kms-grab PRIVATE z)
 endif()
 
-# The hakuX app's native core library (native/app, cmake/app.cmake), or on
-# Linux its front end (cmake/linux-app.cmake).
-if(HAKUX_BUILD_APP)
-  if(ANDROID)
-    include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/app.cmake")
-  else()
-    include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/linux-app.cmake")
-  endif()
+# The hakuX app's native core library (native/app, cmake/app.cmake).
+if(HAKUX_BUILD_APP AND ANDROID)
+  include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/app.cmake")
 endif()
 
 # RetroArch's core (cmake/libretro.cmake).

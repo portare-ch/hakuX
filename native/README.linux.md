@@ -1,9 +1,10 @@
 # Linux build
 
-The ARM64 Linux build provides the RetroArch core `hakux_libretro.so`, the
-standalone `hakux` emulator (SDL3/KMSDRM, PipeWire audio), and the headless
-`xboxrun` diagnostic runner. PortareOS launches Xbox games through RetroArch
-by default; the standalone remains selectable.
+The ARM64 Linux build provides the RetroArch core `hakux_libretro.so` and
+headless diagnostics (`xboxrun`, `vulkan-probe`, `kms-grab`). PortareOS runs
+Xbox games through RetroArch with the core. The Linux standalone `hakux` was
+dropped in 0.4.0: it wasn't tested, and PortareOS no longer shipped it.
+Installing and testing the core is in [TESTING.md](../TESTING.md).
 
 ## Build and check
 
@@ -38,17 +39,13 @@ For a second build directory, set `HAKUX_BUILD=/src/build/linux-clean`.
 Additional arguments to `linux-build.sh` are passed to CMake;
 a PortareOS sysroot/toolchain can be supplied there when required.
 
-The build produces `hakux`, `hakux_libretro.so`, `xboxrun`, `libretro-harness`,
-`linux-smoke`, `audio-smoke`, `audio-sdl-smoke`, `vulkan-probe` and `kms-grab`.
-SDL3 is pinned at release 3.4.16,
-PortareOS's version. It is built without backends, only to link `hakux`
-against; the device's own `libSDL3.so.0` (with KMSDRM) is loaded at run time.
-CTest runs the CPU/memory, audio, positive/negative boundary and libretro
-suites. `audio-sdl-smoke` checks the SDL output's pacing, pause and wakeup
-contract on SDL's dummy driver; on the Nova it runs through PipeWire.
-`-DHAKUX_DIAGNOSTIC_AUDIO=ON` makes `hakux` silent as well. The boundary
-suite constructs its own small synthetic XBE/XISO files; it needs no game
-dump, BIOS or proprietary guest software.
+The build produces `hakux_libretro.so`, `xboxrun`, `libretro-harness`,
+`linux-smoke`, `audio-smoke`, `vulkan-probe` and `kms-grab`. CTest runs the
+CPU/memory, audio, positive/negative boundary and libretro suites. The
+boundary and libretro suites construct their own small synthetic XBE/XISO
+files; they need no game dump, BIOS or proprietary guest software. SDL3 is
+fetched only for the HLE tests below, which take the Khronos headers from
+it.
 
 The existing pure HLE regressions are a separate suite:
 
@@ -61,7 +58,7 @@ python3 tools/native/statelock.py
 python3 tools/native/statelock.py --sizes --build build/linux
 ```
 
-## Run on the Nova
+## Diagnostics on the Nova
 
 Copy the executables and `tests/native/linux/check.py` to a dedicated
 temporary directory on the device. Stripping copies with `llvm-strip-19`
@@ -102,34 +99,6 @@ CHD is not supported yet. `vulkan-probe` checks the same portable capability flo
 as the renderer and creates a device, but creates no surface and renders no
 frames. It does not establish Linux shared-memory import correctness.
 
-## The game on the panel
-
-`hakux` runs a title fullscreen:
-
-```sh
-./hakux /roms/xbox/game.iso /tmp/hakux-data [option...]
-```
-
-Options, as the Android app's: `scale=<n>`, `aspect=auto|4:3|16:9|stretch`,
-`fxaa=0|1`, `upscale=bilinear|sgsr`, `video=<flags, hex>` and `lang=<n>`;
-`exitafter=<seconds>` leaves after that long (tests). Every gamepad is
-player 1, merged. Escape, Home + Start (the guide button and Start, as
-every PortareOS emulator quits), SIGINT/SIGTERM or the title stopping
-leave; the exit code is 0 if a title frame was shown. On KMSDRM the
-panel must be free: the launcher drops the DRM master while it runs a game.
-Sound goes to the default PipeWire sink, which SDL finds through
-`XDG_RUNTIME_DIR` (set by `/etc/profile`); without an output device the
-APU's ring is drained silently at 48 kHz. `HAKUX_APU_STATS=1` logs the
-APU's frames, callbacks and short callbacks each second. Over SSH, load the
-profile and stop the launcher first, and start it again afterwards:
-
-```sh
-. /etc/profile
-systemctl stop portarelauncher.service
-./hakux /roms/xbox/game.iso /tmp/hakux-data exitafter=30
-systemctl start portarelauncher.service
-```
-
 `kms-grab out.png` saves the framebuffer the panel scans out, when it is
 linear (the launcher's). Turnip's swapchain images are UBWC-compressed:
 `kms-grab` then reports the framebuffer, its size and modifier, and saves
@@ -138,8 +107,9 @@ nothing.
 ## The libretro core
 
 Load `hakux_libretro.so` in RetroArch with its Vulkan video driver and open
-an XISO `.iso` image. The renderer shares RetroArch's Vulkan device and
-copies frames on the GPU; the diagnostic harness uses CPU readback.
+an XISO `.iso` image ([TESTING.md](../TESTING.md) has the steps). The
+renderer shares RetroArch's Vulkan device and copies frames on the GPU; the
+diagnostic harness uses CPU readback.
 
 Only player 1 is supported; save states are not yet available. Run-ahead
 must stay off. Closing the game stops the core in RetroArch's process, and
@@ -175,29 +145,27 @@ The remaining design targets are in [LIBRETRO_SPEC.md](../LIBRETRO_SPEC.md).
 `HAKUX_DISP_STATS=1` (any front end) the new frames per second, their age
 when taken and the gaps between them.
 
-## The PortareOS packages
+## The PortareOS package
 
-PortareOS's `hakux-sa` (the standalone) and `hakux-lr` (the core) packages
-install one release tarball. Make it from a clean checkout of the release
-commit, in the same image:
+PortareOS's `hakux-lr` package installs the release tarball. Make it from a
+clean checkout of the release commit, in the same image:
 
 ```sh
-HAKUX_VERSION=0.3.0 CC=clang-19 CXX=clang++-19 sh tools/native/linux-build.sh
-CC=clang-19 sh tools/native/linux-package.sh 0.3.0
+HAKUX_VERSION=0.4.0 CC=clang-19 CXX=clang++-19 sh tools/native/linux-build.sh
+CC=clang-19 sh tools/native/linux-package.sh 0.4.0
 ```
 
-It writes `build/package/hakux-0.3.0-aarch64.tar.gz` and prints its
-SHA-256. The archive holds `bin/hakux` and `lib/libretro/hakux_libretro.so`,
-stripped and without a RUNPATH, with `lib/libretro/hakux_libretro.info`, the
-licences in `share/licenses/hakux/`, and `BUILD-INFO`: the source revision,
-the compiler and `linux-deps.json`. Names are sorted, owned by root and dated
-at the commit, so the same build packs to the same tarball. Publish it as the
-release `linux-v<version>` and set the packages' `PKG_VERSION` and
+It writes `build/package/hakux-0.4.0-aarch64.tar.gz` and prints its
+SHA-256. The archive holds `lib/libretro/hakux_libretro.so`, stripped and
+without a RUNPATH, with `lib/libretro/hakux_libretro.info`, the licences in
+`share/licenses/hakux/`, and `BUILD-INFO`: the source revision, the compiler
+and `linux-deps.json`. Names are sorted, owned by root and dated at the
+commit, so the same build packs to the same tarball. Publish it as the
+release `linux-v<version>` and set the package's `PKG_VERSION` and
 `PKG_SHA256` to match.
 
-In PortareOS the Xbox system's default is RetroArch with the core; the
-standalone stays selectable. Both keep the console's disk in
-`/storage/saves/xbox`. Discs are `.iso` (XISO) images.
+In PortareOS the Xbox system runs RetroArch with the core, which keeps the
+console's disk in `/storage/saves/xbox`. Discs are `.iso` images.
 
 ## Properties
 
