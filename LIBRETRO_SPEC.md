@@ -173,6 +173,25 @@ tracking, MMIO, the JIT); chain any other to the previous handler with its
 flags and mask; install while the core's state is alive, restore only if
 still ours. Test deliberate faults in child processes.
 
+Until M2 the core has one of two interim behaviours, chosen at build time
+with `HAKUX_LR_END_PROCESS`. Neither passes this section's gate.
+- **PortareOS's build (on):** unloading, or RetroArch letting its Vulkan
+  context go, ends RetroArch's process. A title's relaunch starts RetroArch
+  again on the same command line (#11).
+- **Other builds (off, the default):** the emulation parks for good.
+  - The guest CPU and the devices pause.
+  - The renderer's pipeline builds finish, the device goes idle, and every
+    entry point of the renderer's Vulkan device table then blocks its caller
+    (`hle_vk_park`), so no thread uses RetroArch's device once RetroArch
+    destroys it.
+  - The library is pinned (`RTLD_NODELETE`), so the parked threads' code
+    stays mapped after RetroArch's `dlclose`.
+  - RetroArch runs on. A second load is refused, with a message to restart
+    RetroArch, and a title's relaunch closes the game.
+
+`HAKUX_LR_END_PROCESS=0` or `1` in the environment overrides the build's
+choice for one run (the tests).
+
 ## 7. Vulkan
 
 Request `RETRO_HW_CONTEXT_VULKAN` and use the negotiation interface's
@@ -259,13 +278,17 @@ Run-ahead stays off for hakuX, now and after section 11:
 the Xbox system ships a RetroArch override with `run_ahead_enabled =
 "false"`. RetroArch must never load a second hakuX instance into the process.
 
-Options (`options.c`): only what the emulator backs. The render scale (1-4x),
-and the console's own settings as its dashboard keeps them: screen format
-(normal, widescreen, letterbox), language (auto: RetroArch's) and video region
-(auto: the game's; NTSC-M, NTSC-J, PAL). PAL60 is always set, as RetroArch runs
-at 59.94 Hz; 480p, 720p and 1080i stay off. All of them are read before the
-console boots, so a change takes effect when the game starts next, and
-RetroArch shows a message saying so. No display, VRR, latency, mapping or
+Options (`options.c`): only what the emulator backs.
+- The render scale (1-4x), and the overscan crop (on by default; off shows
+  the whole frame).
+- The console's own settings, as its dashboard keeps them: screen format
+  (normal, widescreen, letterbox), language (auto: RetroArch's) and video
+  region (auto: the game's; NTSC-M, NTSC-J, PAL). PAL60 is always set, as
+  RetroArch runs at 59.94 Hz; 480p, 720p and 1080i stay off.
+
+All but the crop are read before the console boots, so a change takes effect
+when the game starts next, and RetroArch shows a message saying so. The crop
+changes from the next frame. No display, VRR, latency, mapping or
 filter options: FXAA and the picture's shape are RetroArch's shaders and
 aspect setting, and SGSR is not offered (owner, 2026-10-25).
 
@@ -276,7 +299,8 @@ On PortareOS that is `/storage/saves/xbox`, beside `/storage/roms/xbox` and
 directory for the core is set to it, and `start_hakux.sh` uses it too, so
 both front ends share one console disk. The standalone's
 `/storage/.config/hakux` (since portare-ch/portareos#752) moves there once. A lock keeps two sessions off the same disk. No `chdir`, no
-`setenv` for paths after load. A title's relaunch stays in process (until M2, RetroArch starts again in its place: #11).
+`setenv` for paths after load: the renderer's mode and cache directory are
+set through `nc_hle_set_mode` and `nc_hle_set_base_path`. A title's relaunch stays in process (until M2, in PortareOS's build RetroArch starts again in its place, #11; in others the game closes).
 
 ## 11. Save states
 
@@ -335,7 +359,7 @@ comparison until the core passes its gates.
 | | Deliverable | Gate |
 | --- | --- | --- |
 | M0 | The shared library builds; a harness loads it; an inventory of threads, mappings, handlers and FEX globals; a `create_device2` probe | It loads into a frontend in process and exports only `retro_*`. |
-| M1 | First picture in RetroArch: phase-locked `retro_run`, the libretro audio sink, port 0, the menu's pause | BLACK and Burnout 3 play in RetroArch on the Nova (CPU readback allowed here). Until M2, unloading ends RetroArch's process; the owner chose to package it before M2 (2026-10-24), as quitting a game ends RetroArch on PortareOS anyway. Until then RetroArch letting its Vulkan context go ends the process too, and a title's relaunch starts RetroArch again in its place, on the same command line (#11). |
+| M1 | First picture in RetroArch: phase-locked `retro_run`, the libretro audio sink, port 0, the menu's pause | BLACK and Burnout 3 play in RetroArch on the Nova (CPU readback allowed here). Until M2, unloading ends RetroArch's process; the owner chose to package it before M2 (2026-10-24), as quitting a game ends RetroArch on PortareOS anyway. Until then RetroArch letting its Vulkan context go ends the process too, and a title's relaunch starts RetroArch again in its place, on the same command line (#11). That is PortareOS's build (`HAKUX_LR_END_PROCESS`); other builds park the emulation and keep RetroArch running (section 6). |
 | M2 | A stoppable core | 100 load/run/unload cycles in one process; a CPU in a tight loop stops; failure at each boot stage cleans up; no threads, mappings, fds or handlers left. |
 | M3 | Vulkan handoff | `create_device2`, `set_image`, the queue lock, gamma; no readback; context reset works or fails cleanly. RetroArch only negotiates when the v1 `create_device` is set too (it then calls `create_device2`). |
 | M4 | PortareOS integration and #8 | The package, the launcher entry, the data folder, ports 0-3, reset and relaunch, run-ahead off; the device checks below. |

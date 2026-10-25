@@ -18,13 +18,15 @@
 
 /* core.c — the frontend's environment callback; a failure that stops the
  * content (logged; retro_run asks RetroArch to shut down); the guest booted,
- * once (false: it could not be); the end of RetroArch's process once the
- * guest has booted, as the core cannot stop (M2), or its start again for a
- * title's relaunch (returns only when nothing was booted). */
+ * once (false: it could not be); once the guest has booted, as the core
+ * cannot stop (M2), the end of RetroArch's process or its start again for a
+ * title's relaunch (PortareOS's build), else the emulation parked for good;
+ * whether it is. */
 bool nc_lr_env(unsigned cmd, void *data);
 void nc_lr_fail(const char *why);
 bool nc_lr_start(void);
 void nc_lr_end(const char *why);
+bool nc_lr_parked(void);
 
 /* audio.c — one period's samples to RetroArch (retro_run). */
 void nc_lr_audio_run(retro_audio_sample_batch_t batch);
@@ -38,18 +40,20 @@ void nc_lr_input_describe(retro_environment_t env);
  * (retro_run); its source size and the aspect it is shown at; the overscan
  * a TV hid, on each side of a w x h frame; a frame of w x h shown as ow x oh
  * (RetroArch told when that changes); the console set to widescreen, which
- * shows a standard-definition frame 16:9 (before the first frame). */
+ * shows a standard-definition frame 16:9 (before the first frame); the
+ * overscan cropped (the default) or shown, from the next frame on. */
 void nc_lr_video_run(retro_video_refresh_t video, uint64_t now_ns);
 void nc_lr_video_geometry(struct retro_game_geometry *g);
 void nc_lr_overscan(uint32_t w, uint32_t h, uint32_t *cx, uint32_t *cy);
 void nc_lr_video_size(uint32_t w, uint32_t h, uint32_t ow, uint32_t oh);
 void nc_lr_video_set_widescreen(bool on);
+void nc_lr_video_set_crop(bool on);
 
 /* options.c — the core options: declared to the frontend
  * (retro_set_environment), applied to the console before it boots
  * (retro_load_game), and a change during the game noted (retro_run): every
- * option takes effect when the game starts next, as the core can't boot
- * again in its process (M2). */
+ * option but the overscan crop takes effect when the game starts next, as
+ * the core can't boot again in its process (M2). */
 void nc_lr_options_declare(retro_environment_t env);
 void nc_lr_options_apply(void);
 void nc_lr_options_run(void);
@@ -59,5 +63,8 @@ void nc_lr_options_run(void);
  * read back); the frame handed over as an image (false: not with Vulkan). */
 bool nc_lr_vk_negotiate(void);
 bool nc_lr_vk_run(retro_video_refresh_t video);
+/* The renderer off RetroArch's device for good (park), the frames' images
+ * released: RetroArch may destroy the device after. */
+void nc_lr_vk_park(void);
 
 #endif

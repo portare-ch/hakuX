@@ -102,11 +102,31 @@ int hle_va_rw(uint32_t va, void *buf, size_t len, bool write)
 
 /* ---------------------------------------------------------- configuration */
 
+/* The front end's (nc_hle_set_base_path, nc_hle_set_mode): for a front end
+ * that may not set the process's environment (the libretro core). */
+static char g_base[256];
+static const char *g_mode;
+
+void nc_hle_set_base_path(const char *path)
+{
+    snprintf(g_base, sizeof(g_base), "%s", path);
+}
+
+void nc_hle_set_mode(const char *mode)
+{
+    g_mode = mode;
+}
+
+const char *hle_host_hle_mode(void)
+{
+    return g_mode;
+}
+
 const char *hle_host_base_path(void)
 {
     static char path[256];
     if (!path[0]) {
-        const char *b = getenv("HAKUX_NATIVE_BASE");
+        const char *b = g_base[0] ? g_base : getenv("HAKUX_NATIVE_BASE");
         snprintf(path, sizeof(path), "%s/", b ? b : "/data/local/tmp/native/hle");
         for (char *p = path + 1; *p; p++) {
             if (*p == '/') {
