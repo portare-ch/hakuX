@@ -643,7 +643,7 @@ static void *apu_trace_thread(void *arg)
 
 void nc_dev_apu_init(NcVm *vm)
 {
-    MCPXAPUState *d = calloc(1, sizeof(*d));
+    MCPXAPUState *d = nc_big_alloc(sizeof(*d)); /* 1.6 MiB */
     g_state = d;
     g_apu_ram = vm->phys;
     g_apu_ram_size = (uint32_t)vm->ram_size;
@@ -704,7 +704,7 @@ void nc_dev_apu_free(void)
     pthread_mutex_destroy(&d->lock);
     pthread_mutex_destroy(&d->irq_lock);
     pthread_cond_destroy(&d->cond);
-    free(d);
+    nc_big_free(d, sizeof(*d));
     g_state = NULL;
     g_apu_ram = NULL;
     g_apu_ram_size = 0;

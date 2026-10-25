@@ -691,7 +691,7 @@ static void *vblank_thread(void *arg)
 
 void nc_dev_nv2a_init(void)
 {
-    g_regs = calloc(1, NV2A_SIZE); /* pages are touched only where the guest writes */
+    g_regs = nc_big_alloc(NV2A_SIZE); /* pages are touched only where the guest writes */
     nc_wr32(g_regs + NV_PMC_BOOT_0, 0x02A000A1u);
     nc_wr32(g_regs + NV_PFB_CSTATUS, 64u << 20);
     char v[NC_PROPERTY_VALUE_MAX] = "";
@@ -818,14 +818,14 @@ static void misc_write(void *opaque, uint32_t off, uint64_t value, unsigned size
 
 void nc_dev_misc_init(void)
 {
-    g_misc = calloc(1, MISC_SIZE);
+    g_misc = nc_big_alloc(MISC_SIZE);
     const NcMmioDev dev = {"misc", MISC_BASE, MISC_SIZE, misc_read, misc_write, NULL};
     nc_mmio_register(&dev);
 }
 
 void nc_dev_nv2a_free(void)
 {
-    free(g_regs);
+    nc_big_free(g_regs, NV2A_SIZE);
     g_regs = NULL;
     g_vblanks = 0;
     g_frame_ns = FRAME_NS;
@@ -842,7 +842,7 @@ void nc_dev_nv2a_free(void)
     memset(&g_dac, 0, sizeof(g_dac));
     g_mode_hz = 60;
     g_vblank_mul = 1;
-    free(g_misc);
+    nc_big_free(g_misc, MISC_SIZE);
     g_misc = NULL;
 }
 

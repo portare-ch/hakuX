@@ -13,14 +13,14 @@
  * the devices hold off, the guest's time leaves the pause out), and the next
  * retro_run resumes it.
  *
- * Unloading, or RetroArch letting its Vulkan context go, stops the core in
- * RetroArch's process (stop_core, M2): the guest, its devices, then all of it
- * freed and reset, so that another game, a reset or a title's relaunch boots
- * afresh. Where it can't stop yet (the renderer's teardown: can_stop),
- * PortareOS's build (HAKUX_LR_END_PROCESS) ends RetroArch's process
- * (nc_lr_end) and a title's relaunch starts RetroArch again in its place
- * (relaunch); others park the emulation for good and RetroArch runs on (park),
- * the core then refusing another game.
+ * Unloading, a reset, a title's relaunch or RetroArch letting its Vulkan
+ * context go stops the core in RetroArch's process (stop_core, M2): the
+ * guest, its devices, then all of it freed and reset, so that another game,
+ * the reset or the relaunch boots afresh. In PortareOS's build
+ * (HAKUX_LR_END_PROCESS) a stop that hangs ends RetroArch's process (the
+ * watchdog, wd_start), and HAKUX_LR_STOP=0 (can_stop) brings back the way
+ * before M2: the process ends when the game closes (nc_lr_end), and a
+ * title's relaunch starts RetroArch again in its place (relaunch).
  */
 #include "native/libretro/libretro_int.h"
 #include "native/core/core.h"
@@ -28,13 +28,15 @@
 #include "native/dev/dev.h"
 #include "native/hle/hle_native.h"
 #include "native/kernel/kernel.h"
-#include "hw/xbox/hle/vk/back.h"
 
 #include <dirent.h>
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
@@ -66,7 +68,6 @@ static bool g_started;
 static const char *g_fail;         /* nc_lr_fail's: the content stops */
 static bool g_shutdown_sent;
 static char g_game[PATH_MAX];      /* the content's real path */
-static bool g_parked;              /* park: the emulation paused for good */
 static char g_hdd[PATH_MAX], g_cache[PATH_MAX];    /* the save directory's (data_dirs) */
 static pthread_t g_core_thread, g_gap_thread;
 static int g_gap_quit;             /* stop_core */
@@ -128,11 +129,13 @@ static void *core_thread(void *arg)
     if (!nc_core_boot(&g_core, g_disc_fd)) {
         nc_log("hakuX-libretro", "core: boot failed");
         __atomic_store_n(&g_core_state, -1, __ATOMIC_RELEASE);
+        nc_hle_cpu_leave();
         nc_cpu_thread_done();
         return NULL;
     }
     __atomic_store_n(&g_core_state, 2, __ATOMIC_RELEASE);
     nc_core_run(&g_core);
+    nc_hle_cpu_leave();
     nc_log("hakuX-libretro", "core: stopped%s", g_core.kernel.quit ? " (the title left)" : "");
     __atomic_store_n(&g_core_state, -1, __ATOMIC_RELEASE);
     nc_cpu_thread_done();
@@ -160,7 +163,7 @@ static void gap_tick(uint64_t now)
 {
     pthread_mutex_lock(&g_gap.mu);
     g_gap.last_run_ns = now;
-    if (g_gap.paused && !g_parked) {
+    if (g_gap.paused) {
         g_gap.paused = false;
         nc_pause_set(false);
     }
@@ -195,9 +198,10 @@ static bool data_dirs(char *hdd, char *cache, size_t n)
     return ok;
 }
 
-/* PortareOS's build ends RetroArch's process when the game closes
- * (HAKUX_LR_END_PROCESS); HAKUX_LR_END_PROCESS=0 or 1 in the environment
- * chooses for a run (the tests). */
+/* PortareOS's build (HAKUX_LR_END_PROCESS) may end RetroArch's process: when
+ * a stop hangs, and with HAKUX_LR_STOP=0 when the game closes.
+ * HAKUX_LR_END_PROCESS=0 or 1 in the environment chooses for a run (the
+ * tests). */
 static bool end_process(void)
 {
     static int on = -1;
@@ -247,8 +251,11 @@ RETRO_API void retro_set_input_state(retro_input_state_t cb)
 
 RETRO_API void retro_init(void)
 {
-    /* Parked threads outlive retro_deinit: RetroArch's dlclose must not unmap
-     * their code. */
+    /* RetroArch's dlclose leaves the library mapped. FEX's allocator
+     * (rpmalloc) keeps its spans for the process, its state in the library:
+     * unloaded, each load would leave them behind (about 1 GiB of address
+     * space); kept, the next load reuses them and finds the statics as the
+     * stop reset them. */
     Dl_info self;
     if (dladdr((void *)retro_init, &self) && self.dli_fname) {
         dlopen(self.dli_fname, RTLD_NOW | RTLD_NOLOAD | RTLD_NODELETE);
@@ -295,13 +302,6 @@ RETRO_API bool retro_load_game(const struct retro_game_info *game)
     if (!game || !game->path) {
         return false;
     }
-    if (g_started) {                /* a game played in this process (parked) */
-        static const struct retro_message msg = {"hakuX plays one game a session: restart RetroArch for another",
-                                                 300};
-        nc_log("hakuX-libretro", "load: %s", msg.msg);
-        g_env(RETRO_ENVIRONMENT_SET_MESSAGE, (void *)&msg);
-        return false;
-    }
     enum retro_pixel_format fmt = RETRO_PIXEL_FORMAT_XRGB8888;
     if (!g_env(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &fmt)) {
         nc_log("hakuX-libretro", "the frontend has no XRGB8888");
@@ -342,6 +342,14 @@ bool nc_lr_start(void)
 {
     if (g_started) {
         return true;
+    }
+    if (g_disc_fd < 0 && g_game[0]) {
+        /* stopped with the game loaded: RetroArch rebuilt its video driver
+         * (context_destroy, then context_reset on its new device) */
+        static const struct retro_message msg = {"RetroArch rebuilt its video driver: the game starts again",
+                                                 300};
+        g_env(RETRO_ENVIRONMENT_SET_MESSAGE, (void *)&msg);
+        return boot_again("video driver rebuilt", false);
     }
     g_started = true;
     __atomic_store_n(&g_core_state, 1, __ATOMIC_RELEASE);
@@ -407,11 +415,93 @@ static void prepare_boot(bool relaunch)
     handlers_install();
 }
 
-/* The core can stop in RetroArch's process: here, while the renderer never
- * came up (its teardown is M2's next part). */
+/* The core stops in RetroArch's process (M2). In PortareOS's build
+ * HAKUX_LR_STOP=0 asks for the way before it, should a stop misbehave
+ * somewhere: the process ends instead (nc_lr_end). */
 static bool can_stop(void)
 {
-    return !hle_back_running();
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("HAKUX_LR_STOP");
+        on = !(end_process() && e && !strcmp(e, "0"));
+    }
+    return on;
+}
+
+/* PortareOS's build: a stop that takes longer than this ends RetroArch's
+ * process, as a closed game did before M2, rather than leave the handheld
+ * frozen; elsewhere unloading waits (LIBRETRO_SPEC section 6).
+ * HAKUX_LR_STOP_TIMEOUT_MS sets it (the tests). */
+#define STOP_TIMEOUT_MS 10000u
+
+static struct {
+    pthread_mutex_t mu;
+    pthread_cond_t cv;              /* CLOCK_MONOTONIC's */
+    bool done;
+    const char *why, *stage;        /* the stop's, and what it waits for */
+    unsigned ms;
+    uint64_t deadline_ns;
+    pthread_t th;
+} g_wd = {.mu = PTHREAD_MUTEX_INITIALIZER};
+
+static void *wd_thread(void *arg)
+{
+    const struct timespec until = {(time_t)(g_wd.deadline_ns / 1000000000ull),
+                                   (long)(g_wd.deadline_ns % 1000000000ull)};
+    pthread_mutex_lock(&g_wd.mu);
+    while (!g_wd.done) {
+        if (pthread_cond_timedwait(&g_wd.cv, &g_wd.mu, &until) == ETIMEDOUT && !g_wd.done) {
+            nc_log("hakuX-libretro", "%s: the core did not stop in %u ms (%s): ending the process", g_wd.why,
+                   g_wd.ms, g_wd.stage);
+            fflush(NULL);
+            _exit(0);
+        }
+    }
+    pthread_mutex_unlock(&g_wd.mu);
+    return arg;
+}
+
+/* The watchdog over a stop from t0 (true: started, wd_end ends it). */
+static bool wd_start(const char *why, uint64_t t0)
+{
+    if (!end_process()) {
+        return false;
+    }
+    const char *e = getenv("HAKUX_LR_STOP_TIMEOUT_MS");
+    g_wd.ms = e && atoi(e) > 0 ? (unsigned)atoi(e) : STOP_TIMEOUT_MS;
+    g_wd.deadline_ns = t0 + g_wd.ms * 1000000ull;
+    g_wd.why = why;
+    g_wd.stage = "starting";
+    g_wd.done = false;
+    pthread_condattr_t ca;
+    pthread_condattr_init(&ca);
+    pthread_condattr_setclock(&ca, CLOCK_MONOTONIC);
+    pthread_cond_init(&g_wd.cv, &ca);
+    pthread_condattr_destroy(&ca);
+    const int err = pthread_create(&g_wd.th, NULL, wd_thread, NULL);
+    if (err) {
+        nc_log("hakuX-libretro", "%s: no watchdog over the stop: %s", why, strerror(err));
+        pthread_cond_destroy(&g_wd.cv);
+        return false;
+    }
+    return true;
+}
+
+static void wd_stage(const char *stage)
+{
+    pthread_mutex_lock(&g_wd.mu);
+    g_wd.stage = stage;
+    pthread_mutex_unlock(&g_wd.mu);
+}
+
+static void wd_end(void)
+{
+    pthread_mutex_lock(&g_wd.mu);
+    g_wd.done = true;
+    pthread_cond_signal(&g_wd.cv);
+    pthread_mutex_unlock(&g_wd.mu);
+    pthread_join(g_wd.th, NULL);
+    pthread_cond_destroy(&g_wd.cv);
 }
 
 /* M2: the guest stopped (its CPU, at its next block start, idle or paused),
@@ -424,15 +514,28 @@ static void stop_core(const char *why)
         return;
     }
     const uint64_t t0 = now_ns();
+    const bool wd = wd_start(why, t0);
+    wd_stage("the guest CPU");
     nc_core_request_stop(&g_core);
     pthread_join(g_core_thread, NULL);
+    wd_stage("the frame gap's thread");
     __atomic_store_n(&g_gap_quit, 1, __ATOMIC_RELEASE);
     if (g_gap_thread) {
         pthread_join(g_gap_thread, NULL);
         g_gap_thread = 0;
     }
+    wd_stage("the devices and the renderer");
     nc_core_halt(&g_core);
+    wd_stage("freeing the console");
     nc_core_destroy(&g_core);
+#ifdef __GLIBC__
+    /* What the boot's threads freed back to the kernel: glibc gave them arenas
+     * of their own, which keep it, and the next boot's threads get others. */
+    malloc_trim(0);
+#endif
+    if (wd) {
+        wd_end();
+    }
     handlers_restore();
     g_disc_fd = -1;                 /* the core's: closed with the disc */
     __atomic_store_n(&g_core_state, 0, __ATOMIC_RELEASE);
@@ -545,31 +648,6 @@ static void relaunch(void)
     free(envp);
 }
 
-/* The emulation paused for good, as the core can't stop (M2), and the
- * renderer kept off RetroArch's device, which RetroArch may destroy now
- * (nc_lr_vk_park). Its threads stay, parked; RetroArch runs on. */
-static void park(const char *why)
-{
-    if (g_parked) {
-        return;
-    }
-    pthread_mutex_lock(&g_gap.mu);
-    g_parked = true;                /* retro_run doesn't resume it (gap_tick) */
-    g_gap.paused = true;
-    nc_pause_set(true);
-    pthread_mutex_unlock(&g_gap.mu);
-    const char *who = NULL;
-    const bool still = nc_pause_quiesce(500000000ull, &who);
-    nc_lr_vk_park();
-    nc_log("hakuX-libretro", "%s: the core cannot stop yet; the emulation is parked for good%s%s", why,
-           still ? "" : ", but not the ", still ? "" : who ? who : "?");
-}
-
-bool nc_lr_parked(void)
-{
-    return g_parked;
-}
-
 void nc_lr_end(const char *why)
 {
     const int state = __atomic_load_n(&g_core_state, __ATOMIC_ACQUIRE);
@@ -580,14 +658,10 @@ void nc_lr_end(const char *why)
         stop_core(why);
         return;
     }
-    if (!end_process()) {
-        park(why);
-        return;
-    }
     if (state < 0 && g_core.kernel.relaunch) {
         relaunch();
     }
-    nc_log("hakuX-libretro", "%s: the core cannot stop yet; ending the process", why);
+    nc_log("hakuX-libretro", "%s: the core does not stop (HAKUX_LR_STOP=0); ending the process", why);
     fflush(NULL);
     _exit(0);
 }
@@ -595,9 +669,6 @@ void nc_lr_end(const char *why)
 RETRO_API void retro_unload_game(void)
 {
     nc_lr_end("unload");
-    if (g_started) {
-        return;                     /* parked */
-    }
     if (g_disc_fd >= 0) {           /* loaded, never booted (no context_reset came) */
         close(g_disc_fd);
         g_disc_fd = -1;

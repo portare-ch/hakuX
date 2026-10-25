@@ -1,8 +1,8 @@
 # hakuX libretro core for PortareOS
 
 Status: design targets. The initial core and Vulkan handoff merged in PR #10.
-In-process unload/reload, reset, multiple players, core options and save states
-remain unfinished. See [native/README.linux.md](native/README.linux.md) for current usage.
+The core stops, unloads and loads again in RetroArch's process (M2); multiple
+players and save states remain unfinished. See [native/README.linux.md](native/README.linux.md) for current usage.
 Written: 2026-10-24, from the owner's draft and its review against the source.
 Target: Retroid Pocket Nova (SM8550), AArch64 Linux, PortareOS, RetroArch
 Vulkan on KMS.
@@ -173,21 +173,50 @@ tracking, MMIO, the JIT); chain any other to the previous handler with its
 flags and mask; install while the core's state is alive, restore only if
 still ours. Test deliberate faults in child processes.
 
-Until M2 the core has one of two interim behaviours, chosen at build time
-with `HAKUX_LR_END_PROCESS`. Neither passes this section's gate.
-- **PortareOS's build (on):** unloading, or RetroArch letting its Vulkan
-  context go, ends RetroArch's process. A title's relaunch starts RetroArch
-  again on the same command line (#11).
-- **Other builds (off, the default):** the emulation parks for good.
-  - The guest CPU and the devices pause.
-  - The renderer's pipeline builds finish, the device goes idle, and every
-    entry point of the renderer's Vulkan device table then blocks its caller
-    (`hle_vk_park`), so no thread uses RetroArch's device once RetroArch
-    destroys it.
-  - The library is pinned (`RTLD_NODELETE`), so the parked threads' code
-    stays mapped after RetroArch's `dlclose`.
-  - RetroArch runs on. A second load is refused, with a message to restart
-    RetroArch, and a title's relaunch closes the game.
+The core stops in RetroArch's process (M2). Unloading, a reset, a title's
+relaunch and RetroArch letting its Vulkan context go (`context_destroy`)
+stop the console, join its threads, free the renderer, the guest and FEX,
+and give the signal handlers back; the next load, reset or relaunch boots in
+the same process.
+- Large buffers a boot keeps (the guest's page table, the NV2A's and the
+  misc registers, the APU's state, the push-buffer decoder's arrays, the
+  front end's ring) are mapped, not taken from the heap (`nc_big_alloc`,
+  `hle_big_alloc`). glibc keeps a freed heap block in the arena it came
+  from once its mmap threshold has risen, and each boot's threads get other
+  arenas: every boot would leave a copy.
+- glslang's process state (its built-in tables) goes with the renderer and
+  is built again at the next boot.
+- The heap is trimmed at the end (`malloc_trim`, glibc): a boot's threads
+  free into arenas of their own, which keep the pages, and the next boot's
+  threads get other arenas.
+- The library stays mapped after RetroArch's `dlclose` (`RTLD_NODELETE`).
+  FEX's allocator (rpmalloc) keeps its spans for the process, with its state
+  in the library, and FEX never finalizes it: unloaded, each load left them
+  behind, about 1 GiB of address space (measured). Kept, the next load
+  reuses them and finds the statics as the stop reset them.
+- A video driver rebuild boots the game again on RetroArch's new device,
+  with a message saying so.
+- Known leftovers: FEX's `LookupCache` leaves its block-link buffers mapped
+  (about 300 KiB a boot on Burnout 3: `named_monotonic_page_buffer_resource`
+  has no destructor), and glibc and the Vulkan loader keep a few KiB a
+  boot for the driver they load and unload.
+
+The harness checks it (`tests/native/libretro/check.py`): 100 cycles of a
+title that halts and 20 of one that spins in a tight loop, with and without
+the renderer, on the harness's own Vulkan device and on a shared one, each
+leaving one thread, the same descriptors and signal handlers, and memory
+within a margin.
+
+PortareOS's build (`HAKUX_LR_END_PROCESS`, on in its package) may end
+RetroArch's process, as every closed game did before M2:
+- A stop that takes longer than 10 s ends it, rather than leave the
+  handheld frozen; the log names what the stop was waiting for.
+  `HAKUX_LR_STOP_TIMEOUT_MS` sets the time (the tests). Other builds wait,
+  as above.
+- `HAKUX_LR_STOP=0` in the environment brings back the way before M2, for
+  one release: unloading, or RetroArch letting its Vulkan context go, ends
+  RetroArch's process, and a title's relaunch starts RetroArch again on the
+  same command line (#11). Other builds ignore it.
 
 `HAKUX_LR_END_PROCESS=0` or `1` in the environment overrides the build's
 choice for one run (the tests).
@@ -222,8 +251,8 @@ pass must), the source size and the aspect; RetroArch letterboxes, so no
 1280 x 960 box in the image. A standard-definition frame loses the overscan
 a TV hid, 1/30 of each side (640 x 480 shows 598 x 448 at 4:3): titles left
 that band black (Burnout 3's 16 lines above and below), and with it the
-picture fills the 4:3 panel (owner's requirement). `context_destroy` parks the renderer before its
-resources go; `context_reset` rebuilds them, or stops the content with an
+picture fills the 4:3 panel (owner's requirement). `context_destroy` stops the core before its
+resources go (section 6); `context_reset` rebuilds them, or stops the content with an
 error.
 
 CPU readback (`hle_disp_read_front`) is for bring-up and diagnostics only.
@@ -300,7 +329,7 @@ directory for the core is set to it, and `start_hakux.sh` uses it too, so
 both front ends share one console disk. The standalone's
 `/storage/.config/hakux` (since portare-ch/portareos#752) moves there once. A lock keeps two sessions off the same disk. No `chdir`, no
 `setenv` for paths after load: the renderer's mode and cache directory are
-set through `nc_hle_set_mode` and `nc_hle_set_base_path`. A title's relaunch stays in process (until M2, in PortareOS's build RetroArch starts again in its place, #11; in others the game closes).
+set through `nc_hle_set_mode` and `nc_hle_set_base_path`. A title's relaunch stays in process (with `HAKUX_LR_STOP=0`, in PortareOS's build RetroArch starts again in its place, #11; in others the game closes).
 
 ## 11. Save states
 
@@ -359,8 +388,8 @@ comparison until the core passes its gates.
 | | Deliverable | Gate |
 | --- | --- | --- |
 | M0 | The shared library builds; a harness loads it; an inventory of threads, mappings, handlers and FEX globals; a `create_device2` probe | It loads into a frontend in process and exports only `retro_*`. |
-| M1 | First picture in RetroArch: phase-locked `retro_run`, the libretro audio sink, port 0, the menu's pause | BLACK and Burnout 3 play in RetroArch on the Nova (CPU readback allowed here). Until M2, unloading ends RetroArch's process; the owner chose to package it before M2 (2026-10-24), as quitting a game ends RetroArch on PortareOS anyway. Until then RetroArch letting its Vulkan context go ends the process too, and a title's relaunch starts RetroArch again in its place, on the same command line (#11). That is PortareOS's build (`HAKUX_LR_END_PROCESS`); other builds park the emulation and keep RetroArch running (section 6). |
-| M2 | A stoppable core | 100 load/run/unload cycles in one process; a CPU in a tight loop stops; failure at each boot stage cleans up; no threads, mappings, fds or handlers left. |
+| M1 | First picture in RetroArch: phase-locked `retro_run`, the libretro audio sink, port 0, the menu's pause | BLACK and Burnout 3 play in RetroArch on the Nova (CPU readback allowed here). Until M2, unloading ends RetroArch's process; the owner chose to package it before M2 (2026-10-24), as quitting a game ends RetroArch on PortareOS anyway. Until then RetroArch letting its Vulkan context go ends the process too, and a title's relaunch starts RetroArch again in its place, on the same command line (#11). That is PortareOS's build (`HAKUX_LR_END_PROCESS`); other builds parked the emulation and kept RetroArch running, until M2. |
+| M2 | A stoppable core | 100 load/run/unload cycles in one process; a CPU in a tight loop stops; failure at each boot stage cleans up; no threads, mappings, fds or handlers left. Status (2026-10-25): the cycles pass in the container's harness and on the Nova (Burnout 3, 100 and 200 cycles, renderer on), with the leftovers section 6 lists; failures injected at each boot stage and Android are still to do. |
 | M3 | Vulkan handoff | `create_device2`, `set_image`, the queue lock, gamma; no readback; context reset works or fails cleanly. RetroArch only negotiates when the v1 `create_device` is set too (it then calls `create_device2`). |
 | M4 | PortareOS integration and #8 | The package, the launcher entry, the data folder, ports 0-3, reset and relaunch, run-ahead off; the device checks below. |
 | M5 | Save states | Section 11. |

@@ -11,8 +11,8 @@
  * if changed in RetroArch's menu; RetroArch's language is HARNESS_LANGUAGE's
  * (RETRO_LANGUAGE_*, English without it). It stops after <frames>, or when
  * the core asks to shut down; the summary is printed before
- * retro_unload_game (which in PortareOS's build ends the process until the
- * core can stop, or after a title's relaunch starts the harness again, as it
+ * retro_unload_game (which with HAKUX_LR_STOP=0 in PortareOS's build ends
+ * the process, or after a title's relaunch starts the harness again, as it
  * would RetroArch). HARNESS_LOAD_AGAIN: the core is opened again after it and
  * a second game loaded, as RetroArch would.
  *
@@ -20,14 +20,22 @@
  * frontend (vk.c) negotiates with it, as RetroArch does, without a window.
  * HARNESS_RESET_AT=N: retro_reset before the Nth retro_run.
  * HARNESS_CYCLES=N: the game loaded, run and unloaded N times, the core
- * closed and opened again between, as RetroArch does between games; each
- * cycle's threads, descriptors and memory are printed.
+ * closed and opened again between, as RetroArch does between games; after
+ * each, the core closed, the threads, descriptors, memory and signal
+ * handlers left are printed, and whether the library is still mapped. HARNESS_MAPS=<path>
+ * (debug): after each cycle the mappings to <path>.<cycle>, and glibc's heap
+ * arenas to stderr.
  */
 #include "native/libretro/libretro.h"
 #include "tests/native/libretro/vk.h"
 
 #include <dirent.h>
 #include <dlfcn.h>
+#include <limits.h>
+#include <pthread.h>
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -251,6 +259,23 @@ static long count_dir(const char *path)
     return n;
 }
 
+/* The process's threads once the count holds for 50 ms (up to a second): a
+ * joined thread can still be listed for a while (the kernel wakes the joiner
+ * before it reaps the thread, later still for one of low priority on a busy
+ * CPU). */
+static long settled_threads(void)
+{
+    long n = count_dir("/proc/self/task");
+    for (int i = 0, same = 0; i < 200 && same < 10; i++) {
+        const struct timespec ts = {0, 5000000};
+        nanosleep(&ts, NULL);
+        const long m = count_dir("/proc/self/task");
+        same = m == n ? same + 1 : 0;
+        n = m;
+    }
+    return n;
+}
+
 static long status_kib(const char *key)
 {
     FILE *f = fopen("/proc/self/status", "r");
@@ -265,6 +290,73 @@ static long status_kib(const char *key)
         fclose(f);
     }
     return v;
+}
+
+/* Whether the core's library is still mapped (after dlclose: unloaded). */
+static bool core_mapped(void)
+{
+    char real[PATH_MAX], line[PATH_MAX + 128];
+    if (!realpath(g_core_path, real)) {
+        return true;
+    }
+    FILE *f = fopen("/proc/self/maps", "r");
+    bool found = false;
+    while (f && !found && fgets(line, sizeof(line), f)) {
+        line[strcspn(line, "\n")] = 0;
+        const char *p = strchr(line, '/');
+        found = p && !strcmp(p, real);
+    }
+    if (f) {
+        fclose(f);
+    }
+    return found;
+}
+
+static void *no_op(void *arg)
+{
+    return arg;
+}
+
+/* The threads besides this one, by name, to stderr. */
+static void name_threads(int cycle)
+{
+    DIR *d = opendir("/proc/self/task");
+    for (struct dirent *e; d && (e = readdir(d));) {
+        if (e->d_name[0] == '.' || atoi(e->d_name) == getpid()) {
+            continue;
+        }
+        char path[64], name[32] = "?";
+        snprintf(path, sizeof(path), "/proc/self/task/%s/comm", e->d_name);
+        FILE *f = fopen(path, "r");
+        if (f) {
+            if (fgets(name, sizeof(name), f)) {
+                name[strcspn(name, "\n")] = 0;
+            }
+            fclose(f);
+        }
+        fprintf(stderr, "cycle %d: thread %s (%s) still there\n", cycle, e->d_name, name);
+    }
+    if (d) {
+        closedir(d);
+    }
+}
+
+/* The signals the process has handlers for (/proc's SigCgt mask, hex). */
+static const char *caught_signals(void)
+{
+    static char mask[32];
+    FILE *f = fopen("/proc/self/status", "r");
+    char line[256];
+    snprintf(mask, sizeof(mask), "?");
+    while (f && fgets(line, sizeof(line), f)) {
+        if (!strncmp(line, "SigCgt:", 7)) {
+            sscanf(line + 7, "%31s", mask);
+        }
+    }
+    if (f) {
+        fclose(f);
+    }
+    return mask;
 }
 
 /* One game: loaded, run for frames retro_run calls at the core's rate (or
@@ -338,6 +430,11 @@ int main(int argc, char **argv)
     g_core_path = argv[1];
     g_vulkan = getenv("HARNESS_VULKAN") && atoi(getenv("HARNESS_VULKAN"));
     g_save_dir = argc == 5 ? argv[4] : NULL;
+    pthread_t t;                    /* glibc's own handler (SIGSETXID) comes with a first thread */
+    if (pthread_create(&t, NULL, no_op, NULL) == 0) {
+        pthread_join(t, NULL);
+    }
+    printf("signals caught before the core: %s\n", caught_signals());
     if (!open_core()) {
         return 1;
     }
@@ -361,21 +458,23 @@ int main(int argc, char **argv)
     const long frames = atol(argv[3]);
     const int cycles = getenv("HARNESS_CYCLES") ? atoi(getenv("HARNESS_CYCLES")) : 1;
     for (int c = 0; c < cycles; c++) {
-        if (c > 0) {
-            close_core();
-            if (!open_core()) {
-                return 1;
-            }
+        if (c > 0 && !open_core()) {
+            return 1;
         }
         const int r = play(&game, frames);
         if (r) {
             close_core();
             return r;
         }
-        if (cycles > 1) {
-            printf("cycle %d: %ld threads, %ld descriptors, VmSize %ld KiB, VmRSS %ld KiB\n", c + 1,
-                   count_dir("/proc/self/task"), count_dir("/proc/self/fd"), status_kib("VmSize:"),
-                   status_kib("VmRSS:"));
+        if (cycles > 1) {               /* what the core left in the process once closed */
+            close_core();
+            const long threads = settled_threads();
+            if (threads > 1) {
+                name_threads(c + 1);
+            }
+            printf("cycle %d: %ld threads, %ld descriptors, VmSize %ld KiB, VmRSS %ld KiB, signals caught %s, %s\n",
+                   c + 1, threads, count_dir("/proc/self/fd"), status_kib("VmSize:"), status_kib("VmRSS:"),
+                   caught_signals(), core_mapped() ? "the core still mapped" : "the core unloaded");
             fflush(stdout);
             if (getenv("HARNESS_MAPS")) {   /* debug: the mappings after each cycle, to a file */
                 char cmd[256];
@@ -383,10 +482,15 @@ int main(int argc, char **argv)
                 if (system(cmd) != 0) {
                     fprintf(stderr, "maps: %s failed\n", cmd);
                 }
+#ifdef __GLIBC__
+                malloc_stats();             /* and the heap's arenas, to stderr */
+#endif
             }
         }
     }
-    close_core();
+    if (cycles <= 1) {
+        close_core();
+    }
     if (getenv("HARNESS_LOAD_AGAIN")) {     /* a second game, as RetroArch loads one: the core opened again */
         fflush(stdout);
         if (!open_core()) {

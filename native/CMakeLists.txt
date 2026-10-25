@@ -26,7 +26,7 @@ option(HAKUX_BUILD_APP "Build the app: the Android SDL library, or the Linux fro
 option(HAKUX_DIAGNOSTIC_AUDIO "Linux: hakux uses the paced silent sink, as the diagnostics do, instead of SDL audio" OFF)
 option(HAKUX_BUILD_TESTS "Build native Linux smoke tests" ON)
 option(HAKUX_BUILD_LIBRETRO "Linux: build the libretro core (hakux_libretro.so), everything as PIC" OFF)
-option(HAKUX_LR_END_PROCESS "libretro: a closed game ends RetroArch's process, and a title's relaunch starts it again (PortareOS's build); off, the emulation parks and RetroArch runs on" OFF)
+option(HAKUX_LR_END_PROCESS "libretro, PortareOS's build: a stop that hangs ends RetroArch's process, and HAKUX_LR_STOP=0 brings back ending it when the game closes (a title's relaunch then starts it again)" OFF)
 set(HAKUX_VERSION "dev" CACHE STRING "The version the libretro core reports")
 if(HAKUX_BUILD_LIBRETRO)
   if(ANDROID)

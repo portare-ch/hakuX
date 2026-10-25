@@ -141,16 +141,17 @@ Load `hakux_libretro.so` in RetroArch with its Vulkan video driver and open
 an XISO `.iso` image. The renderer shares RetroArch's Vulkan device and
 copies frames on the GPU; the diagnostic harness uses CPU readback.
 
-Only player 1 is supported; reset and save states are not yet available.
-Run-ahead must stay off. The core can't stop yet, so it plays one game per
-RetroArch session. What a closed game does depends on the build option
-`HAKUX_LR_END_PROCESS`:
-- **On (PortareOS's build, `linux-build.sh`):** closing the game closes
-  RetroArch, and a game that starts another of its programs starts RetroArch
-  again on it.
-- **Off (the default):** closing the game parks the emulation for good, and
-  RetroArch runs on. Loading a second game is refused until RetroArch
-  restarts.
+Only player 1 is supported; save states are not yet available. Run-ahead
+must stay off. Closing the game stops the core in RetroArch's process, and
+the next game, a reset, a game that starts another of its programs and
+RetroArch rebuilding its video driver (the game then starts again) boot in
+the same process.
+
+PortareOS's build (the option `HAKUX_LR_END_PROCESS`, `linux-build.sh`)
+ends RetroArch when a stop takes longer than 10 s, rather than hang. With
+`HAKUX_LR_STOP=0` in RetroArch's environment it brings back the way before:
+closing the game closes RetroArch, and a game that starts another of its
+programs starts RetroArch again on it.
 
 Core options (`native/libretro/options.c`). All but the crop are read once,
 before the console boots, so a change takes effect when the game starts next:

@@ -20,10 +20,24 @@ static uint8_t *g_na;   /* per physical page: no guest access (nc_vm_noaccess), 
 #endif
 
 #define NC_GUARD (64u * 1024u)
+#define PTE_BYTES ((size_t)((1ull << 32) / NC_PAGE) * sizeof(uint32_t))
 
 static int memfd(const char *name)
 {
     return (int)syscall(__NR_memfd_create, name, MFD_CLOEXEC);
+}
+
+void *nc_big_alloc(size_t size)
+{
+    void *p = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    return p == MAP_FAILED ? NULL : p;
+}
+
+void nc_big_free(void *p, size_t size)
+{
+    if (p) {
+        munmap(p, size);
+    }
 }
 
 bool nc_vm_init(NcVm *vm, uint32_t ram_size)
@@ -63,7 +77,7 @@ bool nc_vm_init(NcVm *vm, uint32_t ram_size)
     }
     vm->ram_size = ram_size;
     vm->page_used = calloc(ram_size / NC_PAGE, 1);
-    vm->pte = calloc((1ull << 32) / NC_PAGE, sizeof(uint32_t));
+    vm->pte = nc_big_alloc(PTE_BYTES);
     vm->rmap = calloc(ram_size / NC_PAGE, sizeof(uint32_t));
     vm->wp = calloc(ram_size / NC_PAGE, 1);
     vm->pin = calloc(ram_size / NC_PAGE, 1);
@@ -108,7 +122,7 @@ void nc_vm_destroy(NcVm *vm)
         close(vm->ram_fd);
     }
     free(vm->page_used);
-    free(vm->pte);
+    nc_big_free(vm->pte, PTE_BYTES);
     free(vm->rmap);
     free(vm->wp);
     free(vm->pin);

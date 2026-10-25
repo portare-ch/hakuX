@@ -109,36 +109,6 @@ void hle_vk_set_frontend_queue_lock(void (*lock)(void *), void (*unlock)(void *)
     hle_mutex_unlock(&g_queue_lock);
 }
 
-/* hle_vk_park's: a device entry point called after the park, whatever its
- * signature, keeps its caller here. */
-static void park_forever(void)
-{
-    for (;;) {
-        pause();
-    }
-}
-
-void hle_vk_park(void (*cleanup)(void))
-{
-    hle_vk_queue_lock();
-    g_hvk.t.vkDeviceWaitIdle(g_hvk.dev);
-    if (cleanup) {
-        cleanup();
-    }
-    /* the table is function pointers only */
-    void (**fp)(void) = (void (**)(void))(void *)&g_hvk.t;
-    for (size_t i = 0; i < sizeof(g_hvk.t) / sizeof(*fp); i++) {
-        __atomic_store_n(&fp[i], park_forever, __ATOMIC_RELEASE);
-    }
-    if (g_fe.unlock) {
-        g_fe.unlock(g_fe.handle);
-    }
-    g_fe.lock = NULL;
-    g_fe.unlock = NULL;
-    hle_log("hakuX-hle-back", "vk: parked: the device is the frontend's to destroy");
-    /* g_queue_lock stays held: no submit again */
-}
-
 int64_t hle_vk_queue_wait_ns(void)
 {
     return __atomic_exchange_n(&g_lock_wait_ns, 0, __ATOMIC_RELAXED);
@@ -836,6 +806,32 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
             c->dyn_render, c->sync2, c->eds1, c->eds2, c->bindless, c->depth_clamp);
     hle_quirks_init(v->phys);           /* what this driver needs worked around */
     return 0;
+}
+
+void hle_vk_shutdown(void)
+{
+    HleVk *v = &g_hvk;
+    if (v->dev) {
+        /* the table's wrappers outlive the renderer (a reset keeps the
+         * device): theirs go with it, after the frontend's views */
+        hle_compat_shutdown();
+        hle_batch_shutdown();
+    }
+    if (!v->shared) {
+        if (v->dev) {
+            v->t.vkDestroyDevice(v->dev, NULL);
+        }
+        if (v->inst) {
+            vkDestroyInstance(v->inst, NULL);
+        }
+    }
+    if (v->inst) {
+        hle_mutex_destroy(&g_queue_lock);
+    }
+    memset(v, 0, sizeof(*v));
+    hle_atomic_set(&g_ready, false);
+    __atomic_store_n(&g_lost, false, __ATOMIC_RELEASE);
+    g_lock_wait_ns = 0;
 }
 
 int hle_vk_init(void)

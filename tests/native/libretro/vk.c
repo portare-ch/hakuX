@@ -165,6 +165,8 @@ bool hv_create(const struct retro_hw_render_context_negotiation_interface_vulkan
     const VkApplicationInfo *app = neg && neg->get_application_info ? neg->get_application_info() : NULL;
     VkApplicationInfo def = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = VK_API_VERSION_1_3};
     VkInstanceCreateInfo ici = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = app ? app : &def};
+    /* a global command: the last create's FN(LOAD) asked the instance for it (NULL) */
+    vkCreateInstance = (PFN_vkCreateInstance)g_gipa(NULL, "vkCreateInstance");
     if (vkCreateInstance(&ici, NULL, &g.inst) != VK_SUCCESS) {
         fprintf(stderr, "vulkan: no instance\n");
         return false;

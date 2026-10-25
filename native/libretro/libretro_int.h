@@ -18,15 +18,13 @@
 
 /* core.c — the frontend's environment callback; a failure that stops the
  * content (logged; retro_run asks RetroArch to shut down); the guest booted,
- * once (false: it could not be); once the guest has booted, as the core
- * cannot stop (M2), the end of RetroArch's process or its start again for a
- * title's relaunch (PortareOS's build), else the emulation parked for good;
- * whether it is. */
+ * once (false: it could not be); the core stopped (M2), or with
+ * HAKUX_LR_STOP=0 in PortareOS's build RetroArch's process ended, or started
+ * again for a title's relaunch. */
 bool nc_lr_env(unsigned cmd, void *data);
 void nc_lr_fail(const char *why);
 bool nc_lr_start(void);
 void nc_lr_end(const char *why);
-bool nc_lr_parked(void);
 
 /* audio.c — one period's samples to RetroArch (retro_run). */
 void nc_lr_audio_run(retro_audio_sample_batch_t batch);
@@ -65,9 +63,6 @@ void nc_lr_options_run(void);
  * read back); the frame handed over as an image (false: not with Vulkan). */
 bool nc_lr_vk_negotiate(void);
 bool nc_lr_vk_run(retro_video_refresh_t video);
-/* The renderer off RetroArch's device for good (park), the frames' images
- * released: RetroArch may destroy the device after. */
-void nc_lr_vk_park(void);
 /* The game unloaded (after context_destroy): the negotiation forgotten. */
 void nc_lr_vk_reset(void);
 

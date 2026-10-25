@@ -2523,6 +2523,9 @@ void mcpx_apu_vp_init(MCPXAPUState *d)
 void mcpx_apu_vp_finalize(MCPXAPUState *d)
 {
     voice_work_finalize(d);
+    for (int v = 0; v < ARRAY_SIZE(d->vp.filters); v++) {  /* made at a voice's first frame */
+        d->vp.filters[v].resampler = src_delete(d->vp.filters[v].resampler);
+    }
 
     d->vp.voice_cache = NULL;
     d->vp.ssl_cache = NULL;

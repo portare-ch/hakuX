@@ -377,6 +377,7 @@ void nc_core_halt(NcCore *c)
      * emulation leave their pause, see their stop and end. */
     nc_pause_set(false);
     nc_dev_nv2a_stop();
+    nc_hle_native_stop();
     nc_dev_apu_stop();
     nc_dev_ohci_stop();
     nc_dev_aci_stop();
