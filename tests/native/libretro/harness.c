@@ -11,18 +11,36 @@
  * if changed in RetroArch's menu; RetroArch's language is HARNESS_LANGUAGE's
  * (RETRO_LANGUAGE_*, English without it). It stops after <frames>, or when
  * the core asks to shut down; the summary is printed before
- * retro_unload_game (which in PortareOS's build ends the process until the
- * core can stop, or after a title's relaunch starts the harness again, as it
+ * retro_unload_game (which with HAKUX_LR_STOP=0 in PortareOS's build ends
+ * the process, or after a title's relaunch starts the harness again, as it
  * would RetroArch). HARNESS_LOAD_AGAIN: the core is opened again after it and
  * a second game loaded, as RetroArch would.
+ *
+ * HARNESS_VULKAN=1: the core renders on a Vulkan device the harness's
+ * frontend (vk.c) negotiates with it, as RetroArch does, without a window.
+ * HARNESS_RESET_AT=N: retro_reset before the Nth retro_run.
+ * HARNESS_CYCLES=N: the game loaded, run and unloaded N times, the core
+ * closed and opened again between, as RetroArch does between games; after
+ * each, the core closed, the threads, descriptors, memory and signal
+ * handlers left are printed, and whether the library is still mapped. HARNESS_MAPS=<path>
+ * (debug): after each cycle the mappings to <path>.<cycle>, and glibc's heap
+ * arenas to stderr.
  */
 #include "native/libretro/libretro.h"
+#include "tests/native/libretro/vk.h"
 
+#include <dirent.h>
 #include <dlfcn.h>
+#include <limits.h>
+#include <pthread.h>
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #define SYMS(X)                                                                                              \
     X(retro_api_version, unsigned (*)(void))                                                                 \
@@ -59,6 +77,9 @@ static bool g_shutdown;
 static unsigned g_video_calls, g_new_frames, g_dupes, g_frame_w, g_frame_h;
 static size_t g_audio_frames;
 static const struct retro_core_option_v2_definition *g_options;
+static bool g_vulkan;           /* HARNESS_VULKAN */
+static struct retro_hw_render_callback g_hw;
+static const struct retro_hw_render_context_negotiation_interface_vulkan *g_neg;
 static long g_ran;              /* retro_run calls so far */
 static bool g_options_changed;  /* HARNESS_OPTIONS_LATER's, once */
 
@@ -128,6 +149,26 @@ static bool environment(unsigned cmd, void *data)
     case RETRO_ENVIRONMENT_SHUTDOWN:
         g_shutdown = true;
         return true;
+    case RETRO_ENVIRONMENT_GET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_SUPPORT: {
+        struct retro_hw_render_context_negotiation_interface *n = data;
+        if (!g_vulkan || n->interface_type != RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN) {
+            return false;
+        }
+        n->interface_version = 2;
+        return true;
+    }
+    case RETRO_ENVIRONMENT_SET_HW_RENDER:
+        if (!g_vulkan || ((struct retro_hw_render_callback *)data)->context_type != RETRO_HW_CONTEXT_VULKAN) {
+            return false;
+        }
+        g_hw = *(struct retro_hw_render_callback *)data;
+        return true;
+    case RETRO_ENVIRONMENT_SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE:
+        g_neg = data;
+        return g_vulkan;
+    case RETRO_ENVIRONMENT_GET_HW_RENDER_INTERFACE:
+        *(const struct retro_hw_render_interface **)data = (const struct retro_hw_render_interface *)hv_interface();
+        return hv_interface() != NULL;
     default:
         return false;
     }
@@ -136,6 +177,9 @@ static bool environment(unsigned cmd, void *data)
 static void video(const void *data, unsigned w, unsigned h, size_t pitch)
 {
     g_video_calls++;
+    if (data == RETRO_HW_FRAME_BUFFER_VALID) {
+        hv_frame(w, h);
+    }
     if (data) {
         g_new_frames++;
         g_frame_w = w;
@@ -164,28 +208,27 @@ static int16_t input_state(unsigned port, unsigned device, unsigned index, unsig
     return 0;
 }
 
-int main(int argc, char **argv)
-{
-    if (argc != 2 && argc != 5) {
-        fprintf(stderr, "usage: libretro-harness <core.so> [<disc image> <frames> <save directory>]\n");
-        return 2;
-    }
-    void *core = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
-    if (!core) {
-        fprintf(stderr, "FAIL: dlopen: %s\n", dlerror());
-        return 1;
-    }
+static const char *g_core_path;
+static void *g_core;
+
 #define RESOLVE(name, type)                                                                                  \
-    if (!(p_##name = (type)dlsym(core, #name))) {                                                            \
+    if (!(p_##name = (type)dlsym(g_core, #name))) {                                                          \
         fprintf(stderr, "FAIL: missing %s\n", #name);                                                        \
-        return 1;                                                                                            \
+        return false;                                                                                        \
+    }
+
+/* The core opened, as RetroArch opens it: every callback set, retro_init. */
+static bool open_core(void)
+{
+    if (!(g_core = dlopen(g_core_path, RTLD_NOW | RTLD_LOCAL))) {
+        fprintf(stderr, "FAIL: dlopen: %s\n", dlerror());
+        return false;
     }
     SYMS(RESOLVE)
     if (p_retro_api_version() != RETRO_API_VERSION) {
         fprintf(stderr, "FAIL: API version %u\n", p_retro_api_version());
-        return 1;
+        return false;
     }
-    g_save_dir = argc == 5 ? argv[4] : NULL;
     p_retro_set_environment(environment);
     p_retro_set_video_refresh(video);
     p_retro_set_audio_sample(audio_sample);
@@ -193,40 +236,166 @@ int main(int argc, char **argv)
     p_retro_set_input_poll(input_poll);
     p_retro_set_input_state(input_state);
     p_retro_init();
+    return true;
+}
 
-    struct retro_system_info si;
-    p_retro_get_system_info(&si);
-    printf("core: %s %s, extensions %s, need_fullpath %d, block_extract %d\n", si.library_name,
-           si.library_version, si.valid_extensions, si.need_fullpath, si.block_extract);
-    struct retro_system_av_info av;
-    p_retro_get_system_av_info(&av);
-    printf("av: %.6f fps, %.0f Hz, %ux%u (max %ux%u), aspect %.3f\n", av.timing.fps, av.timing.sample_rate,
-           av.geometry.base_width, av.geometry.base_height, av.geometry.max_width, av.geometry.max_height,
-           av.geometry.aspect_ratio);
-    printf("serialize size: %zu\n", p_retro_serialize_size());
+static void close_core(void)
+{
+    p_retro_deinit();
+    dlclose(g_core);
+    g_core = NULL;
+}
 
-    if (argc == 2) {
-        p_retro_deinit();
-        dlclose(core);
-        printf("unloaded without a game\n");
-        return 0;
+static long count_dir(const char *path)
+{
+    DIR *d = opendir(path);
+    long n = 0;
+    for (struct dirent *e; d && (e = readdir(d));) {
+        n += e->d_name[0] != '.';
     }
-    const struct retro_game_info game = {.path = argv[2]};
-    if (!p_retro_load_game(&game)) {
+    if (d) {
+        closedir(d);
+    }
+    return n;
+}
+
+/* The process's threads once the count holds for 50 ms (up to a second): a
+ * joined thread can still be listed for a while (the kernel wakes the joiner
+ * before it reaps the thread, later still for one of low priority on a busy
+ * CPU). */
+static long settled_threads(void)
+{
+    long n = count_dir("/proc/self/task");
+    for (int i = 0, same = 0; i < 200 && same < 10; i++) {
+        const struct timespec ts = {0, 5000000};
+        nanosleep(&ts, NULL);
+        const long m = count_dir("/proc/self/task");
+        same = m == n ? same + 1 : 0;
+        n = m;
+    }
+    return n;
+}
+
+static long status_kib(const char *key)
+{
+    FILE *f = fopen("/proc/self/status", "r");
+    char line[256];
+    long v = -1;
+    while (f && fgets(line, sizeof(line), f)) {
+        if (!strncmp(line, key, strlen(key))) {
+            v = atol(line + strlen(key));
+        }
+    }
+    if (f) {
+        fclose(f);
+    }
+    return v;
+}
+
+/* Whether the core's library is still mapped (after dlclose: unloaded). */
+static bool core_mapped(void)
+{
+    char real[PATH_MAX], line[PATH_MAX + 128];
+    if (!realpath(g_core_path, real)) {
+        return true;
+    }
+    FILE *f = fopen("/proc/self/maps", "r");
+    bool found = false;
+    while (f && !found && fgets(line, sizeof(line), f)) {
+        line[strcspn(line, "\n")] = 0;
+        const char *p = strchr(line, '/');
+        found = p && !strcmp(p, real);
+    }
+    if (f) {
+        fclose(f);
+    }
+    return found;
+}
+
+static void *no_op(void *arg)
+{
+    return arg;
+}
+
+/* The threads besides this one, by name, to stderr. */
+static void name_threads(int cycle)
+{
+    DIR *d = opendir("/proc/self/task");
+    for (struct dirent *e; d && (e = readdir(d));) {
+        if (e->d_name[0] == '.' || atoi(e->d_name) == getpid()) {
+            continue;
+        }
+        char path[64], name[32] = "?";
+        snprintf(path, sizeof(path), "/proc/self/task/%s/comm", e->d_name);
+        FILE *f = fopen(path, "r");
+        if (f) {
+            if (fgets(name, sizeof(name), f)) {
+                name[strcspn(name, "\n")] = 0;
+            }
+            fclose(f);
+        }
+        fprintf(stderr, "cycle %d: thread %s (%s) still there\n", cycle, e->d_name, name);
+    }
+    if (d) {
+        closedir(d);
+    }
+}
+
+/* The signals the process has handlers for (/proc's SigCgt mask, hex). */
+static const char *caught_signals(void)
+{
+    static char mask[32];
+    FILE *f = fopen("/proc/self/status", "r");
+    char line[256];
+    snprintf(mask, sizeof(mask), "?");
+    while (f && fgets(line, sizeof(line), f)) {
+        if (!strncmp(line, "SigCgt:", 7)) {
+            sscanf(line + 7, "%31s", mask);
+        }
+    }
+    if (f) {
+        fclose(f);
+    }
+    return mask;
+}
+
+/* One game: loaded, run for frames retro_run calls at the core's rate (or
+ * until it asks to shut down), unloaded. 0, or 3 when refused. */
+static int play(const struct retro_game_info *game, long frames)
+{
+    g_shutdown = false;
+    g_ran = 0;
+    g_options_changed = false;
+    g_video_calls = g_new_frames = g_dupes = g_frame_w = g_frame_h = 0;
+    g_audio_frames = 0;
+    memset(&g_hw, 0, sizeof(g_hw));
+    g_neg = NULL;
+    if (!p_retro_load_game(game)) {
         printf("load: refused\n");
-        p_retro_deinit();
-        dlclose(core);
         return 3;
     }
+    struct retro_system_av_info av;
     p_retro_get_system_av_info(&av);
     printf("loaded: %ux%u, aspect %.3f\n", av.geometry.base_width, av.geometry.base_height,
            av.geometry.aspect_ratio);
-    const long frames = atol(argv[3]);
+    if (g_hw.context_reset) {               /* as RetroArch's video driver starts */
+        if (!hv_load() || !hv_create(g_neg)) {
+            fprintf(stderr, "FAIL: no Vulkan device for the core\n");
+            return 1;
+        }
+        g_hw.context_reset();
+    }
     struct timespec start;
     clock_gettime(CLOCK_MONOTONIC, &start);
     const double t0 = (double)start.tv_sec * 1e9 + (double)start.tv_nsec;
     long ran = 0;
+    const long reset_at = getenv("HARNESS_RESET_AT") ? atol(getenv("HARNESS_RESET_AT")) : -1;
     for (; ran < frames && !g_shutdown; ran++) {
+        if (ran == reset_at) {              /* RetroArch's Reset (Restart) */
+            printf("reset at frame %ld\n", ran);
+            fflush(stdout);
+            p_retro_reset();
+        }
         const unsigned before = g_video_calls;
         p_retro_run();
         g_ran = ran + 1;
@@ -243,22 +412,92 @@ int main(int argc, char **argv)
            g_video_calls, g_new_frames, g_frame_w, g_frame_h, g_dupes, g_audio_frames,
            g_shutdown ? ", the core asked to shut down" : "");
     fflush(stdout);
+    if (g_hw.context_destroy) {             /* RetroArch: the context goes before the game */
+        g_hw.context_destroy();
+    }
     p_retro_unload_game();
-    p_retro_deinit();
-    dlclose(core);
+    hv_destroy();
     printf("unloaded\n");
-    if (getenv("HARNESS_LOAD_AGAIN")) {     /* a second game, as RetroArch loads one: the core opened again */
-        fflush(stdout);
-        if (!(core = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL))) {
-            fprintf(stderr, "FAIL: dlopen again: %s\n", dlerror());
+    return 0;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc != 2 && argc != 5) {
+        fprintf(stderr, "usage: libretro-harness <core.so> [<disc image> <frames> <save directory>]\n");
+        return 2;
+    }
+    g_core_path = argv[1];
+    g_vulkan = getenv("HARNESS_VULKAN") && atoi(getenv("HARNESS_VULKAN"));
+    g_save_dir = argc == 5 ? argv[4] : NULL;
+    pthread_t t;                    /* glibc's own handler (SIGSETXID) comes with a first thread */
+    if (pthread_create(&t, NULL, no_op, NULL) == 0) {
+        pthread_join(t, NULL);
+    }
+    printf("signals caught before the core: %s\n", caught_signals());
+    if (!open_core()) {
+        return 1;
+    }
+    struct retro_system_info si;
+    p_retro_get_system_info(&si);
+    printf("core: %s %s, extensions %s, need_fullpath %d, block_extract %d\n", si.library_name,
+           si.library_version, si.valid_extensions, si.need_fullpath, si.block_extract);
+    struct retro_system_av_info av;
+    p_retro_get_system_av_info(&av);
+    printf("av: %.6f fps, %.0f Hz, %ux%u (max %ux%u), aspect %.3f\n", av.timing.fps, av.timing.sample_rate,
+           av.geometry.base_width, av.geometry.base_height, av.geometry.max_width, av.geometry.max_height,
+           av.geometry.aspect_ratio);
+    printf("serialize size: %zu\n", p_retro_serialize_size());
+
+    if (argc == 2) {
+        close_core();
+        printf("unloaded without a game\n");
+        return 0;
+    }
+    const struct retro_game_info game = {.path = argv[2]};
+    const long frames = atol(argv[3]);
+    const int cycles = getenv("HARNESS_CYCLES") ? atoi(getenv("HARNESS_CYCLES")) : 1;
+    for (int c = 0; c < cycles; c++) {
+        if (c > 0 && !open_core()) {
             return 1;
         }
-        SYMS(RESOLVE)
-        p_retro_set_environment(environment);
-        p_retro_init();
+        const int r = play(&game, frames);
+        if (r) {
+            close_core();
+            return r;
+        }
+        if (cycles > 1) {               /* what the core left in the process once closed */
+            close_core();
+            const long threads = settled_threads();
+            if (threads > 1) {
+                name_threads(c + 1);
+            }
+            printf("cycle %d: %ld threads, %ld descriptors, VmSize %ld KiB, VmRSS %ld KiB, signals caught %s, %s\n",
+                   c + 1, threads, count_dir("/proc/self/fd"), status_kib("VmSize:"), status_kib("VmRSS:"),
+                   caught_signals(), core_mapped() ? "the core still mapped" : "the core unloaded");
+            fflush(stdout);
+            if (getenv("HARNESS_MAPS")) {   /* debug: the mappings after each cycle, to a file */
+                char cmd[256];
+                snprintf(cmd, sizeof(cmd), "cat /proc/%d/maps > %s.%d", (int)getpid(), getenv("HARNESS_MAPS"), c + 1);
+                if (system(cmd) != 0) {
+                    fprintf(stderr, "maps: %s failed\n", cmd);
+                }
+#ifdef __GLIBC__
+                malloc_stats();             /* and the heap's arenas, to stderr */
+#endif
+            }
+        }
+    }
+    if (cycles <= 1) {
+        close_core();
+    }
+    if (getenv("HARNESS_LOAD_AGAIN")) {     /* a second game, as RetroArch loads one: the core opened again */
+        fflush(stdout);
+        if (!open_core()) {
+            return 1;
+        }
         printf("load again: %s\n", p_retro_load_game(&game) ? "loaded" : "refused");
-        p_retro_deinit();
-        dlclose(core);
+        close_core();
     }
     return 0;
 }

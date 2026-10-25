@@ -60,12 +60,16 @@ bool nc_disc_open(NcDisc *d, int fd)
     return false;
 }
 
+static void ov_free(NcDiscOverlay *o);
+
 void nc_disc_close(NcDisc *d)
 {
     if (d->fd >= 0) {
         close(d->fd);
     }
     d->fd = -1;
+    ov_free(d->ov);
+    d->ov = NULL;
 }
 
 static bool name_eq(const uint8_t *a, size_t alen, const char *b, size_t blen)
@@ -190,6 +194,25 @@ static void norm_case(const char *in, char *out, size_t cap, bool lower)
 static void norm_path(const char *in, char *out, size_t cap)
 {
     norm_case(in, out, cap, true);
+}
+
+static void ov_free(NcDiscOverlay *o)
+{
+    if (!o) {
+        return;
+    }
+    for (unsigned i = 0; i < o->n; i++) {
+        if (o->e[i].fd >= 0) {
+            close(o->e[i].fd);
+        }
+        free(o->e[i].host);
+    }
+    for (unsigned i = 0; i < o->np; i++) {
+        free(o->p[i].bytes);
+    }
+    free(o->e);
+    free(o->p);
+    free(o);
 }
 
 static NcDiscOverlay *ov_of(NcDisc *d)

@@ -12,6 +12,11 @@ extern "C" {
 
 /* NV2A register space at 0xFD000000 and its vblank clock. */
 void nc_dev_nv2a_init(void);
+/* The vblank thread stopped and joined (the guest's CPU first: it raises the
+ * vblank's interrupt); then, with nothing left reading them, the registers,
+ * the misc windows and every setting freed or reset, for another init. */
+void nc_dev_nv2a_stop(void);
+void nc_dev_nv2a_free(void);
 uint64_t nc_dev_nv2a_vblanks(void);
 /* The video mode's refresh rate (50 or 60 Hz): the vblank clock's. */
 void nc_dev_nv2a_refresh(unsigned hz);
@@ -38,12 +43,19 @@ void nc_dev_misc_init(void);
 /* The MCPX APU (0xFE800000, IRQ 5) over guest RAM (native/dev/apu). */
 struct NcVm;
 void nc_dev_apu_init(struct NcVm *vm);
+/* The frame thread, the voice workers and the output stopped and joined;
+ * then the APU's state and DSPs freed, for another init. */
+void nc_dev_apu_stop(void);
+void nc_dev_apu_free(void);
 /* A CPU thread waits for the GP DSP to take a DirectSound command (the word
  * at host address word to clear): the APU runs its frames to completion
  * meanwhile; returns when the word clears or after about a millisecond. */
 void nc_dev_apu_spin_wait(const uint32_t *word);
 /* aci.c: the AC'97 audio codec interface (0xFEC00000, IRQ 6). */
 void nc_dev_aci_init(struct NcVm *vm);
+/* The PCM thread stopped and joined; then the codec's state cleared. */
+void nc_dev_aci_stop(void);
+void nc_dev_aci_free(void);
 
 /* x86 I/O ports (IN/OUT); bytes is 1, 2 or 4. */
 uint32_t nc_port_in(uint16_t port, unsigned bytes);

@@ -79,7 +79,7 @@ licence is GPL-3.0-or-later, as here.
 | The overscan crop that fills a 4:3 panel | `native/libretro/video.c` | A core option ("Crop overscan", on by default), so a TV can keep the full frame |
 | The console disk and caches in `/storage/saves/xbox` | RetroArch's save directory, set by PortareOS's override | Unchanged: the core uses whatever save directory the frontend gives |
 | Run-ahead off | `savestate = "false"` and the override | Unchanged |
-| RetroArch ends on unload, and when RetroArch drops the Vulkan context; a relaunch starts RetroArch again (#11) | `native/libretro/core.c` | Kept, for PortareOS only, behind one build option (e.g. `HAKUX_LR_END_PROCESS`, on in PortareOS's package) until M2 replaces all three. The relaunch's re-exec needs RetroArch's own binary with the game on its command line; elsewhere, Android included, it falls back to ending the process |
+| RetroArch ends on unload, and when RetroArch drops the Vulkan context; a relaunch starts RetroArch again (#11) | `native/libretro/core.c` | Replaced by M2's stop in process. PortareOS's build option `HAKUX_LR_END_PROCESS` keeps them behind `HAKUX_LR_STOP=0` for one release, and ends the process when a stop hangs (10 s). The relaunch's re-exec needs RetroArch's own binary with the game on its command line; elsewhere, Android included, it falls back to ending the process |
 | Core options (#14) | `native/libretro/options.c` | Unchanged; PortareOS's per-game `.opt` merge in `runemu.sh` keeps working |
 | A release tarball with a pinned checksum | This fork's releases | Either `hakux-lr` builds upstream's source at a pinned commit, as other PortareOS cores do, or this fork keeps cutting tarballs from upstream's tree |
 
@@ -104,12 +104,10 @@ licence is GPL-3.0-or-later, as here.
 ### libretro
 
 - **Stopping the core (M2).** libretro expects `retro_unload_game` to free the
-  game so `retro_load_game` can run again. Today the core ends RetroArch.
-  Section 1 shows an experimental core with this limitation can be listed, but
-  on Android, ending the process closes the RetroArch app. LIBRETRO_SPEC
-  deprioritized M2 because PortareOS gains nothing from it (2026-10-24). For
-  libretro it is the main gate, and it would let PortareOS drop #11's
-  workarounds too.
+  game so `retro_load_game` can run again. The core now stops in RetroArch's
+  process (LIBRETRO_SPEC section 6), on Linux; not yet built or run on Android.
+  Before, it ended RetroArch, which on Android closes the RetroArch app. It
+  also lets PortareOS drop #11's workarounds.
 - **No process-wide side effects.** `retro_load_game` sets `HAKUX_HLE_MODE`
   and `HAKUX_NATIVE_BASE` with `setenv`; these become API calls.
 - **Android in the core build.** The CMake gate goes. The core then builds
@@ -132,8 +130,7 @@ licence is GPL-3.0-or-later, as here.
     database, playlists and thumbnails.
   - `core_options = "true"` with `core_options_version = "2.0"`: #14 left
     `"false"`.
-  - `notes` for ARM64 only, Vulkan 1.3, no BIOS or hard disk image, and one
-    game per RetroArch session until M2.
+  - `notes` for ARM64 only, Vulkan 1.3, no BIOS or hard disk image.
   - Submitted to libretro-super.
 - **A docs page** in libretro's docs: requirements, options, the data folder,
   what's missing.
@@ -158,7 +155,7 @@ Progress, 2026-10-25: steps 1 and 0 are on the branches
 `portareos/upstream-1.1.0` (the merge) and `portareos/upstream-prep` (the
 fix-ups), not merged yet. Both build for Android with NDK r29. A video driver
 rebuild mid-game is still unchecked, because RetroArch's network commands
-can't trigger one on the Nova.
+can't trigger one on the Nova. Step 6 (M2) is on `m2-stop`.
 
 ## 6. If upstream doesn't take it
 

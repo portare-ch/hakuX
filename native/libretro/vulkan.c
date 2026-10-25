@@ -18,18 +18,17 @@
  * acquisition until video_cb has submitted the copy, as the window's
  * presenter holds it; the renderer's next write to it waits on its barrier.
  *
- * Parked (nc_lr_end, but for PortareOS's build), the renderer leaves
- * RetroArch's device for good before RetroArch destroys it: nc_lr_vk_park.
+ * RetroArch letting the context go stops the core (nc_lr_end, M2): the
+ * renderer's objects destroyed, the device forgotten (RetroArch destroys
+ * it) and the next create_device2 makes another.
  */
 #include "native/libretro/libretro_int.h"
 #include "hw/xbox/hle/vk/vkdev.h"
 #include "hw/xbox/hle/vk/back_int.h"
 #include "hw/xbox/hle/vk/display.h"
 #include "native/libretro/libretro_vulkan.h"
-#include "hw/xbox/hle/vk/pipeasync.h"
 
 #include <string.h>
-#include <time.h>
 
 #define MAX_SYNC 16
 
@@ -142,10 +141,6 @@ static void release(void)
 
 static void context_reset(void)
 {
-    if (nc_lr_parked()) {
-        nc_lr_fail("RetroArch rebuilt its video driver, which the core can't follow yet: restart RetroArch");
-        return;
-    }
     const struct retro_hw_render_interface_vulkan *vk = NULL;
     if (!nc_lr_env(RETRO_ENVIRONMENT_GET_HW_RENDER_INTERFACE, (void *)&vk) || !vk ||
         vk->interface_type != RETRO_HW_RENDER_INTERFACE_VULKAN ||
@@ -174,10 +169,9 @@ static void context_destroy(void)
     if (!g_vk) {
         return;
     }
-    /* The renderer can't stop yet (M2): once the guest has booted, it may
-     * still submit to the queue and use the device RetroArch is letting go
-     * (a video driver rebuild, or the unload, which comes after this), so
-     * RetroArch's process ends or the emulation parks (nc_lr_vk_park). */
+    /* The core stops off the device RetroArch is letting go (a video
+     * driver rebuild, or the unload, which comes after this); or, with
+     * HAKUX_LR_STOP=0, RetroArch's process ends. */
     nc_lr_end("vulkan: RetroArch destroyed the context");
     if (!g_vk) {
         return;
@@ -187,27 +181,14 @@ static void context_destroy(void)
     hle_vk_queue_unlock();
     release();
     hle_vk_set_frontend_queue_lock(NULL, NULL, NULL);
+    hle_vk_shutdown();      /* RetroArch's to destroy */
     g_vk = NULL;
 }
 
-void nc_lr_vk_park(void)
+void nc_lr_vk_reset(void)
 {
-    if (!g_vk) {
-        return;
-    }
-    /* The pipeline builds, the workers' and the prebuild's, use the device
-     * without the queue: done first (or a second gone by). */
-    for (int i = 0; i < 100; i++) {
-        uint32_t done, total;
-        hle_pipe_progress(&done, &total);
-        if (!hle_pipe_inflight() && done == total) {
-            break;
-        }
-        const struct timespec ts = {0, 10000000};
-        nanosleep(&ts, NULL);
-    }
-    hle_vk_park(release);
-    g_vk = NULL;
+    g_hw = false;           /* the next load negotiates again (a frontend without Vulkan reads back) */
+    hle_vk_shutdown();      /* the renderer's own device (frames read back) */
 }
 
 bool nc_lr_vk_negotiate(void)

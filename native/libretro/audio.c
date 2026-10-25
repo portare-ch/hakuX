@@ -68,6 +68,12 @@ int apu_out_open(int capacity_bytes, int samples, pthread_cond_t *wake)
     return frames * OUT_FRAME_BYTES;
 }
 
+void apu_out_close(void)
+{
+    free(g_out.buf);
+    memset(&g_out, 0, sizeof(g_out));   /* nc_lr_audio_run hands over nothing until the next open */
+}
+
 /* retro_run: one period's samples to RetroArch, what the ring has of them
  * (a short call); none before the APU opened its output. */
 void nc_lr_audio_run(retro_audio_sample_batch_t batch)

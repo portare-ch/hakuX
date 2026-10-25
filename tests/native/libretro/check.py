@@ -3,6 +3,7 @@
 import argparse
 import os
 from pathlib import Path
+import re
 import struct
 import subprocess
 import sys
@@ -39,6 +40,35 @@ SETTINGS = (
 )
 
 
+def cycles(command, env, n):
+    """The harness's game cycles (HARNESS_CYCLES): each cycle's threads,
+    descriptors and memory; the last as the second, up to a margin (the
+    first may leave FEX's allocator a heap for the frontend's thread, once:
+    nc_cpu_destroy runs there). The signal handlers after each, as before
+    the core."""
+    result = subprocess.run([str(x) for x in command], env=dict(env, HARNESS_CYCLES=str(n)), capture_output=True,
+                            text=True, timeout=300)
+    rows = [tuple(int(v) for v in m) for m in re.findall(
+        r'cycle \d+: (\d+) threads, (\d+) descriptors, VmSize (\d+) KiB, VmRSS (\d+) KiB', result.stdout)]
+    stops = result.stdout.count('the core stopped in') + result.stderr.count('the core stopped in')
+    before = re.findall(r'signals caught before the core: (\w+)', result.stdout)
+    caught = re.findall(r'cycle \d+: .*, signals caught (\w+)', result.stdout)
+    if result.returncode or len(rows) != n or stops < n:
+        print(result.stdout[-4000:], result.stderr[-4000:])
+        raise SystemExit(f'FAIL: {n} cycles of {command[2]}: exit {result.returncode}, {len(rows)} cycles, {stops} stops')
+    left = sorted({m for m in caught if m != before[0]}) if before else ['?']
+    if left or len(caught) != n:
+        raise SystemExit(f'FAIL: {n} cycles of {command[2]} left signal handlers behind: SigCgt '
+                         f'{before[0] if before else "?"} before the core, {left} after a cycle')
+    first, last = rows[1], rows[-1]
+    if last[0] != first[0] or last[1] != first[1] or last[2] - first[2] > 4096 or last[3] - first[3] > 64 * 1024:
+        raise SystemExit(f'FAIL: {n} cycles of {command[2]} left something behind: {first} then {last} '
+                         '(threads, descriptors, VmSize KiB, VmRSS KiB)')
+    print(f'PASS: {n} cycles of {Path(command[2]).name} in one process, after each {last[0]} thread(s), '
+          f'{last[1]} descriptor(s) and the signal handlers as before the core; VmSize {first[2]} to {last[2]} '
+          f'KiB, VmRSS {first[3]} to {last[3]} KiB')
+
+
 def dynamic_exports(path):
     """The defined global and weak symbols in an ELF64 object's .dynsym."""
     data = Path(path).read_bytes()
@@ -66,9 +96,10 @@ def main():
     parser.add_argument('harness', type=Path)
     parser.add_argument('core', type=Path)
     args = parser.parse_args()
-    # PortareOS's mode (HAKUX_LR_END_PROCESS) for the runs, whatever the build;
-    # the parked mode's own runs come after.
+    # PortareOS's mode (HAKUX_LR_END_PROCESS) for the runs, whatever the build:
+    # the stop's watchdog, and the way before M2 (HAKUX_LR_STOP=0).
     os.environ['HAKUX_LR_END_PROCESS'] = '1'
+    old = dict(os.environ, HAKUX_LR_STOP='0')
     exports = dynamic_exports(args.core)
     stray = [n for n in exports if not n.startswith('retro_')]
     if stray or len(exports) < 25:
@@ -88,16 +119,19 @@ def main():
         run([args.harness, args.core, root / 'missing.iso', 60, root / 'saves'], 3, 'load: refused')
         disc(root / 'halt.iso', b'\xf4')
         run([args.harness, args.core, root / 'halt.iso', 600, root / 'saves'], 0,
-            ('guest executed HLT', 'the core asked to shut down', 'the core cannot stop yet'))
+            ('guest executed HLT', 'the core asked to shut down', 'unload: the core stopped in'))
+        run([args.harness, args.core, root / 'halt.iso', 600, root / 'saves'], 0,
+            ('guest executed HLT', 'the core asked to shut down', 'the core does not stop (HAKUX_LR_STOP=0); '
+             'ending the process'), old)
         if not (root / 'saves' / 'hdd' / 'Partition0').is_dir():
             raise SystemExit('FAIL: no console disk in the save directory')
         print('PASS: the console disk is in the save directory')
-        # The frontend (here the harness) starts again in its place and boots
-        # the XBE the launch data page names.
+        # The way before M2: the frontend (here the harness) starts again in
+        # its place and boots the XBE the launch data page names.
         disc(root / 'relaunch.iso', RELAUNCH, imports=(49, 164))
         run([args.harness, args.core, root / 'relaunch.iso', 600, root / 'saves'], 0,
             ('relaunch into \\default.xbe', 'relaunch: starting RetroArch again',
-             'relaunch: \\Device\\CdRom0\\default.xbe', 'guest executed HLT', 'the core cannot stop yet'))
+             'relaunch: \\Device\\CdRom0\\default.xbe', 'guest executed HLT', 'ending the process'), old)
         if (root / 'saves' / 'relaunch.bin').exists():
             raise SystemExit('FAIL: the relaunch left its launch data page')
         # The core options reach the console before it boots: the defaults,
@@ -128,16 +162,40 @@ def main():
         run([args.harness, args.core, root / 'spin.iso', 60, root / 'saves'], 0,
             ('options: render scale 1x', 'message: Render Scale, Video Region: takes effect when the game starts next',
              'ran 60 frames'), env)
-        # Outside PortareOS's build the emulation parks when the game closes,
-        # the frontend runs on, and a second game is refused: after a title
-        # that stopped, and with the CPU in a loop that never enters the
-        # kernel. The process then exits as usual.
-        env = dict(os.environ, HAKUX_LR_END_PROCESS='0', HARNESS_LOAD_AGAIN='1')
-        for name, frames, marker in (('halt.iso', 600, 'guest executed HLT'), ('spin.iso', 60, 'ran 60 frames')):
-            run([args.harness, args.core, root / name, frames, root / 'saves'], 0,
-                (marker, 'the emulation is parked for good', 'unloaded',
-                 'load: hakuX plays one game a session: restart RetroArch for another', 'load again: refused'), env)
+        # M2: the core stops in the process and boots again: 100 games, a
+        # CPU in a loop that never enters the kernel, the renderer on a
+        # device of its own and on the frontend's, a reset, a title's
+        # relaunch.
+        m2 = dict(os.environ, HAKUX_HLE_MODE='off')
+        cycles([args.harness, args.core, root / 'halt.iso', 600, root / 'saves'], m2, 100)
+        cycles([args.harness, args.core, root / 'spin.iso', 20, root / 'saves'], m2, 20)
+        cycles([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'], os.environ, 20)
+        cycles([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'],
+               dict(os.environ, HARNESS_VULKAN='1'), 20)
+        run([args.harness, args.core, root / 'spin.iso', 60, root / 'saves'], 0,
+            ('reset at frame 20', 'reset: the core stopped in', 'ran 60 frames',
+             'RetroArch destroyed the context: the core stopped in', 'stop: the front end stopped the console',
+             'back end started'),
+            dict(os.environ, HARNESS_VULKAN='1', HARNESS_RESET_AT='20'))
+        run([args.harness, args.core, root / 'relaunch.iso', 600, root / 'saves'], 0,
+            ('relaunch into \\default.xbe', 'relaunch: the game boots again in RetroArch\'s process',
+             'relaunch: the core stopped in', 'relaunch: \\Device\\CdRom0\\default.xbe', 'guest executed HLT',
+             'unload: the core stopped in'))
+        if (root / 'saves' / 'relaunch.bin').exists():
+            raise SystemExit('FAIL: the relaunch in the process left its launch data page')
+        run([args.harness, args.core, root / 'halt.iso', 600, root / 'saves'], 0,
+            ('guest executed HLT', 'unload: the core stopped in', 'load again: loaded'),
+            dict(os.environ, HARNESS_LOAD_AGAIN='1'))
         print('PASS: the relaunch booted the XBE its page named')
+        # PortareOS's build: a stop that outlasts its watchdog (here any: 1 ms)
+        # ends the process. Outside it the stop waits, and HAKUX_LR_STOP=0
+        # changes nothing.
+        run([args.harness, args.core, root / 'spin.iso', 60, root / 'saves'], 0,
+            ('ran 60 frames', 'unload: the core did not stop in 1 ms', 'ending the process'),
+            dict(os.environ, HAKUX_LR_STOP_TIMEOUT_MS='1'))
+        run([args.harness, args.core, root / 'spin.iso', 60, root / 'saves'], 0,
+            ('ran 60 frames', 'unload: the core stopped in', 'unloaded'),
+            dict(old, HAKUX_LR_END_PROCESS='0', HAKUX_LR_STOP_TIMEOUT_MS='1'))
 
 
 if __name__ == '__main__':

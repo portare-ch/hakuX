@@ -18,15 +18,13 @@
 
 /* core.c — the frontend's environment callback; a failure that stops the
  * content (logged; retro_run asks RetroArch to shut down); the guest booted,
- * once (false: it could not be); once the guest has booted, as the core
- * cannot stop (M2), the end of RetroArch's process or its start again for a
- * title's relaunch (PortareOS's build), else the emulation parked for good;
- * whether it is. */
+ * once (false: it could not be); the core stopped (M2), or with
+ * HAKUX_LR_STOP=0 in PortareOS's build RetroArch's process ended, or started
+ * again for a title's relaunch. */
 bool nc_lr_env(unsigned cmd, void *data);
 void nc_lr_fail(const char *why);
 bool nc_lr_start(void);
 void nc_lr_end(const char *why);
-bool nc_lr_parked(void);
 
 /* audio.c — one period's samples to RetroArch (retro_run). */
 void nc_lr_audio_run(retro_audio_sample_batch_t batch);
@@ -47,6 +45,8 @@ void nc_lr_video_geometry(struct retro_game_geometry *g);
 void nc_lr_overscan(uint32_t w, uint32_t h, uint32_t *cx, uint32_t *cy);
 void nc_lr_video_size(uint32_t w, uint32_t h, uint32_t ow, uint32_t oh);
 void nc_lr_video_set_widescreen(bool on);
+/* The game unloaded: the frame state and its read-back buffer gone. */
+void nc_lr_video_reset(void);
 void nc_lr_video_set_crop(bool on);
 
 /* options.c — the core options: declared to the frontend
@@ -63,8 +63,7 @@ void nc_lr_options_run(void);
  * read back); the frame handed over as an image (false: not with Vulkan). */
 bool nc_lr_vk_negotiate(void);
 bool nc_lr_vk_run(retro_video_refresh_t video);
-/* The renderer off RetroArch's device for good (park), the frames' images
- * released: RetroArch may destroy the device after. */
-void nc_lr_vk_park(void);
+/* The game unloaded (after context_destroy): the negotiation forgotten. */
+void nc_lr_vk_reset(void);
 
 #endif

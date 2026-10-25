@@ -127,15 +127,13 @@ int hle_vk_init(void);
 typedef VkDevice (*HleVkMakeDevice)(VkPhysicalDevice gpu, void *opaque, const VkDeviceCreateInfo *ci);
 int hle_vk_init_shared(PFN_vkGetInstanceProcAddr gipa, VkInstance inst, VkPhysicalDevice gpu,
                        VkSurfaceKHR surface, HleVkMakeDevice make, void *opaque);
+/* After hle_back_shutdown (the core stops, M2): the device and instance
+ * destroyed, a frontend's forgotten (it destroys them), and g_hvk as before
+ * hle_vk_init, which makes or finds the next. */
+void hle_vk_shutdown(void);
 /* The frontend's lock on the queue it shares (libretro's lock_queue and
  * unlock_queue), taken inside hle_vk_queue_lock; NULL: none. */
 void hle_vk_set_frontend_queue_lock(void (*lock)(void *), void (*unlock)(void *), void *handle);
-/* The renderer off the frontend's device for good, so the frontend may
- * destroy it while the renderer's threads live on (the libretro core, which
- * can't stop them yet): the queue's lock taken and kept, the device idle,
- * cleanup (the caller's own objects, NULL: none), then every entry point of
- * g_hvk.t blocks its caller. A thread on its way to the device stops there. */
-void hle_vk_park(void (*cleanup)(void));
 /* The instance extensions for the window's surface, at most. */
 #define HLE_VK_WINDOW_EXTS 8
 #ifndef __ANDROID__

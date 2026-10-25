@@ -263,6 +263,20 @@ struct NcKernel {
 };
 
 bool nc_kernel_init(NcKernel *k, NcVm *vm);
+/* The guest stopped (its CPU, devices and the I/O threads: nc_io_stop): what
+ * the kernel holds on the host freed, and every module's state reset to a
+ * new process's (the front end's settings excepted), for another boot. */
+void nc_kernel_destroy(NcKernel *k);
+/* nc_kernel_destroy's, one per module. */
+void nc_ke_reset(void);
+void nc_ex_reset(void);
+void nc_mm_reset(void);
+void nc_page_reset(void);
+void nc_timer_reset(void);
+void nc_intr_reset(void);
+void nc_x86mmio_reset(void);
+void nc_kstate_reset(void);
+void nc_ob_reset(void);
 
 /* Creates the title's first thread at entry; run it with nc_cpu_run. */
 NcThread *nc_kernel_boot_thread(NcKernel *k, NcCpu *cpu, uint32_t entry, uint32_t stack_size);
@@ -512,6 +526,13 @@ void nc_io_register(NcKernel *k);
 void nc_xc_register(NcKernel *k);
 /* Where the hard disk's partitions live on the host (PartitionN under it). */
 void nc_io_set_hdd_root(const char *path);
+/* The core stopping (its CPU first): the closer's queue synced and closed,
+ * the disc reads queued landed, both threads joined. Then, the guest gone,
+ * every file's descriptor closed and the kernel's file system tables
+ * (drive letters, devices, the partitions' usage) cleared, as at a new
+ * process. */
+void nc_io_stop(void);
+void nc_io_reset(void);
 const char *nc_io_hdd_root(void);
 /* A file object's handle closed (ob.c). */
 void nc_io_close(NcKernel *k, uint32_t object);
@@ -592,6 +613,10 @@ bool nc_x86mmio_hook(NcKernel *k, NcFrame *f, uint32_t eip);
 bool nc_kernel_sysop(void *opaque, NcFrame *f, enum NcSysOp op, unsigned size);
 
 /* Stops the guest at the next return from a system op. */
+/* Any thread (the front end's): the guest stops as if a system op had asked,
+ * at the CPU's next block start, or where it idles or pauses. */
+void nc_kernel_host_stop(NcKernel *k);
+bool nc_kernel_host_stopping(NcKernel *k);
 void nc_kernel_request_stop(NcKernel *k, NcFrame *f, const char *fmt, ...)
     __attribute__((format(printf, 3, 4)));
 
@@ -600,6 +625,9 @@ void nc_kernel_request_stop(NcKernel *k, NcFrame *f, const char *fmt, ...)
  * never enters the kernel. Call after timer_due_ns, wait_due_ns or
  * slice_due_ns changes. */
 void nc_kernel_clock_arm(NcKernel *k);
+/* The clock thread stopped and joined (the guest's CPU stopped first), for
+ * another boot's first nc_kernel_clock_arm to start it again. */
+void nc_kernel_clock_stop(void);
 
 /* Scheduler rates for the statistics line (kernel.c). */
 typedef struct NcSchedStats {

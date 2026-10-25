@@ -56,7 +56,19 @@ void nc_hle_pipeline_progress(uint32_t *done, uint32_t *total);
  * dropped when nothing is translated yet. */
 extern HleCpu nc_hle_regs;
 void nc_hle_host_init(NcKernel *k, NcVm *vm, NcCpu *cpu);
+/* On the vCPU thread, as it leaves the title (the core stopping): the PC
+ * samplers (the stall monitor's) stop signalling it, a thread soon gone. */
+void nc_hle_cpu_leave(void);
+/* The core stopping (its CPU has left, nc_core_halt): the HLE GPU's threads
+ * stopped and the renderer torn down, before guest RAM goes. */
+void nc_hle_native_stop(void);
+/* The core stopped (the renderer before it): the native side's state as in a
+ * new process (the pc sampler's SIGPROF handler gone, no fatal error, the
+ * HLE off), the front end's settings kept. */
+void nc_hle_native_reset(void);
+void nc_hle_host_reset(void);
 void nc_hle_dirty_init(NcVm *vm);
+void nc_hle_dirty_reset(void);
 void nc_hle_host_flush(void);
 void nc_hle_host_flush_discard(void);
 

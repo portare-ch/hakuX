@@ -40,6 +40,7 @@ static bool import(AHardwareBuffer *ahb, bool bda)
                  (bda ? VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT : 0),
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE };
     if (T.vkCreateBuffer(g_hvk.dev, &bci, NULL, &g_hram.buf) != VK_SUCCESS) {
+        g_hram.buf = VK_NULL_HANDLE;
         return false;
     }
     /* cached and coherent where the import allows it: the native core's RAM
@@ -66,6 +67,7 @@ static bool import(AHardwareBuffer *ahb, bool bda)
     if (mt < 0 || T.vkAllocateMemory(g_hvk.dev, &mai, NULL, &g_hram.mem) != VK_SUCCESS) {
         T.vkDestroyBuffer(g_hvk.dev, g_hram.buf, NULL);
         g_hram.buf = VK_NULL_HANDLE;
+        g_hram.mem = VK_NULL_HANDLE;
         return false;
     }
     T.vkBindBufferMemory(g_hvk.dev, g_hram.buf, g_hram.mem, 0);
@@ -107,6 +109,7 @@ int hle_vk_arena_init(uint32_t size)
                  VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE };
     if (T.vkCreateBuffer(g_hvk.dev, &bci, NULL, &g_harena.buf) != VK_SUCCESS) {
+        g_harena.buf = VK_NULL_HANDLE;
         return -1;
     }
     VkMemoryRequirements req;
@@ -122,6 +125,7 @@ int hle_vk_arena_init(uint32_t size)
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         .allocationSize = req.size, .memoryTypeIndex = (uint32_t)mt };
     if (mt < 0 || T.vkAllocateMemory(g_hvk.dev, &mai, NULL, &g_harena.mem) != VK_SUCCESS) {
+        g_harena.mem = VK_NULL_HANDLE;  /* the buffer is the shutdown's */
         return -1;
     }
     T.vkBindBufferMemory(g_hvk.dev, g_harena.buf, g_harena.mem, 0);
@@ -175,5 +179,29 @@ int hle_vk_land_init(uint32_t size)
     hle_log("hakuX-hle-back", "readback landing: %u MiB host-cached (type %d, %scoherent)",
             size >> 20, mt, g_hland_coherent ? "" : "not ");
     return 0;
+}
+
+/* (the device idle) the buffer, then its memory, unmapped as it is freed */
+static void buf_free(VkBuffer buf, VkDeviceMemory mem)
+{
+    if (buf) {
+        T.vkDestroyBuffer(g_hvk.dev, buf, NULL);
+    }
+    if (mem) {
+        T.vkFreeMemory(g_hvk.dev, mem, NULL);
+    }
+}
+
+void hle_vk_guest_ram_shutdown(void)
+{
+    /* the imported RAM's memory holds a reference to the AHB, uma.c's: the
+     * free drops it, the guest RAM stays */
+    buf_free(g_hram.buf, g_hram.mem);
+    buf_free(g_harena.buf, g_harena.mem);
+    buf_free(g_hland.buf, g_hland.mem);
+    memset(&g_hram, 0, sizeof(g_hram));
+    memset(&g_harena, 0, sizeof(g_harena));
+    memset(&g_hland, 0, sizeof(g_hland));
+    g_hland_coherent = false;
 }
 
