@@ -1,5 +1,28 @@
 # Changelog
 
+## linux-v0.4.0 (PortareOS)
+
+The RetroArch core stops and starts games inside RetroArch, and the Linux standalone is gone.
+
+### What's new
+
+- **Restart** — RetroArch's Restart starts the game again inside RetroArch.
+- **Games that start another of their programs** — They continue inside RetroArch without restarting it.
+- **Closing a game** — The core stops the game inside RetroArch. On PortareOS, RetroArch then returns to the launcher, as with every core; elsewhere it can load another game in the same session.
+- **Video driver restarts** — If RetroArch restarts its video driver, the game starts again with a message, instead of RetroArch crashing.
+- **No freeze on closing** — If stopping a game ever takes longer than 10 seconds, RetroArch closes instead of freezing.
+- **Testing instructions** — [TESTING.md](TESTING.md) covers installing a release, logs and what to check, on PortareOS and on other ARM64 Linux systems.
+
+### Removed
+
+- **The Linux standalone `hakux`** — It wasn't tested, and PortareOS no longer used it. The release now holds only the RetroArch core.
+
+### Current limitations
+
+- Only player 1 is supported.
+- Save states are not yet available.
+- Games must be `.iso` disc images.
+
 ## linux-v0.3.0 (PortareOS)
 
 Core options for the RetroArch core, and upstream hakuX 1.1.0.
