@@ -12,6 +12,7 @@
 #include "hw/xbox/hle/vk/compat.h"
 #include "hw/xbox/hle/vk/quirks.h"
 
+#include <unistd.h>
 #ifdef __ANDROID__
 #include <sys/system_properties.h>
 #endif
@@ -106,6 +107,36 @@ void hle_vk_set_frontend_queue_lock(void (*lock)(void *), void (*unlock)(void *)
     g_fe.unlock = unlock;
     g_fe.handle = handle;
     hle_mutex_unlock(&g_queue_lock);
+}
+
+/* hle_vk_park's: a device entry point called after the park, whatever its
+ * signature, keeps its caller here. */
+static void park_forever(void)
+{
+    for (;;) {
+        pause();
+    }
+}
+
+void hle_vk_park(void (*cleanup)(void))
+{
+    hle_vk_queue_lock();
+    g_hvk.t.vkDeviceWaitIdle(g_hvk.dev);
+    if (cleanup) {
+        cleanup();
+    }
+    /* the table is function pointers only */
+    void (**fp)(void) = (void (**)(void))(void *)&g_hvk.t;
+    for (size_t i = 0; i < sizeof(g_hvk.t) / sizeof(*fp); i++) {
+        __atomic_store_n(&fp[i], park_forever, __ATOMIC_RELEASE);
+    }
+    if (g_fe.unlock) {
+        g_fe.unlock(g_fe.handle);
+    }
+    g_fe.lock = NULL;
+    g_fe.unlock = NULL;
+    hle_log("hakuX-hle-back", "vk: parked: the device is the frontend's to destroy");
+    /* g_queue_lock stays held: no submit again */
 }
 
 int64_t hle_vk_queue_wait_ns(void)

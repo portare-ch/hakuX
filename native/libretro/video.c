@@ -9,9 +9,10 @@
  * frame (the render thread bakes it), and RetroArch letterboxes it at the
  * aspect reported here.
  *
- * A standard-definition frame loses its overscan, as a TV hid it: 1/30 of
- * its height at the top and bottom and of its width at each side, so the
- * picture keeps its shape and fills a 4:3 screen. Titles left that band
+ * A standard-definition frame loses its overscan, as a TV hid it, unless the
+ * core option says otherwise: 1/30 of its height at the top and bottom and
+ * of its width at each side, so the picture keeps its shape and fills a 4:3
+ * screen. Titles left that band
  * black (Burnout 3: 16 lines above and below its 448) or kept their HUD
  * clear of it (the title-safe area).
  */
@@ -34,6 +35,7 @@ static struct {
     uint32_t gen, swap;      /* the read-back frame's display generation and swap */
     bool dupe_checked, can_dupe;
     bool widescreen;         /* the console is set to widescreen */
+    bool full;               /* the overscan shown, not cropped */
 } g_v;
 
 /* As present.c's auto: the frame's own shape, but a standard-definition
@@ -59,9 +61,14 @@ void nc_lr_video_geometry(struct retro_game_geometry *g)
     g->aspect_ratio = aspect_of(g->base_width, g->base_height);
 }
 
+void nc_lr_video_set_crop(bool on)
+{
+    g_v.full = !on;
+}
+
 void nc_lr_overscan(uint32_t w, uint32_t h, uint32_t *cx, uint32_t *cy)
 {
-    const bool sd = (float)w / (float)h < 1.6f;
+    const bool sd = !g_v.full && (float)w / (float)h < 1.6f;
     *cx = sd ? w / 30 : 0;
     *cy = sd ? h / 30 : 0;
 }
