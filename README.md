@@ -8,7 +8,8 @@ Fork of [rfandango/hakuX](https://github.com/rfandango/hakuX); credit to upstrea
 ## Playing
 
 - Requires ARM64 Linux (glibc 2.38 or newer) with Vulkan 1.3.
-- Uses your own XISO game images (`.iso`). CHD is not supported yet.
+- Uses your own game images: `.iso` (XISO or full disc dumps) or `.chd`
+  (`chdman createdvd`).
 - Keeps the emulated Xbox hard drive and caches in `/storage/saves/xbox`.
 
 No BIOS, MCPX ROM or hard disk image is needed.

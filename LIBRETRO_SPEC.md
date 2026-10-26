@@ -73,8 +73,9 @@ reports serialization unsupported.
 Out of scope: strict lockstep, run-ahead (never, for the Xbox), rewind,
 netplay, exact frame advance, fast-forward beyond what the phase lock gives,
 standalone timed presents, new accuracy work, Direct Video, software
-rendering, other platforms. CHD is separate: the core lists `.iso` until a
-disc reader passes real tests; it never extracts discs or calls xemu.
+rendering, other platforms. CHD images (`chdman createdvd`) are read in
+place through libchdr (`native/core/chd.c`); the core never extracts discs
+or calls xemu.
 
 ## 4. Ownership and layout
 
@@ -305,7 +306,7 @@ Home + Start stays PortareOS's; the core adds no exit chord.
 
 | Entry point | Behaviour |
 | --- | --- |
-| `retro_get_system_info` | name, version; `need_fullpath = true`, `block_extract = true`; extensions `iso` |
+| `retro_get_system_info` | name, version; `need_fullpath = true`, `block_extract = true`; extensions `iso` and `chd` |
 | `retro_load_game` | check the image, resolve paths, negotiate Vulkan, boot; false with full cleanup on failure |
 | `retro_get_system_av_info` | 60000/1001 (the Xbox's, exactly), 48000 Hz, the source size and aspect |
 | `retro_run` | section 5: one `video_cb`, at least one input poll |

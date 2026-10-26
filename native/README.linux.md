@@ -94,8 +94,8 @@ Use a positive `NC_TIMEOUT`. The runner forces graphics off, stores its
 emulated disk/cache under the supplied directory and reports the silent
 audio backend. `--render` in place of `--headless` keeps the renderer on
 without a display and writes a frame every 2 s (`NC_CAPTURE_EVERY`, up to
-`NC_CAPTURE_MAX`) to `<data directory>/frames/`. Discs are XISO images;
-CHD is not supported yet. `vulkan-probe` checks the same portable capability floor
+`NC_CAPTURE_MAX`) to `<data directory>/frames/`. Discs are `.iso` images
+(XISO or full dumps) or CHDs of them (`chdman createdvd`). `vulkan-probe` checks the same portable capability floor
 as the renderer and creates a device, but creates no surface and renders no
 frames. It does not establish Linux shared-memory import correctness.
 
@@ -167,7 +167,7 @@ release `linux-v<version>` and set the package's `PKG_VERSION` and
 `PKG_SHA256` to match.
 
 In PortareOS the Xbox system runs RetroArch with the core, which keeps the
-console's disk in `/storage/saves/xbox`. Discs are `.iso` images.
+console's disk in `/storage/saves/xbox`. Discs are `.iso` or `.chd` images.
 
 ## Properties
 

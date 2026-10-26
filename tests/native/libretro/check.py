@@ -40,6 +40,33 @@ SETTINGS = (
 )
 
 
+def chd(path, image, hunk=4096, cd=False, lead=0):
+    """An uncompressed CHD v5 of image, as libchdr reads one: the 124-byte
+    header, the map (each hunk's file offset in hunks, 0 for a hunk of
+    zeros), the hunks. cd: the track metadata chdman createcd writes. lead:
+    zero bytes before the image (a whole hunks' worth), as a full disc dump
+    has them before its game partition."""
+    meta = b''
+    if cd:
+        text = b'TRACK:1 TYPE:MODE1 SUBTYPE:NONE FRAMES:%d PREGAP:0 PGTYPE:MODE1 PGSUB:RW POSTGAP:0\0' % (
+            len(image) // 2048)
+        meta = struct.pack('>4sIQ', b'CHT2', 1 << 24 | len(text), 0) + text
+    hunks = [image[i:i + hunk].ljust(hunk, b'\0') for i in range(0, len(image), hunk)]
+    map_off = 124 + len(meta)
+    data_off = -(-(map_off + 4 * (lead // hunk + len(hunks))) // hunk) * hunk
+    entries, body = [0] * (lead // hunk), b''
+    for h in hunks:
+        if h.count(0) == hunk:
+            entries.append(0)
+        else:
+            entries.append((data_off + len(body)) // hunk)
+            body += h
+    header = struct.pack('>8sII4IQQQII20s20s20s', b'MComprHD', 124, 5, 0, 0, 0, 0, lead + len(image), map_off,
+                         124 if cd else 0, hunk, 2048, b'', b'', b'')
+    out = header + meta + b''.join(struct.pack('>I', e) for e in entries)
+    path.write_bytes(out.ljust(data_off, b'\0') + body)
+
+
 def cycles(command, env, n, expect=None):
     """The harness's game cycles (HARNESS_CYCLES): each cycle's threads,
     descriptors and memory; the last as the second, up to a margin (the
@@ -107,7 +134,7 @@ def main():
     if stray or len(exports) < 25:
         raise SystemExit(f'FAIL: {args.core.name} exports {len(exports)} symbols; not libretro: {stray[:10]}')
     print(f'PASS: {args.core.name} exports only retro_* ({len(exports)})')
-    run([args.harness, args.core], 0, ('core: hakuX', 'extensions iso, need_fullpath 1, block_extract 1',
+    run([args.harness, args.core], 0, ('core: hakuX', 'extensions iso|chd, need_fullpath 1, block_extract 1',
                                        'av: 59.940060 fps, 48000 Hz', 'serialize size: 0', 'unloaded without a game',
                                        'option: hakux_render_scale (Render Scale), default 1',
                                        'option: hakux_crop_overscan (Crop Overscan), default enabled',
@@ -128,6 +155,28 @@ def main():
         if not (root / 'saves' / 'hdd' / 'Partition0').is_dir():
             raise SystemExit('FAIL: no console disk in the save directory')
         print('PASS: the console disk is in the save directory')
+        # CHD images boot as the ISO does: one written here without
+        # compression, chdman's (chd/: 0.289 createdvd of halt.iso padded to
+        # whole sectors, its default codecs and zstd), and one laid out as a
+        # full disc dump. A CD image is refused, and one cut short fails on
+        # its last hunk, the XBE's.
+        image = (root / 'halt.iso').read_bytes()
+        chd(root / 'halt.chd', image)
+        run([args.harness, args.core, root / 'halt.chd', 600, root / 'saves'], 0,
+            ('disc: CHD v5, 73744 bytes in 19 hunks of 4096 (none, none, none, none)', 'guest executed HLT',
+             'unload: the core stopped in'))
+        for name, codecs in (('halt.chd', 'lzma, zlib, huff, flac'), ('halt-zstd.chd', 'zstd, none, none, none')):
+            run([args.harness, args.core, Path(__file__).parent / 'chd' / name, 600, root / 'saves'], 0,
+                (f'disc: CHD v5, 75776 bytes in 19 hunks of 4096 ({codecs})', 'guest executed HLT'))
+        chd(root / 'dump.chd', image, lead=0x18300000)   # a full XGD1 dump's layout
+        run([args.harness, args.core, root / 'dump.chd', 600, root / 'saves'], 0,
+            ('disc: XDVDFS at +0x18300000', 'guest executed HLT'))
+        chd(root / 'cd.chd', image, cd=True)
+        run([args.harness, args.core, root / 'cd.chd', 600, root / 'saves'], 0,
+            ('disc: CHD not read: a CD image', 'core: boot failed'))
+        (root / 'short.chd').write_bytes((root / 'halt.chd').read_bytes()[:-4096])
+        run([args.harness, args.core, root / 'short.chd', 600, root / 'saves'], 0,
+            ('disc: CHD hunk 18: read error', 'core: boot failed'))
         # The way before M2: the frontend (here the harness) starts again in
         # its place and boots the XBE the launch data page names.
         disc(root / 'relaunch.iso', RELAUNCH, imports=(49, 164))
@@ -181,12 +230,13 @@ def main():
             ('ports: 1 0 0 0', 'port 4: none', 'reset at frame 20', 'ohci: 1 controller(s) (players 1)',
              'ran 40 frames'),
             dict(vk, HARNESS_PORTS='1,0,0,0', HARNESS_RESET_AT='20'))
-        # M2: the core stops in the process and boots again: 100 games, a
-        # CPU in a loop that never enters the kernel, the renderer on a
-        # device of its own and on the frontend's, a reset, a title's
-        # relaunch.
+        # M2: the core stops in the process and boots again: 100 games and 20
+        # from a CHD, a CPU in a loop that never enters the kernel, the
+        # renderer on a device of its own and on the frontend's, a reset, a
+        # title's relaunch.
         m2 = dict(os.environ, HAKUX_HLE_MODE='off')
         cycles([args.harness, args.core, root / 'halt.iso', 600, root / 'saves'], m2, 100)
+        cycles([args.harness, args.core, root / 'halt.chd', 600, root / 'saves'], m2, 20)
         cycles([args.harness, args.core, root / 'spin.iso', 20, root / 'saves'], m2, 20)
         cycles([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'], os.environ, 20)
         cycles([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'],
