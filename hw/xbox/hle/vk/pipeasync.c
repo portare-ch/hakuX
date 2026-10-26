@@ -20,6 +20,7 @@
 
 #ifdef __ANDROID__
 #include <sys/system_properties.h>
+#include "hw/xbox/hle/prop.h"
 #endif
 #ifdef __linux__
 #include <sys/resource.h>
@@ -108,7 +109,7 @@ static int debug_switch(const char *env, const char *prop)
     }
 #ifdef __ANDROID__
     char v[PROP_VALUE_MAX] = "";
-    if (__system_property_get(prop, v) > 0 && (v[0] == '0' || v[0] == '1')) {
+    if (hle_prop_get(prop, v) > 0 && (v[0] == '0' || v[0] == '1')) {
         return v[0] == '1';
     }
 #endif
@@ -480,18 +481,17 @@ void hle_pipe_touch(uint64_t hash)
     put(&g_pa.pending, &stamp, 4);
 }
 
-static int64_t g_flush_last;
-
-void hle_pipe_flush(void)
+void hle_pipe_flush(bool now)
 {
     if (!g_pa.path || !g_pa.pending.n) {
         return;
     }
-    int64_t now = g_get_monotonic_time();
-    if (now - g_flush_last < G_USEC_PER_SEC) {
+    static int64_t last;
+    const int64_t t = g_get_monotonic_time();
+    if (!now && t - last < G_USEC_PER_SEC) {
         return;                         /* a burst's records in one write */
     }
-    g_flush_last = now;
+    last = t;
     FILE *f = fopen(g_pa.path, "ab");
     if (f) {
         fwrite(g_pa.pending.p, 1, g_pa.pending.n, f);
@@ -588,8 +588,7 @@ static void job_free(Job *j)
 void hle_pipe_reset(void)
 {
     /* the records not written yet, then everything the title's run made */
-    g_flush_last = 0;
-    hle_pipe_flush();
+    hle_pipe_flush(true);
     for (unsigned i = 0; i < g_pa.qn; i++) {
         job_free(g_pa.queue[(g_pa.qhead + i) % QUEUE_MAX]);
     }

@@ -10,6 +10,16 @@ It is included in PortareOS and runs games through RetroArch. Other
 Bring your own game disc images. **No Xbox BIOS, MCPX ROM or hard disk
 image is needed**; hakuX creates the console's storage when you start a game.
 
+## hakuX is free
+
+hakuX is free, and always will be. Download the PortareOS Linux core from
+[this fork's releases](https://github.com/portare-ch/hakuX/releases), or the
+Android app from [upstream's releases](https://github.com/rfandango/hakuX/releases).
+
+If you paid for hakuX, including a subscription, an in-app unlock, a
+"premium" build or an app that repackages it, you were scammed. Ask for a
+refund wherever you paid and get hakuX here for free.
+
 ## Play on PortareOS
 
 1. **Install or update PortareOS.** Follow the

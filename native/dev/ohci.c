@@ -822,6 +822,32 @@ void nc_dev_ohci_free(void)
     memset(o, 0, sizeof(*o));
 }
 
+/* Under g_pads.lock: both front ends use the same persistent mask. */
+static void set_pads(unsigned mask)
+{
+    const unsigned old = pad_mask();
+    g_pads.mask = (int)(mask & 0xF);
+    if (mask != old && g_pads.live) {
+        Ohci *o = &g_ohci;
+        pthread_mutex_lock(&o->lock);
+        for (unsigned p = 0; p < 4; p++) {
+            if ((mask ^ old) & (1u << p)) {
+                port_plug(o, k_port_map[p] - 1, (mask & (1u << p)) ? g_pads.pad[p] : NULL);
+                nc_log("hakuX-native-usb", "player %u's controller %s", p + 1,
+                       (mask & (1u << p)) ? "plugged in" : "pulled out");
+            }
+        }
+        pthread_mutex_unlock(&o->lock);
+    }
+}
+
+void nc_dev_ohci_set_pads(unsigned mask)
+{
+    pthread_mutex_lock(&g_pads.lock);
+    set_pads(mask & 0xF);
+    pthread_mutex_unlock(&g_pads.lock);
+}
+
 void nc_pad_plug(unsigned player, bool in)
 {
     if (player >= 4) {
@@ -830,14 +856,7 @@ void nc_pad_plug(unsigned player, bool in)
     pthread_mutex_lock(&g_pads.lock);
     const unsigned old = pad_mask();
     const unsigned mask = in ? old | 1u << player : old & ~(1u << player);
-    g_pads.mask = (int)mask;
-    if (mask != old && g_pads.live) {
-        Ohci *o = &g_ohci;
-        pthread_mutex_lock(&o->lock);
-        port_plug(o, k_port_map[player] - 1, in ? g_pads.pad[player] : NULL);
-        pthread_mutex_unlock(&o->lock);
-        nc_log("hakuX-native-usb", "player %u's controller %s", player + 1, in ? "plugged in" : "pulled out");
-    }
+    set_pads(mask);
     pthread_mutex_unlock(&g_pads.lock);
 }
 

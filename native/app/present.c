@@ -13,7 +13,7 @@
 #include "hw/xbox/hle/vk/swapchain.h"
 
 #include <string.h>
-#include "native/platform/properties.h"
+#include "hw/xbox/hle/prop.h"
 #include <time.h>
 
 static int g_aspect = NC_ASPECT_AUTO;
@@ -114,7 +114,7 @@ static void debug_poll(void)
         return;
     }
     char v[NC_PROPERTY_VALUE_MAX] = "";
-    nc_property_get("debug.hakux.present", v);
+    hle_prop_get("debug.hakux.present", v);
     g_dbg.fxaa = strstr(v, "nofxaa") ? 0 : strstr(v, "fxaa") ? 1 : -1;
     g_dbg.upscale = strstr(v, "sgsr") ? NC_UPSCALE_SGSR : strstr(v, "bilinear") ? NC_UPSCALE_BILINEAR : -1;
     g_dbg.average = !strstr(v, "noaverage");

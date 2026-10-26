@@ -33,7 +33,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "native/platform/properties.h"
+#include "hw/xbox/hle/prop.h"
 #include <time.h>
 
 #define NV2A_BASE 0xFD000000u
@@ -446,7 +446,7 @@ static void nv2a_write(void *opaque, uint32_t off, uint64_t value, unsigned size
                        (n >> 24) & 7, (n >> 20) & 7, ld(NV_PCRTC_START));
             }
             hle_host_gpu_trace(HLE_GTR_INCREMENT, (n >> 24) & 7);
-            hle_pb_flipped();
+            hle_pb_flipped(ld(NV_PCRTC_START));
             hle_pb_kick();
         }
         return;
@@ -617,7 +617,7 @@ static bool uncapped(void)
     }
     if (polls++ % 32 == 0) {
         char v[NC_PROPERTY_VALUE_MAX] = "";
-        if (nc_property_get("debug.hakux.uncap", v) > 0) {
+        if (hle_prop_get("debug.hakux.uncap", v) > 0) {
             on = atoi(v) != 0;
         }
     }
@@ -695,7 +695,7 @@ void nc_dev_nv2a_init(void)
     nc_wr32(g_regs + NV_PMC_BOOT_0, 0x02A000A1u);
     nc_wr32(g_regs + NV_PFB_CSTATUS, 64u << 20);
     char v[NC_PROPERTY_VALUE_MAX] = "";
-    nc_property_get("debug.hakux.nvcensus", v);
+    hle_prop_get("debug.hakux.nvcensus", v);
     const char *e = getenv("NC_NV2A_CENSUS");
     g_census.on = !strcmp(v, "1") || (e && !strcmp(e, "1"));
     const NcMmioDev dev = {"nv2a", NV2A_BASE, NV2A_SIZE, nv2a_read, nv2a_write, NULL};

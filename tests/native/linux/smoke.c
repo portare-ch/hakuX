@@ -101,6 +101,14 @@ int main(int argc, char **argv)
     check(*(volatile uint32_t *)nc_vm_host(&core.vm, alias) == 13, "translated write visible through alias");
     check(g_nc_faults_dirty == 1 && hle_host_mem_dirty(pa), "translated write fault resumed and dirtied page");
     check(g_nc_faults_mmio == 2 && mmio_value == 13, "translated MMIO read/write faults resumed");
+    /* x86 permits a locked dword at an odd address. Older ARM hosts need
+     * the SIGBUS handler; newer ones may execute it directly. */
+    const uint8_t unaligned[] = {0xf0, 0xff, 0x05, 3, 0, 2, 0, 0xf4}; /* lock inc [0x20003]; hlt */
+    memcpy(nc_vm_host(&core.vm, 0x10100), unaligned, sizeof(unaligned));
+    nc_wr32(nc_vm_host(&core.vm, 0x20003), 41);
+    nc_context_init(core.cpu, &context, 0x10100, 0);
+    nc_cpu_run(core.cpu, &context);
+    check(nc_rd32(nc_vm_host(&core.vm, 0x20003)) == 42, "translated unaligned locked increment");
     if (argc > 1 && !strcmp(argv[1], "--host-fault")) {
         /* Host code writing the reservation's low guard, after the CPU ran:
          * nc_core_fault must decline it rather than resume it as the guest's. */

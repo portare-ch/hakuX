@@ -126,7 +126,8 @@ typedef struct NcFile {
 
 /* Open files at once: the handle table's size. Fatal Frame opens most of its
  * disc's 1821 files as it boots and keeps them open; at 1024 the rest failed
- * (insufficient resources), and the load waited for one forever. */
+ * (insufficient resources), and the load waited for one forever. Untouched
+ * slots cost nothing: a slot is cleared as it is taken (file_new). */
 #define MAX_FILES NC_MAX_HANDLES
 #define MAX_LINKS 64
 /* FILE_OBJECT as the Xbox lays it out: Type +0, FsContext +8, Lock (a
@@ -935,8 +936,17 @@ static uint32_t do_open(NcKernel *k, uint32_t access, uint32_t attrs, uint32_t d
     NcFile *nf = NULL;
 
     if (dev == -2) {
-        nc_log("hakuX-native-io", "open %s: unknown device", path);
-        return STATUS_OBJECT_PATH_NOT_FOUND;
+        /* No such object. As the object manager's lookup has it, a name
+         * missing from an object directory (\, \??, \Device) is a missing
+         * name, one under a missing component a missing path. Titles tell
+         * them apart: GTA III probes a bare file name ("\??\x.dds" from
+         * CreateFile("x.dds")) and shows its bad-disc screen on a bad path. */
+        const char *last = strrchr(path, '\\');
+        const size_t at = last ? (size_t)(last - path) : 0;
+        const bool in_dir = at == 0 || (at == 3 && !strncmp(path, "\\??", 3)) ||
+                            (at == 7 && !strncasecmp(path, "\\Device", 7));
+        nc_log("hakuX-native-io", "open %s: unknown device (a missing %s)", path, in_dir ? "name" : "path");
+        return in_dir ? STATUS_OBJECT_NAME_NOT_FOUND : STATUS_OBJECT_PATH_NOT_FOUND;
     }
     if (dev == -1) {
         if (disposition != FILE_OPEN && disposition != FILE_OPEN_IF) {
@@ -1761,7 +1771,13 @@ static uint32_t volume_info(NcKernel *k, const NcFile *nf, uint32_t cls, uint32_
         nc_wr32(o + 4, disc ? 0x01u : 0u); /* FILE_REMOVABLE_MEDIA */
         break;
     case 5: { /* FileFsAttributeInformation: Attributes, MaxComponentNameLength, NameLength, Name */
-        const char *fs = disc ? "CDFS" : "FATX";
+        /* The Xbox's: GDFX the game disc's (XDVDFS), FATX the hard disk's.
+         * XGetFilePhysicalSortKey knows the file control block by this name
+         * (FILE_OBJECT_SIZE) and fails for another: with CDFS every disc
+         * file's key was -1 (invalid parameter), and Fatal Frame II, which
+         * sorts its load queue by them to read in disc order, read in
+         * whatever order its sort left. */
+        const char *fs = disc ? "GDFX" : "FATX";
         len = 12 + 4;
         nc_wr32(o, 0);
         nc_wr32(o + 4, 42);
@@ -2541,8 +2557,8 @@ static void file_drop(NcFile *nf)
             close(nf->fd);
         }
         free(nf->listing);
+        memset(nf, 0, sizeof(*nf));     /* only those used: the rest stay untouched */
     }
-    memset(nf, 0, sizeof(*nf));
 }
 
 bool nc_file_state_load(NcRd *r, unsigned v)

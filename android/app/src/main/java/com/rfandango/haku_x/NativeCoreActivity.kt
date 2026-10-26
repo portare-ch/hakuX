@@ -9,6 +9,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.hardware.input.InputManager
 import android.net.Uri
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -38,6 +39,7 @@ import com.rfandango.haku_x.data.Logs
 import com.rfandango.haku_x.data.ModCatalog
 import com.rfandango.haku_x.data.ModChoices
 import com.rfandango.haku_x.data.ModRun
+import com.rfandango.haku_x.data.Network
 import com.rfandango.haku_x.data.PlayerSlot
 import com.rfandango.haku_x.data.RunSettings
 import com.rfandango.haku_x.data.SaveStateStore
@@ -65,8 +67,20 @@ class NativeCoreActivity : SDLActivity(), InputManager.InputDeviceListener {
   private var fpsOn = false
   private var hitchesOn = false
   private val fpsHandler = Handler(Looper.getMainLooper())
+  /** The overlays' redraws and the game's GPU work (the controls' and the lines below). */
+  private val overlayPacer = OverlayPacer({ nativeGpuBusyMs() }, { nativeGpuGap() })
+  /** The FPS and stutter lines' update waiting on overlayPacer since (uptime ms), 0: none. */
+  private var linesWantedSince = 0L
   private val fpsRunnable = object : Runnable {
     override fun run() {
+      if (linesWantedSince == 0L) {
+        linesWantedSince = SystemClock.uptimeMillis()
+      }
+      if (!overlayPacer.mayDraw(linesWantedSince)) {
+        fpsHandler.postDelayed(this, LINES_RETRY_MS)
+        return
+      }
+      linesWantedSince = 0L
       val s = nativeGetFrameStats()
       if (fpsOn && s != null && s.size >= 3) {
         var text = "FPS: %.0f  |  %.1fms avg  /  %.1fms last".format(s[0], s[1], s[2])
@@ -140,14 +154,72 @@ class NativeCoreActivity : SDLActivity(), InputManager.InputDeviceListener {
         exitGame()
         return
       }
+      nativeTakeTwinConsole()?.let(::showTwinConsole)
       fpsHandler.postDelayed(this, FPS_INTERVAL_MS)
     }
+  }
+
+  /**
+   * Another console on the network has this one's identity (the app's hard
+   * disk copied from one device to the other: the same serial number and MAC
+   * address), and neither sees the other's system link games. Said once a
+   * run, with the way out: a new identity for this console (its HD key kept,
+   * so its saves stay valid), from the game's start, at once.
+   */
+  private var twinShown = false
+
+  private fun showTwinConsole(address: String) {
+    if (twinShown) return
+    twinShown = true
+    Log.i(TAG, "network: the console at $address has this one's identity")
+    showMenuDialog(
+      AlertDialog.Builder(this)
+        .setTitle(R.string.network_twin_title)
+        .setMessage(getString(R.string.network_twin_message, address))
+        .setPositiveButton(R.string.network_twin_renew) { _, _ -> renewIdentity() }
+        .setNegativeButton(R.string.network_twin_later, null)
+    )
+  }
+
+  /** The core gives the console a new identity as it next loads the EEPROM (native/kernel/ex.c eeprom_renew). */
+  private fun renewIdentity() {
+    val marker = File(hddDir(), "eeprom.renew")
+    if (runCatching { marker.writeText("") }.isFailure) {
+      Toast.makeText(this, R.string.network_twin_failed, Toast.LENGTH_LONG).show()
+      return
+    }
+    Log.i(TAG, "network: a new identity asked; the game starts again")
+    restartGame()
+  }
+
+  /** The emulated hard disk's folder (the core's <hdd>). */
+  private fun hddDir() = File(filesDir, "native/hdd")
+
+  /** The game from its start again, in a new core process (RelaunchActivity, no frame held). */
+  private fun restartGame() {
+    if (relaunchStarted) return
+    relaunchStarted = true
+    RelaunchActivity.heldFrame(this).delete()
+    startActivity(
+      Intent(this, RelaunchActivity::class.java)
+        .putExtra(EXTRA_DVD_URI, discUri?.toString() ?: intent.getStringExtra(EXTRA_DVD_URI))
+        .putExtra(EXTRA_RESTART, true)
+        .putExtra(
+          LauncherActivity.EXTRA_LAUNCHED_EXTERNALLY,
+          intent.getBooleanExtra(LauncherActivity.EXTRA_LAUNCHED_EXTERNALLY, false),
+        )
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION),
+      RelaunchActivity.noTransition(this).toBundle(),
+    )
+    finish()
+    RelaunchActivity.noCloseTransition(this)
+    android.os.Process.killProcess(android.os.Process.myPid())
   }
 
   override fun getLibraries(): Array<String> = arrayOf("SDL3", "hakuxcore")
 
   override fun getArguments(): Array<String> {
-    val args = mutableListOf(discArg, File(filesDir, "native/hdd").absolutePath)
+    val args = mutableListOf(discArg, hddDir().absolutePath)
     val state = intent.getStringExtra(EXTRA_LOADSTATE)
     if (state != null) {
       args += "loadstate=$state"
@@ -184,13 +256,28 @@ class NativeCoreActivity : SDLActivity(), InputManager.InputDeviceListener {
      * meanwhile), and the ones cached built before the game starts. */
     args += "asyncpipe=${if (settings.asyncShaders) 1 else 0}"
     args += "prebuild=${if (settings.prebuildShaders) 1 else 0}"
+    /* The console's network (native/net): system link with the consoles on
+     * this network (their broadcasts reach it under the multicast lock), or
+     * through an XLink Kai engine; off, no cable. */
+    val prefs = AppPrefs(this)
+    when (prefs.networkMode) {
+      AppPrefs.NET_LAN -> {
+        args += "net=lan"
+        Network.broadcastAddress(this)?.let { args += "lanbcast=$it" }
+        prefs.lanPeers.replace(" ", "").takeIf { it.isNotEmpty() }?.let { args += "lanpeers=$it" }
+      }
+      AppPrefs.NET_KAI -> prefs.kaiEngine.trim().takeIf { it.isNotEmpty() }?.let {
+        args += "net=kai"
+        args += "kai=$it"
+      }
+    }
     /* The game's mods (their files and XBE patches) and cheats (mods/):
      * the manifest the core reads as the disc opens. */
     modsArg()?.let { args += it }
-    /* The players with a controller plugged in (the controller settings'
-     * players: all four unless set off). */
-    launchedPads = Controllers.load(this).padMask()
-    args += "pads=%x".format(launchedPads)
+    /* The players with a controller plugged in at boot: player 1 and those a
+     * connected controller plays as (later ones: syncPads). */
+    plugged = Controllers.load(this).padMask(Controllers.connected())
+    args += "pads=%x".format(plugged)
     /* The custom Vulkan driver installed in the settings (Turnip), loaded
      * by the core through adrenotools; none: the system driver. */
     GpuDriverHelper.init(this)
@@ -213,6 +300,9 @@ class NativeCoreActivity : SDLActivity(), InputManager.InputDeviceListener {
       else -> "started"
     })
     super.onCreate(savedInstanceState)
+    if (AppPrefs(this).networkMode == AppPrefs.NET_LAN) {
+      multicastLock = Network.multicastLock(this)
+    }
     setupOnScreenController()
     setupFpsOverlay()
     setupShaderBuildLine()
@@ -394,6 +484,7 @@ class NativeCoreActivity : SDLActivity(), InputManager.InputDeviceListener {
     fpsHandler.removeCallbacks(rumbleRunnable)
     loadingDialog?.dismiss()
     (getSystemService(Context.INPUT_SERVICE) as InputManager).unregisterInputDeviceListener(this)
+    multicastLock?.release()
     super.onDestroy()
   }
 
@@ -583,7 +674,9 @@ class NativeCoreActivity : SDLActivity(), InputManager.InputDeviceListener {
     }
     overlay.setControllerListener(OverlayBridge())
     overlay.onMenuButtonTapped = { showMenu() }
+    overlay.drawGate = overlayPacer::mayDraw
     mLayout?.addView(overlay)
+    overlayPacer.attach(overlay)
     onScreenController = overlay
     updateControllerVisibility()
   }
@@ -650,13 +743,28 @@ class NativeCoreActivity : SDLActivity(), InputManager.InputDeviceListener {
     )
   }
 
-  /** The players this run plugged a controller in for (getArguments: the core plugs them in at boot). */
-  private var launchedPads = 1
+  /** The players the core has a controller plugged in for (bit n: player n + 1). */
+  private var plugged = 1
+
+  /**
+   * The players' controllers plugged in and pulled out as the connected ones
+   * and the controller settings change: player 1 and each player a
+   * connected controller plays as (the router's assignment).
+   */
+  private fun syncPads() {
+    val r = router ?: return
+    var mask = 1
+    for (p in r.assignment.values) mask = mask or (1 shl p)
+    if (mask != plugged) {
+      plugged = mask
+      nativeSetPads(mask)
+    }
+  }
 
   /**
    * The menu's Controllers: which controller plays as which player, changed
-   * at once (and kept, as the settings' Players). A player whose port was not
-   * plugged in at the start gets it the next time the game starts.
+   * at once (and kept, as the settings' Players), its controller plugged in
+   * or pulled out at once as well.
    */
   private fun showPlayers() {
     val r = router ?: return
@@ -700,9 +808,7 @@ class NativeCoreActivity : SDLActivity(), InputManager.InputDeviceListener {
         val next = config.copy(slots = slots)
         Controllers.save(this, next)
         router?.reload()
-        if (next.padMask() != launchedPads) {
-          Toast.makeText(this, R.string.controllers_next_start, Toast.LENGTH_LONG).show()
-        }
+        syncPads()
       }
       .setNegativeButton(android.R.string.cancel, null))
   }
@@ -812,6 +918,8 @@ class NativeCoreActivity : SDLActivity(), InputManager.InputDeviceListener {
    */
   private var heldView: ImageView? = null
   private var loadingDialog: LoadingDialog? = null
+  /** The Wi-Fi multicast lock, while the game runs on the LAN (data/Network.kt). */
+  private var multicastLock: WifiManager.MulticastLock? = null
   private var heldSince = 0L
   private val heldRunnable = object : Runnable {
     override fun run() {
@@ -916,6 +1024,7 @@ class NativeCoreActivity : SDLActivity(), InputManager.InputDeviceListener {
 
   private fun onControllersChanged() {
     router?.reassign()
+    syncPads()
     updateControllerVisibility()
   }
 
@@ -985,6 +1094,8 @@ class NativeCoreActivity : SDLActivity(), InputManager.InputDeviceListener {
     const val EXTRA_RELAUNCH = "relaunch"
     /** Boot into the savestate at this path (SaveStates' Load state). */
     const val EXTRA_LOADSTATE = "loadstate"
+    /** RelaunchActivity: the game started again from the start (no launch data, no savestate). */
+    const val EXTRA_RESTART = "restart"
 
     /* native/dev/usb.h NC_PAD_* */
     private const val PAD_UP = 0x01
@@ -997,6 +1108,8 @@ class NativeCoreActivity : SDLActivity(), InputManager.InputDeviceListener {
     private const val PAD_RTHUMB = 0x80
 
     private const val FPS_INTERVAL_MS = 500L
+    /** The FPS and stutter lines' update held back (OverlayPacer): tried again this soon. */
+    private const val LINES_RETRY_MS = 50L
     private const val STATE_POLL_MS = 500L
     private const val RUMBLE_INTERVAL_MS = 50L
     /** The relaunch's frame copy: how long it may take before the restart goes on without it. */
@@ -1044,6 +1157,14 @@ class NativeCoreActivity : SDLActivity(), InputManager.InputDeviceListener {
     @JvmStatic
     external fun nativeGetQuit(): Boolean
 
+    /** The players with a controller plugged in (bit n: player n + 1); the core plugs and pulls them. */
+    @JvmStatic
+    external fun nativeSetPads(mask: Int)
+
+    /** A console on the network with this one's identity: its address, once each; null when no new one. */
+    @JvmStatic
+    external fun nativeTakeTwinConsole(): String?
+
     /** A title frame has been on screen. */
     @JvmStatic
     external fun nativeGetFrameShown(): Boolean
@@ -1051,6 +1172,14 @@ class NativeCoreActivity : SDLActivity(), InputManager.InputDeviceListener {
     /** The HLE GPU's stutter and hang monitor lines ("": nothing to show). */
     @JvmStatic
     external fun nativeGetHleHitches(): String
+
+    /** How long the GPU has been on the game's work without running out of it, in ms (0: out now). */
+    @JvmStatic
+    external fun nativeGpuBusyMs(): Int
+
+    /** A moment of idle GPU for a window frame waiting behind the game's work (OverlayPacer). */
+    @JvmStatic
+    external fun nativeGpuGap()
 
     /** The cached shaders' build before the game: {built, to build}, {0, 0} when none runs. */
     @JvmStatic

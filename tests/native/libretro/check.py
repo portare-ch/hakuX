@@ -241,6 +241,17 @@ def main():
         cycles([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'], os.environ, 20)
         cycles([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'],
                dict(os.environ, HARNESS_VULKAN='1'), 20)
+        # Upstream's network and NIC threads also stop before the next boot;
+        # failed backend starts and failed boots must release their resources.
+        for network, marker in (
+                ('net=lan lanport=43075 lanbcast=127.0.0.1', 'lan: started'),
+                ('net=kai kai=127.0.0.1:43076', 'kai: started'),
+                ('net=nat', "nat: couldn't start")):
+            cycles([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'],
+                   dict(os.environ, NC_NET=network), 5, marker)
+        cycles([args.harness, args.core, root / 'halt.iso', 60, root / 'saves'],
+               dict(os.environ, NC_NET='net=lan lanport=43075 lanbcast=127.0.0.1', NC_BOOT_FAIL_AT='disc'),
+               5, 'boot: failing after disc')
         run([args.harness, args.core, root / 'spin.iso', 60, root / 'saves'], 0,
             ('reset at frame 20', 'reset: the core stopped in', 'ran 60 frames',
              'RetroArch destroyed the context: the core stopped in', 'stop: the front end stopped the console',

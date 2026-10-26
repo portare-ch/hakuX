@@ -18,6 +18,7 @@
 #include <FEXCore/Core/X86Enums.h>
 #include <FEXCore/Debug/InternalThreadState.h>
 #include <FEXCore/HLE/SyscallHandler.h>
+#include <FEXCore/Utils/ArchHelpers/Arm64.h>
 #include <FEXCore/Utils/LogManager.h>
 
 #include <asm/sigcontext.h>
@@ -25,7 +26,7 @@
 #include <cstring>
 #include <string>
 #include <sys/mman.h>
-#include "native/platform/properties.h"
+#include "hw/xbox/hle/prop.h"
 #include <ucontext.h>
 
 static_assert(NC_SYSOP_CPUID == static_cast<int>(FEXCore::Core::SystemOpKind::Cpuid));
@@ -277,7 +278,7 @@ extern "C" NcCpu* nc_cpu_create(const NcCpuConfig* cfg, uint32_t fs_base) {
     const char* e = getenv("NC_FEX_X87");
     char v[NC_PROPERTY_VALUE_MAX] = "";
 #ifdef __ANDROID__
-    nc_property_get("debug.hakux.fex_x87", v);
+    hle_prop_get("debug.hakux.fex_x87", v);
 #endif
     x87_full = (e && !strcmp(e, "80")) || !strcmp(v, "80");
     FEXCore::Config::Set(FEXCore::Config::CONFIG_X87REDUCEDPRECISION, x87_full ? "0" : "1");
@@ -297,7 +298,7 @@ extern "C" NcCpu* nc_cpu_create(const NcCpuConfig* cfg, uint32_t fs_base) {
     const char* e = getenv("NC_FEX_PC");
     char v[NC_PROPERTY_VALUE_MAX] = "";
 #ifdef __ANDROID__
-    nc_property_get("debug.hakux.fex_pc", v);
+    hle_prop_get("debug.hakux.fex_pc", v);
 #endif
     x87_pc_off = (e && !strcmp(e, "0")) || !strcmp(v, "0");
     FEXCore::Config::Set(FEXCore::Config::CONFIG_X87REDUCEDPRECISIONCONTROL, x87_pc_off ? "0" : "1");
@@ -316,7 +317,7 @@ extern "C" NcCpu* nc_cpu_create(const NcCpuConfig* cfg, uint32_t fs_base) {
     const char* e = getenv("NC_FEX_AFP");
     char v[NC_PROPERTY_VALUE_MAX] = "";
 #ifdef __ANDROID__
-    nc_property_get("debug.hakux.fex_afp", v);
+    hle_prop_get("debug.hakux.fex_afp", v);
 #endif
     if ((e && !strcmp(e, "0")) || !strcmp(v, "0")) {
       FEXCore::Config::Set(FEXCore::Config::CONFIG_HOSTFEATURES, std::to_string(static_cast<uint64_t>(FEXCore::Config::HostFeatures::DISABLEAFP)));
@@ -599,6 +600,25 @@ extern "C" void nc_cpu_fault_resume(NcCpu* cpu, void* ucontext) {
   mc.pc = cpu->Sig.GetConfig().AbsoluteLoopTopAddressFillSRA;
   mc.sp = cpu->Thread->CurrentFrame->ReturningStackLocation;
   mc.regs[1] = 0; // ENTRY_FILL_SRA_SINGLE_INST_REG: a normal block
+}
+
+// As FEX's Linux front end does (SignalDelegator's SIGBUS handler): ARMv8.0-8.3
+// atomics fault on an address their size doesn't divide, where x86's locked
+// instructions don't. FEX emulates the access, or backpatches a load/store to a
+// plain one, and says how far the PC moves. TSO is off: plain accesses then.
+extern "C" bool nc_cpu_unaligned_fault(NcCpu* cpu, int code, void* ucontext) {
+  auto* uc = static_cast<ucontext_t*>(ucontext);
+  if (code != BUS_ADRALN || !cpu || !cpu->Thread || !cpu->CTX->IsAddressInCodeBuffer(cpu->Thread, uc->uc_mcontext.pc)) {
+    return false;
+  }
+  const auto Moved = FEXCore::ArchHelpers::Arm64::HandleUnalignedAccess(
+    cpu->Thread, FEXCore::ArchHelpers::Arm64::UnalignedHandlerType::NonAtomic, uc->uc_mcontext.pc,
+    reinterpret_cast<uint64_t*>(uc->uc_mcontext.regs));
+  if (!Moved) {
+    return false;
+  }
+  uc->uc_mcontext.pc += *Moved;
+  return true;
 }
 
 extern "C" bool nc_cpu_callret_fault(NcCpu* cpu, uintptr_t fault_addr, void* ucontext) {

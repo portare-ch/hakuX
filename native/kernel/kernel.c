@@ -18,6 +18,7 @@
 #include <unistd.h>
 #ifdef __ANDROID__
 #include <sys/system_properties.h>
+#include "hw/xbox/hle/prop.h"
 #endif
 
 static const NcKExport k_exports[] = {
@@ -700,7 +701,7 @@ static void stats_tick(NcKernel *k)
            g_nc_sched.dpc_wait_max_ns / 1e6, g_nc_sched.dpc_run_max_ns / 1e6,
            (unsigned long long)g_nc_sched.dpc_slow, top);
     {
-        static uint64_t cr, di, mm;
+        static uint64_t cr, di, mm, ua;
         char ms[240];
         uint32_t fe[6], fn[6];
         const unsigned nf = nc_mmio_fault_top(fe, fn, 6);
@@ -720,12 +721,15 @@ static void stats_tick(NcKernel *k)
         }
         const uint64_t ncr = __atomic_load_n(&g_nc_faults_callret, __ATOMIC_RELAXED),
                        ndi = __atomic_load_n(&g_nc_faults_dirty, __ATOMIC_RELAXED),
-                       nmm = __atomic_load_n(&g_nc_faults_mmio, __ATOMIC_RELAXED);
+                       nmm = __atomic_load_n(&g_nc_faults_mmio, __ATOMIC_RELAXED),
+                       nua = __atomic_load_n(&g_nc_faults_unaligned, __ATOMIC_RELAXED);
         nc_log("hakuX-native-stats", "host faults per s: call-return %.0f dirty pages %.0f (pages%s) mmio %.0f "
-               "(eips%s)", (double)(ncr - cr) / s, (double)(ndi - di) / s, ds, (double)(nmm - mm) / s, ms);
+               "(eips%s) unaligned atomics %.0f", (double)(ncr - cr) / s, (double)(ndi - di) / s, ds,
+               (double)(nmm - mm) / s, ms, (double)(nua - ua) / s);
         cr = ncr;
         di = ndi;
         mm = nmm;
+        ua = nua;
     }
     commits_seen = k->vm_commits;
     decommits_seen = k->vm_decommits;
@@ -754,7 +758,7 @@ static void stats_tick(NcKernel *k)
     static bool dump_seen;
     static char dump_last[PROP_VALUE_MAX];
     char v[PROP_VALUE_MAX] = "";
-    __system_property_get("debug.hakux.ncdump", v);
+    hle_prop_get("debug.hakux.ncdump", v);
     if (dump_seen && strcmp(v, dump_last)) {
         nc_log("hakuX-native-frontier", "dump on demand (debug.hakux.ncdump=%s)", v);
         nc_kernel_dump_recent(-1);
@@ -767,7 +771,7 @@ static void stats_tick(NcKernel *k)
     /* debug.hakux.ncresume=<id>[,salt], a new value: resume thread t<id> */
     static char resume_last[PROP_VALUE_MAX];
     v[0] = 0;
-    __system_property_get("debug.hakux.ncresume", v);
+    hle_prop_get("debug.hakux.ncresume", v);
     if (v[0] && strcmp(v, resume_last)) {
         nc_ps_debug_resume(k, (unsigned)atoi(v));
     }

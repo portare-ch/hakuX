@@ -118,6 +118,9 @@ void nc_pad_plug(unsigned player, bool in);
  * and its state cleared, for another init. */
 void nc_dev_ohci_stop(void);
 void nc_dev_ohci_free(void);
+/* The players with a controller now (bit n: player n + 1): the others'
+ * controllers pulled out, theirs plugged in, as the title would see it. */
+void nc_dev_ohci_set_pads(unsigned mask);
 
 #ifdef __cplusplus
 }

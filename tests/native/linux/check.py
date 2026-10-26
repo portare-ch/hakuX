@@ -73,6 +73,10 @@ def main():
         disc(root / 'halt.iso', b'\xf4')
         disc(root / 'spin.iso', b'\xeb\xfe')
         run([build / 'xboxrun', '--headless', root / 'halt.iso', root / 'data'], 0, 'guest executed HLT', env)
+        run([build / 'xboxrun', '--headless', root / 'halt.iso', root / 'data', 'lang=2', 'net=off'], 0,
+            ('console language 2', 'guest executed HLT'), env)
+        run([build / 'xboxrun', '--headless', root / 'halt.iso', root / 'data', 'unknown=1'], 2,
+            'unknown option unknown=1', env)
         # The renderer's boot path (drawing itself needs a title and a GPU).
         run([build / 'xboxrun', '--render', root / 'halt.iso', root / 'render'], 0,
             ('renderer ON without a display', 'guest executed HLT'), env)

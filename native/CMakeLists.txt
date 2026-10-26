@@ -59,6 +59,7 @@ add_library(hakux_native STATIC
   core/chd.c
   core/xbe_load.c
   core/mods.c
+  core/options.c
   core/cheats.c
   core/memscan.c
   core/core.c
@@ -71,6 +72,11 @@ add_library(hakux_native STATIC
   dev/xid.c
   dev/ohci.c
   dev/aci.c
+  dev/nvnet.c
+  net/net.c
+  net/lan.c
+  net/kai.c
+  net/nat.c
   kernel/kernel.c
   kernel/pool.c
   kernel/ob.c
@@ -106,9 +112,12 @@ target_link_libraries(hakux_native PUBLIC nc_fex hakux_hle hakux_apu nc_platform
 target_compile_options(hakux_native PRIVATE -Wall -Wno-unused-parameter)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/chd.cmake")
 
-add_executable(xboxrun run/xboxrun.c run/capture.c)
+# xboxrun shares the app's custom driver loader on Android.
+add_executable(xboxrun run/xboxrun.c run/capture.c app/vkdriver.c)
 target_link_libraries(xboxrun PRIVATE hakux_native hakux_hle z)
-if(NOT ANDROID)
+if(ANDROID)
+  target_sources(xboxrun PRIVATE app/vklayer.c)
+else()
   target_sources(xboxrun PRIVATE "${NC_APU_OUT_NULL}")
 endif()
 target_link_libraries(hakux_hle PUBLIC hakux_native)

@@ -56,6 +56,15 @@ void nc_dev_aci_init(struct NcVm *vm);
 /* The PCM thread stopped and joined; then the codec's state cleared. */
 void nc_dev_aci_stop(void);
 void nc_dev_aci_free(void);
+/* nvnet.c: the Ethernet controller (0xFEF00000, IRQ 4) and its link state for
+ * PhyGetLinkState (XNET_ETHERNET_LINK_*; 0: no link). */
+void nc_dev_nvnet_init(struct NcVm *vm);
+void nc_dev_nvnet_stop(void);
+void nc_dev_nvnet_free(void);
+/* PhyInitialize: the PHY negotiates its link (up a moment later, with its
+ * interrupt), as the kernel's has it do. */
+void nc_dev_nvnet_phy_init(void);
+uint32_t nc_dev_nvnet_link_state(void);
 
 /* x86 I/O ports (IN/OUT); bytes is 1, 2 or 4. */
 uint32_t nc_port_in(uint16_t port, unsigned bytes);

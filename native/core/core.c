@@ -8,6 +8,7 @@
 #include "native/core/mmio.h"
 #include "native/core/irq.h"
 #include "native/core/mods.h"
+#include "native/net/net.h"
 #include "native/state/save.h"
 
 #include <stdio.h>
@@ -82,6 +83,8 @@ bool nc_core_boot(NcCore *c, int disc_fd)
     nc_dev_apu_init(&c->vm); /* before the catch-all, which would claim its window */
     nc_dev_ohci_init(&c->vm);
     nc_dev_aci_init(&c->vm);
+    nc_net_start();          /* the network the NIC finds, before it */
+    nc_dev_nvnet_init(&c->vm);
     nc_dev_misc_init();
     if (disc_fd < 0) {
         return boot_failed("The game's file can't be opened.");
@@ -245,7 +248,7 @@ static bool fault_report(NcCore *c, uintptr_t pc, uint64_t va, const char *what)
 }
 
 /* bumped from the fault handlers of any thread (atomically), read by the stats */
-uint64_t g_nc_faults_callret, g_nc_faults_dirty, g_nc_faults_mmio;
+uint64_t g_nc_faults_callret, g_nc_faults_dirty, g_nc_faults_mmio, g_nc_faults_unaligned;
 
 static struct {
     uint32_t eip, n;
@@ -313,6 +316,15 @@ bool nc_core_fault(NcCore *c, int sig, siginfo_t *info, void *ucontext)
         return false;
     }
     const uintptr_t pc = ((ucontext_t *)ucontext)->uc_mcontext.pc;
+    if (sig == SIGBUS && nc_cpu_unaligned_fault(c->cpu, info->si_code, ucontext)) {
+        /* Doom 3 keeps a critical section at 0x00BFD88E: RtlEnterCriticalSection's
+         * lock inc of its LockCount (0x00BFD89E) took the core down */
+        if (__atomic_fetch_add(&g_nc_faults_unaligned, 1, __ATOMIC_RELAXED) < 4) {
+            nc_log("hakuX-native", "unaligned atomic at guest %08llx, eip %08x",
+                   (unsigned long long)nc_vm_guest_of(&c->vm, info->si_addr), nc_cpu_guest_eip_at(c->cpu, pc));
+        }
+        return true;
+    }
     if (nc_cpu_callret_fault(c->cpu, (uintptr_t)info->si_addr, ucontext)) {
         __atomic_fetch_add(&g_nc_faults_callret, 1, __ATOMIC_RELAXED);
         return true;
@@ -409,6 +421,8 @@ void nc_core_halt(NcCore *c)
     nc_dev_apu_stop();
     nc_dev_ohci_stop();
     nc_dev_aci_stop();
+    nc_dev_nvnet_stop();
+    nc_net_stop();
     nc_kernel_clock_stop();
     nc_io_stop();
 }
@@ -419,6 +433,7 @@ void nc_core_destroy(NcCore *c)
     nc_dev_apu_free();
     nc_dev_ohci_free();
     nc_dev_aci_free();
+    nc_dev_nvnet_free();
     nc_cpu_destroy(c->cpu);
     c->cpu = NULL;
     nc_kernel_destroy(&c->kernel);
@@ -438,4 +453,5 @@ void nc_core_destroy(NcCore *c)
     __atomic_store_n(&g_nc_faults_callret, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_nc_faults_dirty, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_nc_faults_mmio, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_nc_faults_unaligned, 0, __ATOMIC_RELAXED);
 }

@@ -57,6 +57,11 @@ static void nc_pause_idle(bool idle)
 static void nc_pause_wait(void)
 {
 }
+/* Frame-timed input scripts have no renderer in this USB-only test. */
+uint64_t hle_back_swap_count(void)
+{
+    return 0;
+}
 
 #include "native/dev/ohci.c"
 
@@ -400,10 +405,7 @@ int main(void)
     /* The root ports, as nc_dev_ohci_init makes them, players 1 and 2 plugged
      * in before the boot: on ports 3 and 4. */
     nc_dev_ohci_free();
-    nc_pad_plug(0, true);
-    nc_pad_plug(1, true);
-    nc_pad_plug(2, false);
-    nc_pad_plug(3, false);
+    nc_dev_ohci_set_pads(3);     /* the Android front end: players 1 and 2 */
     nc_dev_ohci_init(&g_vm);
     nc_dev_ohci_stop();          /* the frames run here */
     set_reg(0x08, CS_HCR);
@@ -463,7 +465,7 @@ int main(void)
     CHECK(interrupt_in(5, 2, desc, 20) == 20 && nc_rd16(desc + 2) == NC_PAD_BACK);
 
     /* Player 3 plugged in while the console runs: root port 1. */
-    nc_pad_plug(2, true);
+    nc_dev_ohci_set_pads(7);     /* the mask API sees nc_pad_plug's changes too */
     CHECK((reg(0x54) & (PORT_CCS | PORT_CSC)) == (PORT_CCS | PORT_CSC));
 
     /* The players plugged in stay so for the next boot: 1, 2 and 3. */

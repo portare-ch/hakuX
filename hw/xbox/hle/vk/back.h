@@ -29,6 +29,12 @@ void hle_tl_wait(uint64_t value);
 /* The device lost (hle_vk_lose): every value counts as reached, so no
  * thread waits on the GPU any more. */
 void hle_tl_lose(void);
+/* How long the GPU has been on our work without running out of it (0: it's
+ * out now), and a moment of idle GPU asked for: the app's window, on a GPU
+ * queue below ours, holds a frame the compositor shows the game's behind
+ * (NativeCoreActivity's OverlayPacer). Any thread. */
+int64_t hle_tl_busy_ns(void);
+void hle_tl_gap(void);
 /* len bytes the GPU copies into the arena at arena_off go to guest memory at
  * pa once it reaches value, before any thread sees the value (a readback
  * without zero-copy guest RAM). False if too many wait (nothing queued). */
@@ -48,6 +54,28 @@ typedef struct HleBackStats {
     uint32_t last_color, last_rt;   /* last colour clear of the presented surface (M2) */
 } HleBackStats;
 void hle_back_draw_diag(void);      /* logs the draw-feature counters */
+
+/* Frames the render thread finished in this process (its swaps; after a
+ * savestate's load, the frames since it). Any thread. */
+uint64_t hle_back_swap_count(void);
+
+/* A run without the app's window (native/run/xboxrun.c) follows the frames:
+ * at each swap the render thread calls want(n), n counting this process's
+ * swaps from 1. True asks for that frame: got(n) once the GPU finished it,
+ * with its picture as the screen would show it (RGBA, top row first, the
+ * display's size, the gamma ramp in it unless a consumer applies it), or
+ * NULL when the frame had no display image. Set before the game runs; both
+ * run on the render thread, which waits for them. */
+typedef struct HleFrameHook {
+    bool (*want)(uint64_t n, void *opaque);
+    void (*got)(uint64_t n, const uint8_t *rgba, uint32_t w, uint32_t h, void *opaque);
+    void *opaque;
+} HleFrameHook;
+void hle_back_set_frame_hook(const HleFrameHook *hook);
+/* Render thread (a frame hook): the pipeline cache and the records of the
+ * pipelines made written now, for a run that ends in an exit (the process
+ * never reaches the GPU's teardown, nor the next periodic write). */
+void hle_back_save_caches(void);
 
 
 #endif
