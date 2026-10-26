@@ -2,8 +2,8 @@
 
 hakuX's RetroArch core, `hakux_libretro.so`, is made and tested for
 PortareOS on the Retroid Pocket Nova (Snapdragon 8 Gen 2, Adreno 740).
-Other ARM64 Linux systems with RetroArch can run it too, but are tested
-less.
+Other ARM64 Linux systems with RetroArch should work too, but are not
+tested by this fork.
 
 ## Before you start
 
