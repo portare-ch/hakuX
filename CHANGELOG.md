@@ -1,5 +1,24 @@
 # Changelog
 
+## linux-v0.6.0 (PortareOS)
+
+CHD disc images in the RetroArch core.
+
+### What's new
+
+- **CHD disc images** — Games can be `.chd` files made with `chdman createdvd` from an `.iso` image. The core reads them in place, without unpacking them. A CHD takes about a third less space than its `.iso` (Burnout 3: 2.48 GB to 1.49 GB), and the game runs from it as fast as from the `.iso`.
+
+### Fixed
+
+- **Discs that can't be read** — When a game's disc image can't be read, the core closes its file once, not a second time when the game stops.
+
+### Current limitations
+
+- Rumble is not passed on to the controllers yet.
+- Save states are not yet available.
+- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
+- Full disc dumps (Redump), as `.iso` or CHD, haven't been tested with a real game yet.
+
 ## linux-v0.5.0 (PortareOS)
 
 Players 2-4 in the RetroArch core.

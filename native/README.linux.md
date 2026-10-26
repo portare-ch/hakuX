@@ -153,11 +153,11 @@ PortareOS's `hakux-lr` package installs the release tarball. Make it from a
 clean checkout of the release commit, in the same image:
 
 ```sh
-HAKUX_VERSION=0.5.0 CC=clang-19 CXX=clang++-19 sh tools/native/linux-build.sh
-CC=clang-19 sh tools/native/linux-package.sh 0.5.0
+HAKUX_VERSION=0.6.0 CC=clang-19 CXX=clang++-19 sh tools/native/linux-build.sh
+CC=clang-19 sh tools/native/linux-package.sh 0.6.0
 ```
 
-It writes `build/package/hakux-0.5.0-aarch64.tar.gz` and prints its
+It writes `build/package/hakux-0.6.0-aarch64.tar.gz` and prints its
 SHA-256. The archive holds `lib/libretro/hakux_libretro.so`, stripped and
 without a RUNPATH, with `lib/libretro/hakux_libretro.info`, the licences in
 `share/licenses/hakux/`, and `BUILD-INFO`: the source revision, the compiler
