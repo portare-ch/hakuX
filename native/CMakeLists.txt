@@ -56,6 +56,7 @@ add_library(hakux_native STATIC
   core/jmp.c
   core/vm.c
   core/xdvdfs.c
+  core/chd.c
   core/xbe_load.c
   core/mods.c
   core/cheats.c
@@ -103,6 +104,7 @@ target_include_directories(hakux_native PRIVATE "${HAKUX_FEX_DIR}/External/xxhas
 target_compile_definitions(hakux_native PRIVATE HLE_HOST_TEST)
 target_link_libraries(hakux_native PUBLIC nc_fex hakux_hle hakux_apu nc_platform z)
 target_compile_options(hakux_native PRIVATE -Wall -Wno-unused-parameter)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/chd.cmake")
 
 add_executable(xboxrun run/xboxrun.c run/capture.c)
 target_link_libraries(xboxrun PRIVATE hakux_native hakux_hle z)

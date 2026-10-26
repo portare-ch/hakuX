@@ -37,6 +37,7 @@ libraries in, then build the APK.
 | `SDL3` | release-3.4.18 |
 | `adrenotools` | 8fae8ce |
 | `root/subprojects/nv2a_vsh_cpu` | 561fe80 |
+| `libchdr` (optional: CHD images) | 47d7941 |
 
 ## Steps
 

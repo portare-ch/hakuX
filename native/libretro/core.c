@@ -272,7 +272,7 @@ RETRO_API void retro_get_system_info(struct retro_system_info *info)
     memset(info, 0, sizeof(*info));
     info->library_name = "hakuX";
     info->library_version = HAKUX_VERSION;
-    info->valid_extensions = "iso";
+    info->valid_extensions = "iso|chd";
     info->need_fullpath = true;
     info->block_extract = true;
 }

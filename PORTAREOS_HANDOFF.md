@@ -366,7 +366,7 @@ host (untracked). The runs' files were removed from the Nova afterwards.
 - Check #11 on the Nova: a relaunching title, and a video driver rebuild
   mid-game. The relaunch has run only the harness's synthetic title. A
   quit already ends through the context teardown there (2026-10-25).
-- CHD support through a disc-reader abstraction, after the core work.
+- CHD support: done, through libchdr behind the disc reader (`native/core/chd.c`).
 
 Retain clean-build evidence and exact dependency pins when changing the core.
 

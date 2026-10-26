@@ -7,8 +7,11 @@ less.
 
 ## Before you start
 
-- **Games:** your own discs, as `.iso` images. XISO images are tested. Full
-  disc dumps (Redump) are detected too, but haven't been tested.
+- **Games:** your own discs, as `.iso` images or as CHDs made from them with
+  `chdman createdvd -i game.iso -o game.chd`. XISO images are tested, as ISO
+  and CHD. Full disc dumps (Redump) are detected too, but haven't been tested
+  with a real game. CD CHDs (`chdman createcd`) don't work: an Xbox disc is a
+  DVD.
 - **No BIOS** or other Xbox files are needed.
 - **Back up the console's hard disk** before trying a new version. Game saves
   are stored inside it, in the `hdd/` folder of RetroArch's save directory
@@ -131,7 +134,8 @@ Open an issue at https://github.com/portare-ch/hakuX/issues with:
 - the device, GPU and driver (Mesa version), and the system (PortareOS
   version or distribution);
 - the RetroArch version;
-- the game, its region, and whether the image is an XISO or a full dump;
+- the game, its region, whether the image is an XISO or a full dump, and
+  whether it's an ISO or a CHD;
 - what you did, what happened, and what you expected;
 - the logs.
 

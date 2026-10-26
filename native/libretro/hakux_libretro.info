@@ -3,7 +3,7 @@
 # which would load a second hakuX into its process.
 display_name = "Microsoft - Xbox (hakuX)"
 authors = "hakuX contributors"
-supported_extensions = "iso"
+supported_extensions = "iso|chd"
 corename = "hakuX"
 categories = "Emulator"
 license = "GPLv3+"
