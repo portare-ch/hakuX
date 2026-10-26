@@ -1,5 +1,24 @@
 # Changelog
 
+## linux-v0.7.0 (PortareOS)
+
+Upstream hakuX 1.2.0, with game compatibility and sound fixes.
+
+### What's new
+
+- **Upstream hakuX 1.2.0** — Includes upstream fixes for Doom 3, Fatal Frame II, Silent Hill 2, Splinter Cell: Double Agent, Ultimate Spider-Man, Grand Theft Auto III, Super Monkey Ball Deluxe, Sega GT 2002, Project Gotham Racing 2 and Dungeons & Dragons Heroes. These game fixes have not been checked on the Nova in this release.
+- **Sound** — Includes upstream's fixes for games freezing while they hold audio voices, or continuing to play a voice after stopping it.
+- **Linux integration** — The new network and Ethernet controller threads stop with the game, so closing, restarting and loading another game release their resources. Upstream's controller updates use the same hot-plugging state as RetroArch's ports.
+- **Getting started** — The README covers installation, game formats, controls and troubleshooting on PortareOS and other ARM64 Linux systems.
+
+### Current limitations
+
+- Rumble is not passed on to the controllers yet.
+- Save states are not yet available.
+- Upstream's LAN and XLink Kai backends are included, but this release does not add network settings to RetroArch. Networking is off by default.
+- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
+- Full disc dumps (Redump), as `.iso` or CHD, haven't been tested with a real game yet.
+
 ## linux-v0.6.0 (PortareOS)
 
 CHD disc images in the RetroArch core.
