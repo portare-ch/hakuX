@@ -20,6 +20,13 @@ add_test(NAME linux-boundaries
          COMMAND "${Python3_EXECUTABLE}" "${NC_REPO}/tests/native/linux/check.py" "$<TARGET_FILE_DIR:xboxrun>")
 set_tests_properties(linux-boundaries PROPERTIES TIMEOUT 60)
 if(TARGET hakux_libretro)
+  # The APU made again in one process (a relaunch), its EP's samples through
+  # the libretro output.
+  add_executable(apu-reinit-smoke "${NC_REPO}/tests/native/linux/apu_reinit.c"
+                                  "${NC_REPO}/native/libretro/audio.c")
+  target_link_libraries(apu-reinit-smoke PRIVATE hakux_native)
+  add_test(NAME apu-reinit-smoke COMMAND apu-reinit-smoke)
+  set_tests_properties(apu-reinit-smoke PROPERTIES TIMEOUT 10)
   # The core through a minimal frontend: exports, info and a synthetic title.
   add_executable(libretro-harness "${NC_REPO}/tests/native/libretro/harness.c"
                                   "${NC_REPO}/tests/native/libretro/vk.c")

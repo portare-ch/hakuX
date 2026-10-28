@@ -12,6 +12,6 @@ cmake -S native -B "$build" -G Ninja \
     -DHAKUX_FEX_DIR="$deps/fex" -DNC_DEPS="$deps" \
     -DHAKUX_BUILD_LIBRETRO=ON -DHAKUX_VERSION="${HAKUX_VERSION:-dev}" \
     -DHAKUX_LR_END_PROCESS=ON "$@"
-cmake --build "$build" --target xboxrun hakux_libretro libretro-harness linux-smoke audio-smoke usb-smoke \
+cmake --build "$build" --target xboxrun hakux_libretro libretro-harness linux-smoke audio-smoke apu-reinit-smoke usb-smoke \
     vulkan-probe kms-grab -j "${JOBS:-4}"
 ctest --test-dir "$build" --output-on-failure
