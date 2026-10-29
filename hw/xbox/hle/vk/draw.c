@@ -1593,12 +1593,16 @@ static uint16_t g_smp_hot[64];
 static uint32_t sampler_index(const uint32_t *tss, uint32_t lod_down)
 {
     uint32_t base = MIN(tss[TSS_MAXMIPLEVEL], 15u);
+    /* D3DTEXF_ANISOTROPIC (MINFILTER 3: CONTROL0's MAX_ANISOTROPY over a
+     * linear minification, pb/kelvin.c): the degree the title set */
+    uint32_t aniso = (tss[TSS_MINFILTER] & 7) == 3 && g_hvk.caps.aniso ?
+                     MAX(MIN(tss[TSS_MAXANISOTROPY], 16u), 1u) : 1;
     uint64_t key = (uint64_t)(tss[TSS_ADDRESSU] & 7) | (uint64_t)(tss[TSS_ADDRESSV] & 7) << 3 |
                    (uint64_t)(tss[TSS_MAGFILTER] & 7) << 6 |
                    (uint64_t)(tss[TSS_MINFILTER] & 7) << 9 |
                    (uint64_t)(tss[TSS_MIPFILTER] & 7) << 12 |
                    (uint64_t)(tss[TSS_ADDRESSW] & 7) << 15 | (uint64_t)base << 18 |
-                   (uint64_t)tss[TSS_BORDERCOLOR] << 32;
+                   (uint64_t)aniso << 22 | (uint64_t)tss[TSS_BORDERCOLOR] << 32;
     uint64_t key2 = tss[TSS_MIPMAPLODBIAS] | (uint64_t)lod_down << 32;
     unsigned h = (unsigned)(((key ^ key2 * 0x9E3779B97F4A7C15ull) * 0xFF51AFD7ED558CCDull) >> 58);
     uint32_t i = g_smp_hot[h];
@@ -1652,10 +1656,18 @@ static uint32_t sampler_index(const uint32_t *tss, uint32_t lod_down)
         .addressModeW = addr_mode(tss[TSS_ADDRESSW]),
         .mipLodBias = bias, .minLod = (float)base,
         .maxLod = mip ? VK_LOD_CLAMP_NONE : base + 0.25f,
+        .anisotropyEnable = aniso > 1,
+        .maxAnisotropy = aniso > 1 ? MIN((float)aniso, g_hvk.caps.max_aniso) : 1.0f,
         .borderColor = border };
     VkSampler s;
     if (T.vkCreateSampler(g_hvk.dev, &sci, NULL, &s) != VK_SUCCESS) {
         return 0;
+    }
+    static unsigned s_aniso_logged;
+    if (aniso > 1 && s_aniso_logged < 4) {
+        s_aniso_logged++;
+        hle_log("hakuX-hle-back", "sampler %u: anisotropic %ux (max %.0f), mip filter %u",
+                g_dr.nsmp, aniso, g_hvk.caps.max_aniso, mip);
     }
     i = g_dr.nsmp++;
     g_smp_hot[h] = (uint16_t)i;
