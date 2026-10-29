@@ -12,6 +12,7 @@
  */
 #include "hw/xbox/hle/base.h"
 #include <math.h>
+#include "hw/xbox/hle/hle.h"
 #include "hw/xbox/hle/pb/kelvin.h"
 #include "hw/xbox/hle/pb/pbstate.h"
 #include "hw/xbox/hle/shader/psh.h"
@@ -34,7 +35,7 @@ enum {
     RS_FOGDENSITY = 96, RS_SPECULARENABLE = 103, RS_POINTSPRITEENABLE = 118,
     RS_FOGCOLOR = 138, RS_TWOSIDEDLIGHTING = 141, RS_ZENABLE = 143, RS_STENCILENABLE = 144,
     RS_STENCILFAIL = 145,
-    RS_FRONTFACE = 146, RS_CULLMODE = 147, RS_SHADOWFUNC = 156,
+    RS_FRONTFACE = 146, RS_CULLMODE = 147, RS_SHADOWFUNC = 156, RS_LINEWIDTH = 157,
 };
 enum {
     TSS_ADDRESSU = 0, TSS_ADDRESSV, TSS_ADDRESSW, TSS_MAGFILTER, TSS_MINFILTER,
@@ -130,6 +131,15 @@ void hle_kelvin_method(uint32_t m, uint32_t v)
     if (__builtin_expect(!g_state_read_ready, 0)) {
         state_read_init();
     }
+    if (m == 0x0380 && v >= 0x200) {
+        /* SET_LINE_WIDTH past its 6.3 bits: the NV2A refuses the method (a
+         * warning, envytools' hwtest) and keeps the width it had */
+        static unsigned s_logged;
+        if (s_logged++ < 4) {
+            hle_log("hakuX-hle-pb", "SET_LINE_WIDTH 0x%x refused (>= 0x200)", v);
+        }
+        return;
+    }
     uint32_t i = m >> 2;
     if ((g_kv.r[i] != v || !W(m)) && (g_state_read[i >> 5] >> (i & 31) & 1)) {
         g_kv.sgen++;                    /* a first write counts: hle_kelvin_state reads W() */
@@ -201,6 +211,8 @@ static const struct { uint16_t m, rs; } k_rs_map[] = {
     { 0x1E6C, RS_SHADOWFUNC }, { 0x031C, RS_POINTSPRITEENABLE },
     { 0x17C4, RS_TWOSIDEDLIGHTING },    /* SET_TWO_SIDE_LIGHT_EN */
     { 0x0310, RS_DITHERENABLE },        /* SET_DITHER_ENABLE */
+    { 0x0380, RS_LINEWIDTH },           /* SET_LINE_WIDTH: 6.3 fixed point (< 0x200:
+                                           hle_kelvin_method refuses the rest) */
 };
 
 void hle_kelvin_state(HleCmdState *st)
@@ -210,6 +222,9 @@ void hle_kelvin_state(HleCmdState *st)
         if (W(k_rs_map[i].m)) {
             rs[k_rs_map[i].rs] = R(k_rs_map[i].m);
         }
+    }
+    if (!W(0x0380)) {                   /* SET_LINE_WIDTH never written: 1.0 (an */
+        rs[RS_LINEWIDTH] = 8;           /* explicit 0 draws no line, vk/draw.c) */
     }
     if (W(0x030C)) {                    /* W-buffering: Z_PERSPECTIVE_ENABLE */
         rs[RS_ZENABLE] = R(0x030C) ? ((R(0x0290) & 0x10000u) ? 2 : 1) : 0;

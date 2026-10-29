@@ -89,14 +89,16 @@ typedef struct HleCaps {
                                    order (vk/draw.c's blended, dithered draws) */
     bool exec_props, aniso;
     bool host_query_reset, occl_precise;        /* visibility tests */
-    bool wide_lines;            /* enabled when present: every pipeline draws 1.0-wide
-                                   lines (Turnip on the Adreno 650 has none) */
+    bool wide_lines;            /* enabled when present: lines as wide as SET_LINE_WIDTH
+                                   times the resolution scale (vk/draw.c), else 1.0
+                                   (Turnip on the Adreno 650 has none) */
     bool cache_control;         /* pipelineCreationCacheControl: a pipeline asked of the
                                    cache only (vk/draw.c, asynchronous builds) */
     bool swapchain;             /* the Android surface and VK_KHR_swapchain: the window's
                                    presenter (vk/swapchain.c) */
     float max_lod_bias;         /* maxSamplerLodBias */
     float max_aniso;            /* maxSamplerAnisotropy */
+    float max_line_width;       /* lineWidthRange[1] (1 without wide_lines) */
 } HleCaps;
 
 typedef struct HleVk {
