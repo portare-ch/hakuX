@@ -84,6 +84,9 @@ typedef struct HleCaps {
                                    combiner stages that sample the bound colour target
                                    read it as an input attachment (vk/draw.c
                                    hle_draw_fb_stages) */
+    bool raster_order;          /* fbfetch, plus rasterizationOrderColorAttachmentAccess:
+                                   a draw's fragments read the target in primitive
+                                   order (vk/draw.c's blended, dithered draws) */
     bool exec_props, aniso;
     bool host_query_reset, occl_precise;        /* visibility tests */
     bool wide_lines;            /* enabled when present: every pipeline draws 1.0-wide

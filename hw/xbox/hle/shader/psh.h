@@ -87,7 +87,15 @@ typedef struct HlePshKey {
     uint8_t sblend;                     /* the NV2A's signed blend equations (ff.h
                                            HleFfPsKey.sblend) */
     uint8_t dither;                     /* SET_DITHER_ENABLE into a 16-bit target: 1
-                                           R5G6B5, 2 1555 (ordered, 4 x 4) */
+                                           R5G6B5, 2 1555 (ordered, 4 x 4 by guest
+                                           pixel) */
+    /* Blended, dithered draws (fbfetch): the shader blends with the target's
+     * pixel by fb_src / fb_dst (D3D's blend factors) and fb_op (the blend
+     * equation; fb_const the BLENDCOLOR where a factor takes it), then
+     * dithers the result, as the NV2A dithers what the blend leaves. */
+    uint8_t fblend;
+    uint16_t fb_src, fb_dst, fb_op;
+    uint32_t fb_const;
 } HlePshKey;
 
 /* Key from the render-state array (rs[0..56] = the pixel-shader block). */
