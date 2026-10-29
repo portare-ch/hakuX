@@ -1,5 +1,21 @@
 # Changelog
 
+## linux-v0.8.0 (PortareOS)
+
+Rumble, and a sharper picture by default.
+
+### What's new
+
+- **Rumble** — The game's controller vibration reaches the controllers' motors. It is off by default: turn it on in **Quick Menu → Core Options → Rumble**; the change applies at once. The motors stop when the game is paused, closed or restarted. RetroArch's **Vibration Strength** (Settings → Input → Haptic Feedback/Vibration) scales it, as for every core.
+- **Render Scale 2x by default** — Games draw at twice the Xbox's resolution, 1280x960 for most. Text and edges are sharper and no longer uneven on a 1280x960 screen. The overscan stays cropped, so the picture fills a 4:3 screen as on a CRT. Choose **1x** for a game that runs slowly.
+
+### Current limitations
+
+- Save states are not yet available.
+- Upstream's LAN and XLink Kai backends are included, but this release does not add network settings to RetroArch. Networking is off by default.
+- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
+- Full disc dumps (Redump), as `.iso` or CHD, haven't been tested with a real game yet.
+
 ## linux-v0.7.2 (PortareOS)
 
 Every frame the game draws reaches RetroArch.
