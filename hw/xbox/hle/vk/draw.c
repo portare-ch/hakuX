@@ -39,7 +39,7 @@
 enum {
     RS_ZFUNC = 57, RS_ALPHAFUNC = 58, RS_ALPHABLENDENABLE = 59, RS_ALPHATESTENABLE = 60,
     RS_ALPHAREF = 61, RS_SRCBLEND = 62, RS_DESTBLEND = 63, RS_ZWRITEENABLE = 64,
-    RS_SHADEMODE = 66, RS_COLORWRITEENABLE = 67, RS_STENCILZFAIL = 68,
+    RS_DITHERENABLE = 65, RS_SHADEMODE = 66, RS_COLORWRITEENABLE = 67, RS_STENCILZFAIL = 68,
     RS_STENCILPASS = 69, RS_STENCILFUNC = 70, RS_STENCILREF = 71, RS_STENCILMASK = 72,
     RS_STENCILWRITEMASK = 73, RS_BLENDOP = 74, RS_BLENDCOLOR = 75,
     RS_FOGENABLE = 92, RS_FOGTABLEMODE = 93, RS_FOGSTART = 94, RS_FOGEND = 95,
@@ -1220,6 +1220,24 @@ static bool is_colour_rt(uint32_t rt_id)
     return rt && (rt->aspect & VK_IMAGE_ASPECT_COLOR_BIT);
 }
 
+/* A dithered, blended draw into a 16-bit target: the shader blends with the
+ * target's pixel (fbfetch) and dithers the result, as the NV2A dithers what
+ * the blend leaves (psh.h HlePshKey.fblend). Only in rasterization order
+ * (caps.raster_order): a draw's overlapping primitives (a particle batch)
+ * each blend over the one before, as the fixed-function blend does. Not
+ * the signed equations (signed_blend's, or drawn unsigned). */
+static bool dither_blend(const HleCmdState *s, uint32_t rt_id)
+{
+    const uint32_t op = s->rs[RS_BLENDOP];
+    if (!g_hvk.caps.raster_order || !s->psh || !s->rs[RS_DITHERENABLE] ||
+        !s->rs[RS_ALPHABLENDENABLE] || op == 0xF005 || op == 0xF006) {
+        return false;
+    }
+    HleVkSurf *rt = hle_surf_get(rt_id);
+    return rt && (rt->aspect & VK_IMAGE_ASPECT_COLOR_BIT) &&
+           (rt->fmt == VK_FORMAT_R5G6B5_UNORM_PACK16 || rt->fmt == VK_FORMAT_A1R5G5B5_UNORM_PACK16);
+}
+
 /*
  * Fixed-function stages (the key's: from the cascade's first) whose texture
  * is the colour target the draw renders: they read its pixel (fbfetch), as
@@ -1263,7 +1281,8 @@ unsigned hle_draw_fb_stages(const HleCmdDraw *c, uint32_t rt_id)
             m |= 1u << st;
         }
     }
-    return m && is_colour_rt(rt_id) ? m : 0;
+    m = m && is_colour_rt(rt_id) ? m : 0;
+    return m | (dither_blend(&g_dr.st, rt_id) ? 0x10 : 0);     /* the shader blends */
 }
 
 bool g_hle_fbbar_off;
@@ -2173,6 +2192,10 @@ static HlePbResult pipeline_build(const void *key, const uint32_t *tok, uint32_t
             .alphaBlendOp = blend_op(k->op), .colorWriteMask = k->wmask };
         VkPipelineColorBlendStateCreateInfo cb = {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+            /* the shader blends (fblend): its reads of the target in
+             * rasterization order */
+            .flags = k->psh && k->pk.fblend ?
+                     VK_PIPELINE_COLOR_BLEND_STATE_CREATE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_BIT_EXT : 0,
             .attachmentCount = k->cfmt ? 1 : 0, .pAttachments = &ba };
         VkDynamicState dyn[] = {
             VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_CULL_MODE,
@@ -3535,6 +3558,12 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
         k.pk.specular = s->rs[RS_SPECULARENABLE] != 0;
         k.pk.point_sprite = c->prim == 0 && s->rs[RS_POINTSPRITEENABLE] != 0;
         k.pk.out_bgra = rt && hle_surf_out_bgra(rt->fmt);
+        /* SET_DITHER_ENABLE into a 16-bit target: the NV2A dithers what it
+         * writes there (8-bit channels lose nothing to it) */
+        if (s->rs[RS_DITHERENABLE] && rt) {
+            k.pk.dither = rt->fmt == VK_FORMAT_R5G6B5_UNORM_PACK16 ? 1 :
+                          rt->fmt == VK_FORMAT_A1R5G5B5_UNORM_PACK16 ? 2 : 0;
+        }
         /* two-sided lighting: back faces take the back colours a vertex
          * program's shader passes (shader/vsh.c; not the D3D-model FF's) */
         k.pk.two_side = prog && s->rs[RS_TWOSIDEDLIGHTING] != 0;
@@ -3774,6 +3803,32 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
      * the road cancel to 0 (an unsigned subtract clamps at 0 and the add then
      * lights everything in front of the volume). With ONE / ONE the shader
      * does the equation on the target's pixel (fbfetch), the blend is off. */
+    /* dithered blending into a 16-bit target: the shader blends with the
+     * target's pixel and dithers the result (fbfetch in rasterization order);
+     * without it the shader dithers before the fixed-function blend (an
+     * approximation: the blend factors scale the dither). Not the signed
+     * equations, below: with ONE / ONE the shader does them and dithers
+     * their result (sblend reads the target by fbfetch's 0x10 as well, so
+     * that bit doesn't tell the two apart) */
+    if (k.blend_en && s->psh && k.pk.dither && k.op != 0xF005 && k.op != 0xF006) {
+        if (dither_blend(s, rt_id)) {
+            const bool cst = (k.src >= 0x8001 && k.src <= 0x8004) ||
+                             (k.dst >= 0x8001 && k.dst <= 0x8004);
+            k.pk.fblend = 1;
+            k.pk.fb_src = (uint16_t)k.src;
+            k.pk.fb_dst = (uint16_t)k.dst;
+            k.pk.fb_op = (uint16_t)k.op;
+            k.pk.fb_const = cst ? s->rs[RS_BLENDCOLOR] : 0;
+            k.blend_en = 0;
+            k.op = 0x8006;
+        } else {
+            static unsigned s_logged;
+            if (s_logged++ < 4) {
+                hle_log("hakuX-hle-back", "dithered blend %x / %x op %x: dithered before the "
+                        "blend (no fbfetch in rasterization order)", k.src, k.dst, k.op);
+            }
+        }
+    }
     if (k.blend_en && (k.op == 0xF005 || k.op == 0xF006)) {
         unsigned sb = signed_blend(s);
         if (sb && rt && (rt->aspect & VK_IMAGE_ASPECT_COLOR_BIT)) {

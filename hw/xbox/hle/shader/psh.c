@@ -222,6 +222,41 @@ static void final_combiner(Buf *b, const HlePshKey *k)
            "    outc = vec4(A * B + (1.0 - A) * C + D, G);\n  }\n");
 }
 
+/* A D3D blend factor (Vulkan's as vk/draw.c blend_factor maps them) as a
+ * vec4 of the source s, the destination d and the constant c */
+static const char *blend_factor(uint32_t f)
+{
+    switch (f) {
+    case 0:      return "vec4(0.0)";
+    case 0x300:  return "s";
+    case 0x301:  return "(1.0 - s)";
+    case 0x302:  return "vec4(s.a)";
+    case 0x303:  return "vec4(1.0 - s.a)";
+    case 0x304:  return "vec4(d.a)";
+    case 0x305:  return "vec4(1.0 - d.a)";
+    case 0x306:  return "d";
+    case 0x307:  return "(1.0 - d)";
+    case 0x308:  return "vec4(vec3(min(s.a, 1.0 - d.a)), 1.0)";
+    case 0x8001: return "c";
+    case 0x8002: return "(1.0 - c)";
+    case 0x8003: return "vec4(c.a)";
+    case 0x8004: return "vec4(1.0 - c.a)";
+    default:     return "vec4(1.0)";
+    }
+}
+
+/* The blend equation (vk/draw.c blend_op's): MIN and MAX ignore the factors */
+static const char *blend_eq(uint32_t o)
+{
+    switch (o) {
+    case 0x800A: return "s * sf - d * df";
+    case 0x800B: return "d * df - s * sf";
+    case 0x8007: return "min(s, d)";
+    case 0x8008: return "max(s, d)";
+    default:     return "s * sf + d * df";
+    }
+}
+
 static const char *k_cmp[8] = {
     "false", "a < r", "a == r", "a <= r", "a > r", "a != r", "a >= r", "true",
 };
@@ -365,7 +400,7 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             "void main() {\n"
             "%s"
             "  vec4 vTex3 = %s;\n", interp, interp, back, k->wbuf ? HLE_WBUF_IN_GLSL : "",
-        (k->fbfetch & ~HLE_FB_ZEQ) || k->sblend ?
+        (k->fbfetch & ~HLE_FB_ZEQ) || k->sblend || k->fblend ?
             "layout(input_attachment_index = 0, set = 2, binding = 0) "
             "uniform subpassInput uFb;\n" : "",
         k->fbfetch & HLE_FB_ZEQ ? HLE_ZEQ_DECL_GLSL : "",
@@ -598,6 +633,28 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
         "    sv -= 256 * (sv >> 7); dv -= 256 * (dv >> 7);\n"
         "    ivec4 r = clamp(dv %s sv, ivec4(-128), ivec4(127));\n"
         "    oColor = vec4(r & 255) / 255.0; }\n", "oColor", k->sblend == 1 ? "+" : "-");
+    }
+    if (k->fblend) {
+        /* the blend with the target's pixel, here so that the dither below
+         * applies to its result */
+        put(&b, "  { vec4 s = clamp(oColor, 0.0, 1.0), d = subpassLoad(uFb), c = col(%uu);\n"
+                "    vec4 sf = %s, df = %s;\n"
+                "    oColor = clamp(%s, 0.0, 1.0); }\n",
+            k->fb_const, blend_factor(k->fb_src), blend_factor(k->fb_dst), blend_eq(k->fb_op));
+    }
+    if (k->dither) {
+        /* ordered dithering (a 4 x 4 Bayer matrix, by guest pixel: the
+         * target's resolution scale divided out, so a scaled target holds the
+         * pattern a title samples back) into the target's 5 / 6 bits. After
+         * the blend where the shader blends (fblend); else before the
+         * fixed-function blend, which scales it by the blend factors (an
+         * approximation) */
+        put(&b, "  { const float bm[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0,\n"
+                "      3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);\n"
+                "    ivec2 p = ivec2(gl_FragCoord.xy / float(max((pc.flags >> 16) & 255u, 1u))) & 3;\n"
+                "    float dt = (bm[p.y * 4 + p.x] + 0.5) / 16.0 - 0.5;\n"
+                "    oColor.rgb = clamp(oColor.rgb + dt / %s, 0.0, 1.0); }\n",
+            k->dither == 1 ? "vec3(31.0, 63.0, 31.0)" : "vec3(31.0)");
     }
     put(&b, "%s}\n", k->wbuf ? HLE_WBUF_STORE_GLSL : "");
     if (unsupported) {
