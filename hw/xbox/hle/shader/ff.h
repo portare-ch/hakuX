@@ -159,7 +159,9 @@ typedef struct HleFfPush {
                                          -2 aa / target h, then + (-1, 1) (aa: the
                                          NV2A's antialiasing scale, else 1) */
     uint32_t bump3[2];                /* stage 3's BUMPENVMAT (as bump) */
-    uint32_t tex[HLE_FF_STAGES];      /* image index | sampler index << 16 */
+    uint32_t tex[HLE_FF_STAGES];      /* image index | sampler index << 16 (8 bits)
+                                         | a convolving stage's level-0 sampler
+                                         << 24 (psh.c sampk) */
     uint32_t tfactor;                 /* TEXTUREFACTOR (D3DCOLOR) */
     uint32_t bumpl[3];                /* stages 1..3: BUMPENVLSCALE, LOFFSET (half
                                          pair) */
@@ -218,8 +220,9 @@ extern bool g_hle_glsl_zclamp;
 
 /* No descriptor indexing (HleCaps.bindless off: Mali's Bifrost, PowerVR's
  * Rogue): a pixel shader's bindless arrays become the draw's own set (vk/draw.c
- * fixed_bind): sized (each stage's images, then the default sampler and each
- * stage's), indexed without nonuniformEXT (the push block's indices, the same
+ * fixed_bind): sized (each stage's images, then the default sampler, each
+ * stage's and each stage's convolution taps'), indexed without nonuniformEXT
+ * (the push block's indices, the same
  * for the whole draw). g_hle_glsl_fixed: hle_glsl_fixed_slots rewrites the
  * generated text; its new length, 0 if it doesn't fit in cap. */
 extern bool g_hle_glsl_fixed;

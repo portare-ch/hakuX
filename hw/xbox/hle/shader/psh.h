@@ -97,6 +97,10 @@ typedef struct HlePshKey {
      * stage; an X format's is not compared). */
     uint8_t ckey, ckey_bits, ckey_alpha;
     uint32_t ckey_col[4];               /* SET_COLOR_KEY_COLOR per stage (D3DCOLOR) */
+    /* The NV2A's convolution filters (CONVOLUTION_2D_LOD0), 2 bits a stage:
+     * conv the kernel (1 quincunx, 2 gaussian 3 x 3), conv_mm where it
+     * applies (bit 0 minification, 1 magnification). PROJECT2D only. */
+    uint8_t conv, conv_mm;
     /* Colour sign, 4 bits a stage (bit 0 r .. 3 a) as two's complement:
      * sgn_ob the channels uploaded offset binary (tex/xdk_res.h), mapped
      * back exactly; sgn_raw those read as stored (targets, formats not

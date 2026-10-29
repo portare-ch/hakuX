@@ -43,6 +43,7 @@ enum {
     TSS_COLORKEYOP, TSS_COLORSIGN, TSS_ALPHAKILL,
     TSS_BUMPENVMAT00 = 22,              /* .. 11, then LSCALE, LOFFSET */
     TSS_BORDERCOLOR = 29, TSS_COLORKEYCOLOR = 30,
+    TSS_CONVOLUTION = 31,               /* HLE's own: shader/psh.h HlePshKey.conv */
 };
 
 static struct {
@@ -175,6 +176,12 @@ static void tss(uint32_t *t, unsigned s)
     t[TSS_MAGFILTER] = (filt >> 24) & 0xF;
     t[TSS_MINFILTER] = aniso && k_min[min][0] == 2 ? 3 : k_min[min][0];
     t[TSS_MIPFILTER] = k_min[min][1];
+    /* CONVOLUTION_2D_LOD0 (MIN 7, MAG 4): the kernel (15:13: 1 quincunx, 2
+     * gaussian 3 x 3) the shader filters level 0 with, | 8 minification,
+     * | 16 magnification */
+    const unsigned mag = (filt >> 24) & 0xF;
+    t[TSS_CONVOLUTION] = min == 7 || mag == 4 ?
+                         ((filt >> 13) & 7) | (min == 7 ? 8 : 0) | (mag == 4 ? 16 : 0) : 0;
     t[TSS_MAXANISOTROPY] = 1u << aniso;
     int32_t lod = (int32_t)(filt << 19) >> 19;          /* signed 5.8 */
     float bias = lod / 256.0f;

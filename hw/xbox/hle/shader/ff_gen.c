@@ -47,7 +47,8 @@ size_t hle_glsl_fixed_slots(char *src, size_t cap)
         { "#extension GL_EXT_nonuniform_qualifier : require\n", "" },
         { "nonuniformEXT(", "(" },
         { "uTex2D[];", "uTex2D[4];" }, { "uTexCube[];", "uTexCube[4];" },
-        { "uTex3D[];", "uTex3D[4];" }, { "uSmp[];", "uSmp[5];" },
+        /* the default sampler, the stages' and their convolution taps' (psh.c sampk) */
+        { "uTex3D[];", "uTex3D[4];" }, { "uSmp[];", "uSmp[9];" },
     };
     const size_t nrw = sizeof(k_rw) / sizeof(k_rw[0]);
     size_t n = strlen(src), o = 0;

@@ -372,6 +372,60 @@ static void test_sign_color_key(void)
     HT_CHECK(fb != NULL && r0 != NULL && fb < r0 && strstr(buf, "  t0.b = sgnraw(t0.b);\n"));
 }
 
+/* the convolution filters: PROJECT2D stages through sampk, with the kernel
+ * and where it applies */
+static void test_convolution(void)
+{
+    uint32_t rs[HLE_PS_REGS] = { 0 };
+    rs[HLE_PS_RGB_IN] = IN4(R_T0, R_T1, R_ZERO, R_ZERO);
+    rs[HLE_PS_RGB_OUT] = R_R0 << 4;
+    rs[HLE_PS_COUNT] = 1;
+    rs[HLE_PS_TEXMODES] = HLE_PST_PROJECT2D | HLE_PST_PROJECT2D << 5;
+    HlePshKey k;
+    hle_psh_key(rs, &k);
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
+    HT_CHECK(strstr(buf, "sampk") == NULL);
+    k.conv = 1 | 2 << 2;                                /* quincunx, gaussian */
+    k.conv_mm = 3 | 1 << 2;                             /* both; minification */
+    size_t n = hle_psh_glsl(&k, buf, sizeof(buf), NULL);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("psh_convolution");
+    HT_CHECK(strstr(buf, "vec4 sampk(uint s, vec2 uv, uint kern, uint when)") != NULL);
+    HT_CHECK(strstr(buf, "vec4 t0 = sampk(0u, nvproj(vTex0).xy, 1u, 3u);") != NULL);
+    HT_CHECK(strstr(buf, "vec4 t1 = sampk(1u, nvproj(vTex1).xy, 2u, 1u);") != NULL);
+    /* the taps at level 0 through the level-0 sampler (bits 24-31), at an
+     * explicit LOD; the other side of the branch by gradients taken before
+     * it: no implicit derivatives where a quad's fragments may diverge */
+    const char *fn = strstr(buf, "vec4 tap(uint ti, uint ci, vec2 uv) {");
+    const char *end = fn ? strstr(strstr(fn, "vec4 sampk("), "\n}\n") : NULL;
+    HT_CHECK(fn != NULL && end != NULL);
+    char seg[2048] = { 0 };
+    if (fn && end && (size_t)(end - fn) < sizeof(seg)) {
+        memcpy(seg, fn, (size_t)(end - fn));
+    }
+    HT_CHECK(strstr(seg, "uSmp[nonuniformEXT(ci)]), uv, 0.0);") != NULL);
+    HT_CHECK(strstr(seg, "si = (pc.tex[s] >> 16) & 0xFFu, ci = pc.tex[s] >> 24;") != NULL);
+    HT_CHECK(strstr(seg, "texture(") == NULL);
+    const char *grad = strstr(seg, "vec2 gx = dFdx(uv), gy = dFdy(uv);");
+    const char *br = strstr(seg, "if ((when & (lod > 0.0 ? 1u : 2u)) == 0u)");
+    HT_CHECK(grad != NULL && br != NULL && grad < br);
+    HT_CHECK(strstr(seg, "uSmp[nonuniformEXT(si)]), uv, gx, gy);") != NULL);
+    /* the stages' own samplers: the index's 8 bits */
+    HT_CHECK(strstr(buf, "uint ti = pc.tex[s] & 0xFFFFu, si = (pc.tex[s] >> 16) & 0xFFu;\n"
+                         "  if ((pc.flags & (1u << s)) != 0u)") != NULL);
+    /* no descriptor indexing: the draw set's samplers (vk/draw.c fixed_bind),
+     * the taps' at 1 + HLE_FF_STAGES + s, inside the sized array */
+    HT_CHECK(hle_glsl_fixed_slots(buf, sizeof(buf)) == strlen(buf));
+    HT_CHECK(strstr(buf, "uniform sampler uSmp[9];") != NULL);
+    HT_CHECK(1 + 2 * HLE_FF_STAGES == 9);
+    HT_CHECK(strstr(buf, "uSmp[(ci)]), uv, 0.0);") != NULL);
+    dump("psh_convolution_fixed");
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
+    k.vol = 1;                                          /* a volume: not filtered so */
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
+    HT_CHECK(strstr(buf, "vec4 t0 = samp3(0u") != NULL);
+}
+
 /* dithering into a 16-bit target: the ordered offset by its channel steps */
 static void test_dither(void)
 {
@@ -439,6 +493,7 @@ int main(void)
     HT_RUN(test_bumpenv);
     HT_RUN(test_two_side);
     HT_RUN(test_color_key);
+    HT_RUN(test_convolution);
     HT_RUN(test_sign);
     HT_RUN(test_sign_color_key);
     HT_RUN(test_dither);
