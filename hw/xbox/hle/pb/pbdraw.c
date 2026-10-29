@@ -296,7 +296,9 @@ static void ff_regs_init(void)
         { 0x0480, 0x07C0 },     /* modelview, inverse, composite, texture matrices */
         { 0x0840, 0x0940 },     /* texgen planes */
         { 0x09D0, 0x0A60 },     /* fog plane, specular, ambient, viewport offset, point, eye */
+        { 0x0C00, 0x0E00 },     /* back light colours */
         { 0x1000, 0x1400 },     /* lights */
+        { 0x17A0, 0x17BC },     /* back scene ambient, material alpha, emission */
         { 0x1E28, 0x1E40 },     /* back specular */
     };
     memset(g_ff_regs, 0, sizeof(g_ff_regs));
@@ -1751,6 +1753,7 @@ static uint64_t ff_program(void)
     uint32_t cm = R(0x0298);
     for (unsigned i = 0; i < 4; i++) {
         k.src[i] = (cm >> (2 * i)) & 3;
+        k.bsrc[i] = (cm >> (8 + 2 * i)) & 3;    /* BACK_EMISSION .. BACK_SPECULAR */
     }
     uint32_t le = R(0x03BC);
     for (unsigned i = 0; i < 8; i++) {
@@ -1763,6 +1766,7 @@ static uint64_t ff_program(void)
         k.texmat |= (uint8_t)((R(0x0420 + 4 * s) & 1) << s);
     }
     k.points = R(0x0318) & 1;
+    k.two_side = R(0x17C4) & 1;                   /* SET_TWO_SIDE_LIGHT_EN */
     return send_vsh(&k, HLE_FFHW_SLOTS, &g_vh_ff);
 }
 
@@ -1801,7 +1805,15 @@ static void ff_consts(float (*c)[4])
         regs_f(l[HLE_FFHW_L_SPOT], b + 0x4C, 4);
         regs_f(l[HLE_FFHW_L_POSITION], b + 0x5C, 3);
         regs_f(l[HLE_FFHW_L_ATTENUATION], b + 0x68, 3);
+        /* SET_BACK_LIGHT_AMBIENT_COLOR, _DIFFUSE_COLOR, _SPECULAR_COLOR */
+        float (*bl)[4] = &c[HLE_FFHW_C_BACK_LIGHTS + 3 * i];
+        regs_f(bl[0], 0x0C00 + 64 * i, 3);
+        regs_f(bl[1], 0x0C0C + 64 * i, 3);
+        regs_f(bl[2], 0x0C18 + 64 * i, 3);
     }
+    regs_f(c[HLE_FFHW_C_BACK_AMBIENT], 0x17A0, 3);         /* SET_BACK_SCENE_AMBIENT_COLOR */
+    regs_f(&c[HLE_FFHW_C_BACK_AMBIENT][3], 0x17AC, 1);     /* SET_BACK_MATERIAL_ALPHA */
+    regs_f(c[HLE_FFHW_C_BACK_EMISSION], 0x17B0, 3);        /* SET_BACK_MATERIAL_EMISSION */
 }
 
 /* Bytes of one element of an NV2A vertex array format (type 3:0, size 7:4) */
