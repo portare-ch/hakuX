@@ -3806,9 +3806,12 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
     /* dithered blending into a 16-bit target: the shader blends with the
      * target's pixel and dithers the result (fbfetch in rasterization order);
      * without it the shader dithers before the fixed-function blend (an
-     * approximation: the blend factors scale the dither) */
-    if (k.blend_en && s->psh && k.pk.dither) {
-        if (k.pk.fbfetch & 0x10) {
+     * approximation: the blend factors scale the dither). Not the signed
+     * equations, below: with ONE / ONE the shader does them and dithers
+     * their result (sblend reads the target by fbfetch's 0x10 as well, so
+     * that bit doesn't tell the two apart) */
+    if (k.blend_en && s->psh && k.pk.dither && k.op != 0xF005 && k.op != 0xF006) {
+        if (dither_blend(s, rt_id)) {
             const bool cst = (k.src >= 0x8001 && k.src <= 0x8004) ||
                              (k.dst >= 0x8001 && k.dst <= 0x8004);
             k.pk.fblend = 1;
