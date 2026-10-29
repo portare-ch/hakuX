@@ -260,6 +260,29 @@ static void shadow_sample(Buf *b, const HlePshKey *k, unsigned s, bool project3d
     put(b, "  }\n");
 }
 
+/* Colour key (HlePshKey ckey): a fetched texel whose RGB matches stage s's
+ * key colour has its alpha or ARGB zeroed, which later combiner stages may
+ * ignore, or kills the fragment. After filtering: a linear-filtered edge
+ * between keyed and other texels matches neither. */
+static void color_key(Buf *b, const HlePshKey *k, unsigned s, unsigned m)
+{
+    static const char *const k_n[4] = {
+        "vec3(255.0)", "vec3(31.0, 63.0, 31.0)", "vec3(31.0)", "vec3(15.0)" };
+    const unsigned op = (k->ckey >> (2 * s)) & 3, bits = (k->ckey_bits >> (2 * s)) & 3;
+    const uint32_t c = k->ckey_col[s];
+    if (!op || m == HLE_PST_NONE || m == HLE_PST_PASSTHRU || m == HLE_PST_CLIPPLANE ||
+        m == HLE_PST_DOTPRODUCT) {
+        return;
+    }
+    put(b, "  if (ckeq(t%u.rgb, vec3(%u.0, %u.0, %u.0) / 255.0, %s)) ", s, (c >> 16) & 255,
+        (c >> 8) & 255, c & 255, k_n[bits]);
+    switch (op) {
+    case 1: put(b, "t%u.a = 0.0;\n", s); break;
+    case 2: put(b, "t%u = vec4(0.0);\n", s); break;
+    default: put(b, "discard;\n"); break;
+    }
+}
+
 /* D3DTSS_ALPHAKILL: a fetched texel with alpha 0 discards the fragment. A
  * shadow-buffer stage's result is its alpha too: projected shadow receivers
  * (PGR2's car shadow) draw only where the compare passed. */
@@ -325,6 +348,7 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             "  vec2 v = floor(c * 255.0 + 0.5);\n"
             "  return mix(v, v - 256.0, greaterThanEqual(v, vec2(128.0))) / 127.0;\n"
             "}\n"
+            "%s"
             "void main() {\n"
             "  vec4 v0 = vDiffuse, v1 = vSpecular;\n"
             "  vec4 vTex3 = %s;\n", interp, interp, k->wbuf ? HLE_WBUF_IN_GLSL : "",
@@ -332,6 +356,10 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             "layout(input_attachment_index = 0, set = 2, binding = 0) "
             "uniform subpassInput uFb;\n" : "",
         k->fbfetch & HLE_FB_ZEQ ? HLE_ZEQ_DECL_GLSL : "",
+        /* colour key: the texel and the key the same at n levels a channel */
+        k->ckey ? "bool ckeq(vec3 t, vec3 c, vec3 n) {\n"
+                  "  return all(equal(floor(t * n + 0.5), floor(c * n + 0.5)));\n"
+                  "}\n" : "",
         k->point_sprite ? "vec4(gl_PointCoord, 1.0, 1.0)" : "vTex3i");
     if (k->wbuf) {
         put(&b, HLE_WBUF_CALC_GLSL);
@@ -507,6 +535,7 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
                 s, s, s, m);
             break;
         }
+        color_key(&b, k, s, m);
         alpha_kill(&b, k, s, m);
     }
     put(&b, "  vec4 r0 = vec4(0.0, 0.0, 0.0, t0.a), r1 = vec4(0.0);\n"

@@ -224,6 +224,37 @@ static void test_bumpenv(void)
     HT_CHECK(strstr(buf, "t2.rgb *= clamp(l.x * t1.r + l.y, 0.0, 1.0);") != NULL);
 }
 
+/* colour key: a matching texel's alpha zeroed (1), ARGB zeroed (2) or the
+ * fragment killed (3), compared at the format's precision */
+static void test_color_key(void)
+{
+    uint32_t rs[HLE_PS_REGS] = { 0 };
+    rs[HLE_PS_RGB_IN] = IN4(R_T0, R_T1, R_ZERO, R_ZERO);
+    rs[HLE_PS_RGB_OUT] = R_R0 << 4;
+    rs[HLE_PS_COUNT] = 1;
+    rs[HLE_PS_TEXMODES] = HLE_PST_PROJECT2D | HLE_PST_PROJECT2D << 5 | HLE_PST_PROJECT2D << 10;
+    HlePshKey k;
+    hle_psh_key(rs, &k);
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
+    HT_CHECK(strstr(buf, "ckeq") == NULL);
+    k.ckey = 1 | 2 << 2 | 3 << 4;
+    k.ckey_bits = 1 << 2;                               /* stage 1: R5G6B5 */
+    k.ckey_col[0] = 0xFFFF00FFu;
+    k.ckey_col[1] = 0x00000000u;
+    k.ckey_col[2] = 0x8000FF00u;
+    size_t n = hle_psh_glsl(&k, buf, sizeof(buf), NULL);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("psh_color_key");
+    HT_CHECK(strstr(buf, "bool ckeq(vec3 t, vec3 c, vec3 n)") != NULL);
+    HT_CHECK(strstr(buf, "if (ckeq(t0.rgb, vec3(255.0, 0.0, 255.0) / 255.0, vec3(255.0))) "
+                         "t0.a = 0.0;") != NULL);
+    HT_CHECK(strstr(buf, "if (ckeq(t1.rgb, vec3(0.0, 0.0, 0.0) / 255.0, "
+                         "vec3(31.0, 63.0, 31.0))) t1 = vec4(0.0);") != NULL);
+    HT_CHECK(strstr(buf, "if (ckeq(t2.rgb, vec3(0.0, 255.0, 0.0) / 255.0, vec3(255.0))) "
+                         "discard;") != NULL);
+    HT_CHECK(strstr(buf, "ckeq(t3") == NULL);
+}
+
 static void test_overflow(void)
 {
     uint32_t rs[HLE_PS_REGS] = { 0 };
@@ -241,6 +272,7 @@ int main(void)
     HT_RUN(test_reflect);
     HT_RUN(test_shadow_project);
     HT_RUN(test_bumpenv);
+    HT_RUN(test_color_key);
     HT_RUN(test_overflow);
     HT_DONE();
 }

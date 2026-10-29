@@ -64,7 +64,7 @@ enum {
     TSS_BUMPENVMAT00 = 22,      /* 00, 01, 10, 11: SetTextureState_BumpEnv pushes types
                                    22..25 to BUMP_ENV_MAT 0..3 (Otogi 0xf5c50) */
     TSS_BUMPENVLSCALE = 26, TSS_BUMPENVLOFFSET,
-    TSS_TEXCOORDINDEX = 28, TSS_BORDERCOLOR = 29,
+    TSS_TEXCOORDINDEX = 28, TSS_BORDERCOLOR = 29, TSS_COLORKEYCOLOR = 30,
 };
 
 /* Two floats (bits) as IEEE halves, a in the low 16 bits (GLSL
@@ -3469,6 +3469,29 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
         k.pk.out_bgra = rt && hle_surf_out_bgra(rt->fmt);
         for (unsigned st = 0; st < 4; st++) {
             k.pk.alpha_kill |= (c->tex[st] && s->tss[st][TSS_ALPHAKILL] != 0) << st;
+        }
+        for (unsigned st = 0; st < 4; st++) {
+            /* colour key (TEXTURE_CONTROL0 1:0): the op, the stage's key colour
+             * and the precision its format's channels compare at */
+            const uint32_t op = s->tss[st][TSS_COLORKEYOP] & 3;
+            if (!op || !c->tex[st]) {
+                continue;
+            }
+            HleVkTex *tx = tex_find(c->tex[st]);
+            HleVkSurf *sf = tx ? NULL : hle_surf_get(c->tex[st]);
+            const VkFormat f = tx ? tx->fmt : sf ? sf->fmt : VK_FORMAT_UNDEFINED;
+            const uint32_t bits = f == VK_FORMAT_R5G6B5_UNORM_PACK16 ? 1 :
+                                  f == VK_FORMAT_A1R5G5B5_UNORM_PACK16 ? 2 :
+                                  f == VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT ? 3 : 0;
+            k.pk.ckey |= (uint8_t)(op << (2 * st));
+            k.pk.ckey_bits |= (uint8_t)(bits << (2 * st));
+            k.pk.ckey_col[st] = s->tss[st][TSS_COLORKEYCOLOR];
+            static unsigned s_logged;
+            if (s_logged < 8) {
+                s_logged++;
+                hle_log("hakuX-hle-pipe", "colour key: stage %u %s %u vkfmt %d op %u key %08x",
+                        st, tx ? "tex" : "surf", c->tex[st], (int)f, op, k.pk.ckey_col[st]);
+            }
         }
         for (unsigned st = 0; st < 4; st++) {
             unsigned sf = shadow_fmt(c->tex[st]);
