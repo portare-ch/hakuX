@@ -13,10 +13,11 @@ uint32_t hle_draw_arena_alloc(uint32_t len, uint8_t **ptr);
 /* The same, 16 bytes aligned instead of 256 (a draw's indices). */
 uint32_t hle_draw_arena_alloc16(uint32_t len, uint8_t **ptr);
 /* The texels of header words h5 (P8: palette pal, npal entries) defined as
- * object id's image (HLE_OP_TEX); id, or 0 if they can't be. *bytes: the
+ * object id's image (HLE_OP_TEX), the colour-sign channels of sign
+ * offset binary (tex/xdk_res.h); id, or 0 if they can't be. *bytes: the
  * span of guest memory they came from. */
 uint32_t hle_draw_tex_define(uint32_t id, const uint32_t h5[5], const uint32_t *pal, uint32_t npal,
-                             uint32_t *bytes);
+                             uint32_t sign, uint32_t *bytes);
 /* The video overlay's surface (header words h5, YUY2 / UYVY) as B8G8R8A8 in
  * the arena: its offset, HLE_ARENA_FULL = none. */
 uint32_t hle_draw_overlay_upload(const uint32_t h5[5], uint32_t *w, uint32_t *h);

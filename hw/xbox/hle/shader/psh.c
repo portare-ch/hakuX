@@ -260,6 +260,23 @@ static void shadow_sample(Buf *b, const HlePshKey *k, unsigned s, bool project3d
     put(b, "  }\n");
 }
 
+/* Texture colour sign: stage s's signed channels (HlePshKey sgn_ob,
+ * sgn_raw) as the NV2A reads them, before anything uses the texel. */
+static void sign_decode(Buf *b, const HlePshKey *k, unsigned s, unsigned m)
+{
+    const unsigned ob = (k->sgn_ob >> (4 * s)) & 15, raw = (k->sgn_raw >> (4 * s)) & 15 & ~ob;
+    if (m == HLE_PST_NONE || m == HLE_PST_PASSTHRU || m == HLE_PST_CLIPPLANE ||
+        m == HLE_PST_DOTPRODUCT) {
+        return;
+    }
+    for (unsigned c = 0; c < 4; c++) {
+        if (((ob | raw) >> c) & 1) {
+            put(b, "  t%u.%c = %s(t%u.%c);\n", s, "rgba"[c], (ob >> c) & 1 ? "sgnob" : "sgnraw",
+                s, "rgba"[c]);
+        }
+    }
+}
+
 /* D3DTSS_ALPHAKILL: a fetched texel with alpha 0 discards the fragment. A
  * shadow-buffer stage's result is its alpha too: projected shadow receivers
  * (PGR2's car shadow) draw only where the compare passed. */
@@ -325,6 +342,7 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             "  vec2 v = floor(c * 255.0 + 0.5);\n"
             "  return mix(v, v - 256.0, greaterThanEqual(v, vec2(128.0))) / 127.0;\n"
             "}\n"
+            "%s"
             "void main() {\n"
             "  vec4 v0 = vDiffuse, v1 = vSpecular;\n"
             "  vec4 vTex3 = %s;\n", interp, interp, k->wbuf ? HLE_WBUF_IN_GLSL : "",
@@ -332,6 +350,14 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             "layout(input_attachment_index = 0, set = 2, binding = 0) "
             "uniform subpassInput uFb;\n" : "",
         k->fbfetch & HLE_FB_ZEQ ? HLE_ZEQ_DECL_GLSL : "",
+        /* colour sign: a channel offset binary, or as stored, as two's
+         * complement over 127 */
+        k->sgn_ob | k->sgn_raw ?
+            "float sgnob(float c) { return max((c * 255.0 - 128.0) / 127.0, -1.0); }\n"
+            "float sgnraw(float c) {\n"
+            "  float v = floor(c * 255.0 + 0.5);\n"
+            "  return max((v >= 128.0 ? v - 256.0 : v) / 127.0, -1.0);\n"
+            "}\n" : "",
         k->point_sprite ? "vec4(gl_PointCoord, 1.0, 1.0)" : "vTex3i");
     if (k->wbuf) {
         put(&b, HLE_WBUF_CALC_GLSL);
@@ -432,9 +458,22 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             static const char *const mat[4][2] = {
                 { "", "" }, { "pc.bump.x", "pc.bump.y" }, { "pc.bump.z", "pc.bump.w" },
                 { "pc.bump3.x", "pc.bump3.y" } };
+            /* (du, dv) the input's signed bytes; a channel colour sign already
+             * made signed (sign_decode) as it is */
+            const unsigned sd = ((k->sgn_ob | k->sgn_raw) >> (4 * in)) & 6;
+            char duv[64], du[24], dv[24];
+            snprintf(du, sizeof(du), sd & 4 ? "t%u.b" : "sgn8(t%u.bg).x", in);
+            snprintf(dv, sizeof(dv), sd & 2 ? "t%u.g" : "sgn8(t%u.bg).y", in);
+            if (sd == 6) {
+                snprintf(duv, sizeof(duv), "t%u.bg", in);
+            } else if (!sd) {
+                snprintf(duv, sizeof(duv), "sgn8(t%u.bg)", in);
+            } else {
+                snprintf(duv, sizeof(duv), "vec2(%s, %s)", du, dv);
+            }
             put(&b, "  vec4 t%u;\n"
                     "  { vec2 d = mat2(unpackHalf2x16(%s), unpackHalf2x16(%s)) * "
-                    "sgn8(t%u.bg);\n", s, mat[s][0], mat[s][1], in);
+                    "%s;\n", s, mat[s][0], mat[s][1], duv);
             if ((k->vol >> s) & 1) {            /* a volume: r passes through (Conker's
                                                  * electricity, animated along r) */
                 put(&b, "    t%u = samp3(%uu, vec3(nvproj(vTex%u).xy + d, vTex%u.z));\n",
@@ -507,6 +546,7 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
                 s, s, s, m);
             break;
         }
+        sign_decode(&b, k, s, m);
         alpha_kill(&b, k, s, m);
     }
     put(&b, "  vec4 r0 = vec4(0.0, 0.0, 0.0, t0.a), r1 = vec4(0.0);\n"

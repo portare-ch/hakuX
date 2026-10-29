@@ -86,6 +86,12 @@ typedef struct HlePshKey {
                                            v1 (a shader without one) */
     uint8_t sblend;                     /* the NV2A's signed blend equations (ff.h
                                            HleFfPsKey.sblend) */
+    /* Colour sign, 4 bits a stage (bit 0 r .. 3 a) as two's complement:
+     * sgn_ob the channels uploaded offset binary (tex/xdk_res.h), mapped
+     * back exactly; sgn_raw those read as stored (targets, formats not
+     * converted), mapped after filtering, inexact where texels of both
+     * signs blend. */
+    uint16_t sgn_ob, sgn_raw;
 } HlePshKey;
 
 /* Key from the render-state array (rs[0..56] = the pixel-shader block). */

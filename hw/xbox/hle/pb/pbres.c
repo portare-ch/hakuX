@@ -274,7 +274,7 @@ static bool tex_desc(const uint32_t h5[5], HleResDesc *dp, HleResInfo *rip)
  * unswizzled or converted into the arena as object id's image (HLE_OP_TEX);
  * false if they can't be (format, memory, arena). */
 static bool tex_define(uint32_t id, const uint32_t h5[5], const HleResDesc *dp,
-                       const HleResInfo *rip, const uint32_t *pal, uint32_t npal)
+                       const HleResInfo *rip, const uint32_t *pal, uint32_t npal, uint32_t sign)
 {
     const HleResDesc d = *dp;
     const HleResInfo ri = *rip;
@@ -313,6 +313,9 @@ static bool tex_define(uint32_t id, const uint32_t h5[5], const HleResDesc *dp,
                      x4444 ? (d.fmt == HLE_XFMT_LIN_A4R4G4B4 ? HLE_XFMT_LIN_A8R8G8B8
                                                             : HLE_XFMT_A8R8G8B8) : d.fmt;
     const HleFmtInfo *ofi = hle_fmt_info(oxfmt);
+    /* colour sign: those 8-bit channels offset binary (the texels as stored,
+     * not a conversion's) */
+    const uint32_t sxor = oxfmt == d.fmt ? hle_fmt_sign_xor(d.fmt, sign) : 0;
     uint32_t faces = d.kind == HLE_RK_CUBE ? 6 : 1, levels = MAX(ri.levels, 1u), total = 0;
     uint32_t depth = vol ? MAX(d.d, 1u) : 1;
     for (uint32_t l = 0; l < levels; l++) {
@@ -377,6 +380,21 @@ static bool tex_define(uint32_t id, const uint32_t h5[5], const HleResDesc *dp,
             if (x4444) {
                 expand_4444((const uint16_t *)t16, (size_t)w * h * dd, (uint32_t *)(dst + pos));
             }
+            if (sxor && ofi->bpp == 32) {
+                for (uint32_t i = 0; i + 4 <= n; i += 4) {
+                    uint32_t v;
+                    memcpy(&v, dst + pos + i, 4);
+                    v ^= sxor;
+                    memcpy(dst + pos + i, &v, 4);
+                }
+            } else if (sxor && ofi->bpp == 16) {
+                for (uint32_t i = 0; i + 2 <= n; i += 2) {
+                    uint16_t v;
+                    memcpy(&v, dst + pos + i, 2);
+                    v ^= (uint16_t)sxor;
+                    memcpy(dst + pos + i, &v, 2);
+                }
+            }
             pos += n;
         }
     }
@@ -413,11 +431,12 @@ static bool tex_define(uint32_t id, const uint32_t h5[5], const HleResDesc *dp,
     c->faces = faces;
     c->arena_off = off;
     c->arena_len = total;
+    c->sign = sxor ? sign : 0;
     return true;
 }
 
 uint32_t hle_draw_tex_define(uint32_t id, const uint32_t h5[5], const uint32_t *pal, uint32_t npal,
-                             uint32_t *bytes)
+                             uint32_t sign, uint32_t *bytes)
 {
     HleResDesc d;
     HleResInfo ri;
@@ -428,7 +447,7 @@ uint32_t hle_draw_tex_define(uint32_t id, const uint32_t h5[5], const uint32_t *
     if (d.fmt == HLE_XFMT_YUY2 || d.fmt == HLE_XFMT_UYVY) {
         return yuv_define(id, h5, &d) ? id : 0;        /* movies: converted to A8R8G8B8 */
     }
-    return tex_define(id, h5, &d, &ri, pal, npal) ? id : 0;
+    return tex_define(id, h5, &d, &ri, pal, npal, sign) ? id : 0;
 }
 
 /* The overlay is not a texture object: the video decoder rewrites it every

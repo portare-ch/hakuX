@@ -224,6 +224,37 @@ static void test_bumpenv(void)
     HT_CHECK(strstr(buf, "t2.rgb *= clamp(l.x * t1.r + l.y, 0.0, 1.0);") != NULL);
 }
 
+/* colour sign: offset-binary channels mapped back, others as stored; a
+ * bump stage takes its input's signed channels as they are */
+static void test_sign(void)
+{
+    uint32_t rs[HLE_PS_REGS] = { 0 };
+    rs[HLE_PS_RGB_IN] = IN4(R_T1, R_V0, R_ZERO, R_ZERO);
+    rs[HLE_PS_RGB_OUT] = R_R0 << 4;
+    rs[HLE_PS_COUNT] = 1;
+    rs[HLE_PS_TEXMODES] = HLE_PST_PROJECT2D | HLE_PST_BUMPENVMAP << 5;
+    HlePshKey k;
+    hle_psh_key(rs, &k);
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
+    HT_CHECK(strstr(buf, "sgnob") == NULL);             /* unsigned: no change */
+    HT_CHECK(strstr(buf, "* sgn8(t0.bg);") != NULL);
+    k.sgn_ob = 0x6;                                     /* stage 0: g, b */
+    k.sgn_raw = 0x8 | 0x10;                             /* stage 0 a, stage 1 r */
+    size_t n = hle_psh_glsl(&k, buf, sizeof(buf), NULL);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("psh_sign");
+    HT_CHECK(strstr(buf, "float sgnob(float c)") != NULL);
+    HT_CHECK(strstr(buf, "t0.g = sgnob(t0.g);\n  t0.b = sgnob(t0.b);\n"
+                         "  t0.a = sgnraw(t0.a);") != NULL);
+    HT_CHECK(strstr(buf, "t1.r = sgnraw(t1.r);") != NULL);
+    HT_CHECK(strstr(buf, "* t0.bg;") != NULL);          /* already signed */
+    HT_CHECK(strstr(buf, "sgn8(t0.bg)") == NULL);
+    k.sgn_ob = 0x4;                                     /* b only */
+    k.sgn_raw = 0;
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
+    HT_CHECK(strstr(buf, "* vec2(t0.b, sgn8(t0.bg).y);") != NULL);
+}
+
 static void test_overflow(void)
 {
     uint32_t rs[HLE_PS_REGS] = { 0 };
@@ -241,6 +272,7 @@ int main(void)
     HT_RUN(test_reflect);
     HT_RUN(test_shadow_project);
     HT_RUN(test_bumpenv);
+    HT_RUN(test_sign);
     HT_RUN(test_overflow);
     HT_DONE();
 }

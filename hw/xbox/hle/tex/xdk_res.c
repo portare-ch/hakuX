@@ -36,6 +36,60 @@ const HleFmtInfo *hle_fmt_info(uint32_t code)
     return NULL;
 }
 
+/* Per format and sign bit (A, R, G, B): the texel bits flipped, and the
+ * view channels (rgba bits) that byte reaches. G8B8 views as (B, G, B, G),
+ * R8B8 as (R, B, B, R) (vk/draw.c tex_format). */
+static const struct {
+    uint8_t code[2];        /* swizzled, linear */
+    uint32_t xor[4];
+    uint8_t rgba[4];
+} k_sign[] = {
+    { { HLE_XFMT_A8R8G8B8, HLE_XFMT_LIN_A8R8G8B8 },     /* bytes B G R A */
+      { 0x80000000u, 0x00800000u, 0x00008000u, 0x00000080u }, { 8, 1, 2, 4 } },
+    { { HLE_XFMT_X8R8G8B8, HLE_XFMT_LIN_X8R8G8B8 },
+      { 0, 0x00800000u, 0x00008000u, 0x00000080u }, { 0, 1, 2, 4 } },
+    { { HLE_XFMT_A8B8G8R8, HLE_XFMT_LIN_A8B8G8R8 },     /* bytes R G B A */
+      { 0x80000000u, 0x00000080u, 0x00008000u, 0x00800000u }, { 8, 1, 2, 4 } },
+    { { HLE_XFMT_B8G8R8A8, HLE_XFMT_LIN_B8G8R8A8 },     /* bytes A R G B */
+      { 0x00000080u, 0x00008000u, 0x00800000u, 0x80000000u }, { 8, 1, 2, 4 } },
+    { { HLE_XFMT_R8G8B8A8, HLE_XFMT_LIN_R8G8B8A8 },     /* bytes A B G R */
+      { 0x00000080u, 0x80000000u, 0x00800000u, 0x00008000u }, { 8, 1, 2, 4 } },
+    { { HLE_XFMT_G8B8, HLE_XFMT_LIN_G8B8 },             /* bytes B G */
+      { 0, 0, 0x8000u, 0x0080u }, { 0, 0, 2 | 8, 1 | 4 } },
+    { { HLE_XFMT_R8B8, HLE_XFMT_LIN_R8B8 },             /* bytes B R */
+      { 0, 0x8000u, 0, 0x0080u }, { 0, 1 | 8, 0, 2 | 4 } },
+};
+
+static int sign_row(uint32_t code)
+{
+    for (size_t i = 0; i < sizeof(k_sign) / sizeof(k_sign[0]); i++) {
+        if (k_sign[i].code[0] == code || k_sign[i].code[1] == code) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+uint32_t hle_fmt_sign_xor(uint32_t code, uint32_t sign)
+{
+    const int r = sign_row(code);
+    uint32_t x = 0;
+    for (unsigned i = 0; r >= 0 && i < 4; i++) {
+        x |= (sign >> i & 1) ? k_sign[r].xor[i] : 0;
+    }
+    return x;
+}
+
+uint32_t hle_fmt_sign_rgba(uint32_t code, uint32_t sign)
+{
+    const int r = sign_row(code);
+    uint32_t m = 0;
+    for (unsigned i = 0; r >= 0 && i < 4; i++) {
+        m |= (sign >> i & 1) ? k_sign[r].rgba[i] : 0;
+    }
+    return m;
+}
+
 static int log2_exact(uint32_t v)
 {
     if (!v || (v & (v - 1))) {

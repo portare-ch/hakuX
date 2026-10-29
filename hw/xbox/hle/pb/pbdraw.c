@@ -68,6 +68,7 @@
 #define NV097_SET_TEXTURE_FORMAT          0x1B04u   /* a D3D header's Format */
 #define NV097_SET_TEXTURE_CONTROL0        0x1B0Cu   /* bit 30: enable */
 #define NV097_SET_TEXTURE_CONTROL1        0x1B10u   /* linear pitch 31:16 */
+#define NV097_SET_TEXTURE_FILTER          0x1B14u   /* colour sign 31:28 (A R G B) */
 #define NV097_SET_TEXTURE_IMAGE_RECT      0x1B1Cu   /* linear width 31:16, height 15:0 */
 #define NV097_SET_TEXTURE_PALETTE         0x1B20u   /* offset 31:6 | length 3:2 (256 >> n) */
 
@@ -117,7 +118,8 @@ typedef struct PbObj {
  * defined again when its memory was written (checked once a frame) or its
  * palette changed. */
 typedef struct PbTex {
-    uint32_t key[4];                    /* offset, format, size, palette; id 0: free */
+    uint32_t key[5];                    /* offset, format, size, palette, sign XOR; id 0:
+                                           free */
     uint32_t id;
     uint32_t pa, bytes;                 /* the memory its texels came from */
     uint32_t pal_hash;
@@ -2400,7 +2402,11 @@ static uint32_t texture(unsigned s, bool *unset, bool *lin)
         return best->id;
     }
     uint32_t pal_reg = code == HLE_XFMT_P8 ? R(NV097_SET_TEXTURE_PALETTE + b) : 0;
-    uint32_t key[4] = { off, fmt, size, pal_reg };
+    /* colour sign: the signed 8-bit channels uploaded offset binary, an
+     * object apart from the texture read unsigned */
+    const uint32_t sign = R(NV097_SET_TEXTURE_FILTER + b) >> 28;
+    const uint32_t sxor = hle_fmt_sign_xor(code, sign);
+    uint32_t key[5] = { off, fmt, size, pal_reg, sxor };
     uint32_t h = hash32(key, sizeof(key)) % TEX_SLOTS;
     PbTex *t = &g_pd.tex[h];
     while (t->id && memcmp(t->key, key, sizeof(key))) {
@@ -2465,7 +2471,7 @@ static uint32_t texture(unsigned s, bool *unset, bool *lin)
     if (redefine) {
         const uint32_t h5[5] = { HLE_COMMON_TYPE_TEXTURE | 1, off, 0, fmt, size };
         uint32_t bytes = 0;
-        t->ok = hle_draw_tex_define(t->id, h5, pal, npal, &bytes) != 0;
+        t->ok = hle_draw_tex_define(t->id, h5, pal, npal, sxor ? sign : 0, &bytes) != 0;
         t->pa = pa;
         t->bytes = bytes;
         t->pal_hash = pal_hash;
