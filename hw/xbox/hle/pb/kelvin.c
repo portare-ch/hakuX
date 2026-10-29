@@ -41,7 +41,7 @@ enum {
     TSS_MIPFILTER, TSS_MIPMAPLODBIAS, TSS_MAXMIPLEVEL, TSS_MAXANISOTROPY,
     TSS_COLORKEYOP, TSS_COLORSIGN, TSS_ALPHAKILL,
     TSS_BUMPENVMAT00 = 22,              /* .. 11, then LSCALE, LOFFSET */
-    TSS_BORDERCOLOR = 29,
+    TSS_BORDERCOLOR = 29, TSS_COLORKEYCOLOR = 30,
 };
 
 static struct {
@@ -171,6 +171,7 @@ static void tss(uint32_t *t, unsigned s)
     memcpy(&t[TSS_MIPMAPLODBIAS], &bias, 4);
     t[TSS_MAXMIPLEVEL] = (ctl0 >> 26) & 0xF;            /* min LOD clamp, 4.8 */
     t[TSS_COLORKEYOP] = ctl0 & 3;
+    t[TSS_COLORKEYCOLOR] = R(0x0AE0 + 4 * s);           /* SET_COLOR_KEY_COLOR */
     t[TSS_ALPHAKILL] = (ctl0 >> 2) & 1;
     t[TSS_COLORSIGN] = filt & 0xF0000000u;
     t[TSS_BORDERCOLOR] = R(b + 0x24);

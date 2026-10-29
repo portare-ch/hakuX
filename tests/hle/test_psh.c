@@ -247,6 +247,50 @@ static void test_two_side(void)
     HT_CHECK(strstr(buf, "vec4 v1 = gl_FrontFacing ? vSpecular : vBack1;") != NULL);
 }
 
+/* colour key: a matching texel's alpha zeroed (1), ARGB zeroed (2) or the
+ * fragment killed (3), compared at the format's precision, alpha included
+ * where the format has one (the NV2A tests: an A8R8G8B8 texel 0xFF0000FF
+ * survives the key 0xF00000FF; X8R8G8B8 matches whatever the alpha) */
+static void test_color_key(void)
+{
+    uint32_t rs[HLE_PS_REGS] = { 0 };
+    rs[HLE_PS_RGB_IN] = IN4(R_T0, R_T1, R_ZERO, R_ZERO);
+    rs[HLE_PS_RGB_OUT] = R_R0 << 4;
+    rs[HLE_PS_COUNT] = 1;
+    rs[HLE_PS_TEXMODES] = HLE_PST_PROJECT2D | HLE_PST_PROJECT2D << 5 | HLE_PST_PROJECT2D << 10 |
+                          HLE_PST_PROJECT2D << 15;
+    HlePshKey k;
+    hle_psh_key(rs, &k);
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
+    HT_CHECK(strstr(buf, "ckeq") == NULL);
+    k.ckey = 1 | 2 << 2 | 3 << 4 | 3 << 6;
+    k.ckey_bits = 1 << 2 | 2 << 6;                      /* stage 1 R5G6B5, stage 3 1555 */
+    k.ckey_alpha = 1 | 1 << 3;                          /* stages 0 (A8R8G8B8) and 3 (A1R5G5B5) */
+    k.ckey_col[0] = 0xF00000FFu;
+    k.ckey_col[1] = 0x00000000u;
+    k.ckey_col[2] = 0xCC00FF00u;                        /* stage 2: X8R8G8B8 */
+    k.ckey_col[3] = 0xF0FF00FFu;
+    size_t n = hle_psh_glsl(&k, buf, sizeof(buf), NULL);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("psh_color_key");
+    HT_CHECK(strstr(buf, "bool ckeq(vec4 t, vec4 c, vec4 n)") != NULL);
+    HT_CHECK(strstr(buf, "if (ckeq(t0, vec4(0.0, 0.0, 255.0, 240.0) / 255.0, vec4(255.0))) "
+                         "t0.a = 0.0;") != NULL);
+    HT_CHECK(strstr(buf, "if (ckeq(t1, vec4(0.0, 0.0, 0.0, 0.0) / 255.0, "
+                         "vec4(31.0, 63.0, 31.0, 0.0))) t1 = vec4(0.0);") != NULL);
+    HT_CHECK(strstr(buf, "if (ckeq(t2, vec4(0.0, 255.0, 0.0, 204.0) / 255.0, "
+                         "vec4(255.0, 255.0, 255.0, 0.0))) discard;") != NULL);
+    HT_CHECK(strstr(buf, "if (ckeq(t3, vec4(255.0, 0.0, 255.0, 240.0) / 255.0, "
+                         "vec4(31.0, 31.0, 31.0, 1.0))) discard;") != NULL);
+    /* a stage reading the target it renders (fbfetch) is keyed too */
+    k.fbfetch = 1;
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
+    dump("psh_color_key_fb");
+    const char *fb = strstr(buf, "vec4 t0 = subpassLoad(uFb);");
+    const char *ck = strstr(buf, "if (ckeq(t0, ");
+    HT_CHECK(fb != NULL && ck != NULL && fb < ck);
+}
+
 /* dithering into a 16-bit target: the ordered offset by its channel steps */
 static void test_dither(void)
 {
@@ -313,6 +357,7 @@ int main(void)
     HT_RUN(test_shadow_project);
     HT_RUN(test_bumpenv);
     HT_RUN(test_two_side);
+    HT_RUN(test_color_key);
     HT_RUN(test_dither);
     HT_RUN(test_overflow);
     HT_DONE();
