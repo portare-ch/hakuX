@@ -107,8 +107,9 @@ game; other titles may have bugs or fail to start.
   **L2/R2 are the triggers**. Remap through **Quick Menu → Controls**.
   **Rumble** is off by default: turn it on in **Quick Menu → Core
   Options**.
-- **Picture:** open **Quick Menu → Core Options**. Start with **Render
-  Scale: 1x**; higher values draw a sharper picture and need more GPU power.
+- **Picture:** open **Quick Menu → Core Options**. **Render Scale** is
+  **2x** by default; higher values draw a sharper picture and need more GPU
+  power, and **1x** helps a game that runs slowly.
   Set **Screen Format: Widescreen** for games that support it, and use
   RetroArch's **Core provided** aspect ratio. Close and reopen the game
   after changing render scale, screen format, language or video region.

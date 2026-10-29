@@ -27,11 +27,11 @@ enum { OPT_SCALE, OPT_CROP, OPT_FORMAT, OPT_LANGUAGE, OPT_REGION, OPT_RUMBLE, OP
 static struct retro_core_option_v2_definition g_defs[OPT_COUNT + 1] = {
     [OPT_SCALE] = {
         "hakux_render_scale", "Render Scale", NULL,
-        "The resolution games are drawn at: 1x is the Xbox's own, 640x480 for most. Higher is sharper and "
-        "costs the GPU more." NEXT,
+        "The resolution games are drawn at: 1x is the Xbox's own, 640x480 for most; 2x, the default, "
+        "fills a 1280x960 screen pixel for pixel. Higher is sharper and costs the GPU more." NEXT,
         NULL, NULL,
         {{"1", "1x (Xbox)"}, {"2", "2x"}, {"3", "3x"}, {"4", "4x"}, {NULL, NULL}},
-        "1"},
+        "2"},
     [OPT_CROP] = {
         "hakux_crop_overscan", "Crop Overscan", NULL,
         "Hides the border a TV hid, 1/30 of the picture on each side, so a standard-definition game fills a "

@@ -130,7 +130,7 @@ before the console boots, so a change takes effect when the game starts next:
 
 | Key | Values | Default |
 | --- | --- | --- |
-| `hakux_render_scale` | `1`-`4`: the renderer's resolution, times the game's | `1` |
+| `hakux_render_scale` | `1`-`4`: the renderer's resolution, times the game's | `2` |
 | `hakux_crop_overscan` | `enabled`, `disabled` (the whole frame); changes at once | `enabled` |
 | `hakux_screen_format` | `normal`, `widescreen` (shown 16:9), `letterbox` | `normal` |
 | `hakux_language` | `auto` (RetroArch's), `english`, `japanese`, `german`, `french`, `spanish`, `italian`, `korean`, `chinese`, `portuguese` | `auto` |
