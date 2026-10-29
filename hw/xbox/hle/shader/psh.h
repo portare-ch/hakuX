@@ -101,6 +101,12 @@ typedef struct HlePshKey {
      * conv the kernel (1 quincunx, 2 gaussian 3 x 3), conv_mm where it
      * applies (bit 0 minification, 1 magnification). PROJECT2D only. */
     uint8_t conv, conv_mm;
+    /* Colour sign, 4 bits a stage (bit 0 r .. 3 a) as two's complement:
+     * sgn_ob the channels uploaded offset binary (tex/xdk_res.h), mapped
+     * back exactly; sgn_raw those read as stored (targets, formats not
+     * converted), mapped after filtering, inexact where texels of both
+     * signs blend. */
+    uint16_t sgn_ob, sgn_raw;
     uint8_t dither;                     /* SET_DITHER_ENABLE into a 16-bit target: 1
                                            R5G6B5, 2 1555 (ordered, 4 x 4 by guest
                                            pixel) */

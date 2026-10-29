@@ -22,6 +22,21 @@ typedef struct HleFmtInfo {
 
 const HleFmtInfo *hle_fmt_info(uint32_t code);
 
+/* Texture colour sign (TEXTURE_FILTER 31:28, D3DTSIGN_*: bit 0 A, 1 R, 2 G,
+ * 3 B): the NV2A reads those channels as two's complement. An uploaded
+ * format's 8-bit channels go into the image offset binary (their top bit
+ * flipped), which filters as the signed values do; the pixel shader maps
+ * them back (shader/psh.c). The XOR for a texel, its bytes in memory order
+ * (a 16-bit texel's in the low half); 0 when no channel sign names is an
+ * 8-bit one of the format (X8's unused alpha is none). */
+uint32_t hle_fmt_sign_xor(uint32_t code, uint32_t sign);
+/* The channels of the back end's view of the format (bit 0 r, 1 g, 2 b,
+ * 3 a: vk/draw.c tex_format) that sign's 8-bit channels reach: those
+ * hle_fmt_sign_xor flips, and L8's, AL8's, A8's and A8L8's, read as
+ * stored. 0 for the formats without (DXT, 16-bit channels, P8, YUV): by
+ * the guest's format, not a conversion's. */
+uint32_t hle_fmt_sign_rgba(uint32_t code, uint32_t sign);
+
 enum HleResKind {
     HLE_RK_VB = 1, HLE_RK_IB, HLE_RK_PUSHBUF, HLE_RK_FIXUP, HLE_RK_PALETTE,
     HLE_RK_TEXTURE, HLE_RK_CUBE, HLE_RK_VOLUME, HLE_RK_SURFACE,

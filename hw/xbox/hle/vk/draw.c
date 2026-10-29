@@ -108,6 +108,8 @@ typedef struct HleVkTex {
     uint32_t slot;              /* sampled_images[] index */
     bool linear;                /* Xbox linear format: texel coordinates */
     uint32_t gfmt;              /* the guest's format (HleCmdTex.gfmt) */
+    uint8_t sgn;                /* view channels (bit 0 r .. 3 a) uploaded offset binary:
+                                   colour sign (tex/xdk_res.h hle_fmt_sign_rgba) */
 } HleVkTex;
 
 /* A pipeline table entry's state: made (VK_NULL_HANDLE: it failed, not tried
@@ -1025,6 +1027,7 @@ void hle_draw_cmd_tex(const HleCmdTex *c, VkCommandBuffer cb)
         write_tex_slot(t);
     }
     t->gfmt = c->gfmt;
+    t->sgn = (uint8_t)hle_fmt_sign_rgba(c->xfmt, c->sign);
     VkImageMemoryBarrier2 b = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
         .srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
@@ -2526,6 +2529,24 @@ static uint32_t stage_lod_down(const HleCmdDraw *c, unsigned st, uint32_t rt_id)
     return (uint32_t)lrintf(log2f((float)ts->scale / (float)rt->scale) * 16.0f);
 }
 
+/* Stage st's sampler state (sampler_index), its border colour encoded as
+ * the texture's texels are: an offset-binary channel's byte (colour sign,
+ * HleVkTex.sgn) with its top bit flipped, so that the border filters with
+ * the texels and decodes (psh.c sgnob) to the colour's signed value; *t
+ * holds the copy. */
+static const uint32_t *stage_tss(const HleCmdState *s, const HleCmdDraw *c, unsigned st,
+                                 uint32_t t[HLE_TSS_COUNT])
+{
+    HleVkTex *tx = c->tex[st] ? tex_find(c->tex[st]) : NULL;
+    if (!tx || !tx->sgn) {
+        return s->tss[st];
+    }
+    memcpy(t, s->tss[st], HLE_TSS_COUNT * sizeof(t[0]));
+    t[TSS_BORDERCOLOR] ^= (tx->sgn & 1 ? 0x00800000u : 0) | (tx->sgn & 2 ? 0x00008000u : 0) |
+                          (tx->sgn & 4 ? 0x00000080u : 0) | (tx->sgn & 8 ? 0x80000000u : 0);
+    return t;
+}
+
 /* Surfaces sampled as textures, each told once (the first 64 ids below 8192) */
 static uint8_t g_rt_seen[8192 / 8];
 static unsigned g_rt_told;
@@ -3248,14 +3269,14 @@ static void psframe_log(const HleCmdDraw *c, const HleCmdState *s, const HlePshK
             continue;
         }
         hle_log("hakuX-hle-pipe", "  t%u %s xfmt=0x%x %ux%ux%u%s lv=%u f=%u%s addr=%u,%u,%u "
-                "filt=%u,%u,%u maxmip=%u bias=%08x tci=%x ttf=%x", st, tx ? "tex" : "surf",
+                "filt=%u,%u,%u maxmip=%u bias=%08x tci=%x ttf=%x sign=%x ckey=%u", st, tx ? "tex" : "surf",
                 tx ? tx->xfmt : sf->d.xfmt, tx ? tx->w : sf->d.w, tx ? tx->h : sf->d.h,
                 tx ? tx->d : 1, tx && tx->vol ? " vol" : "",
                 tx ? tx->levels : sf->nlevels, tx ? tx->faces : sf->nfaces,
                 sf && sf->general ? " general" : "", t[TSS_ADDRESSU], t[TSS_ADDRESSV],
                 t[TSS_ADDRESSW], t[TSS_MAGFILTER], t[TSS_MINFILTER], t[TSS_MIPFILTER],
                 t[TSS_MAXMIPLEVEL], t[TSS_MIPMAPLODBIAS], t[TSS_TEXCOORDINDEX],
-                t[TSS_TEXTURETRANSFORMFLAGS]);
+                t[TSS_TEXTURETRANSFORMFLAGS], t[TSS_COLORSIGN] >> 28, t[TSS_COLORKEYOP]);
     }
 }
 
@@ -3593,10 +3614,12 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
         memset(&k.ps, 0, sizeof(k.ps));
         pc.flags = 0;
         for (unsigned st = 0; st < HLE_FF_STAGES; st++) {
+            uint32_t tt[HLE_TSS_COUNT];
+            const uint32_t *ts = stage_tss(s, c, st, tt);   /* sampk's border too */
             pc.tex[st] = stage_slot(c, st, rt_id, &pc.flags) |
-                         sampler_index(s->tss[st], stage_lod_down(c, st, rt_id)) << 16;
+                         sampler_index(ts, stage_lod_down(c, st, rt_id)) << 16;
             if (conv_kernel(s, c, st)) {
-                pc.tex[st] |= sampler_lod0(s->tss[st]) << 24;   /* sampk's taps */
+                pc.tex[st] |= sampler_lod0(ts) << 24;   /* sampk's taps */
             }
             k.vs.texcoord[st] = s->tss[st][TSS_TEXCOORDINDEX] & 7;
         }
@@ -3665,6 +3688,32 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
                 hle_log("hakuX-hle-pipe", "convolution: stage %u tex %u kernel %u%s%s%s", st,
                         c->tex[st], kern, cv & 8 ? " min" : "", cv & 16 ? " mag" : "",
                         kern == 1 || kern == 2 ? "" : " (unknown: bilinear)");
+            }
+        }
+        for (unsigned st = 0; st < 4; st++) {
+            /* colour sign (D3DTSIGN_*: A R G B): an uploaded texture's signed
+             * 8-bit channels came offset binary (pb/pbres.c) and map back
+             * exactly; a target's, and L8's, AL8's, A8's and A8L8's, are read
+             * as stored, two's complement after filtering. By the guest's
+             * format: DXT, 16-bit and P8 stay unsigned where the host
+             * expanded them to 8888 too. */
+            const uint32_t sign = s->tss[st][TSS_COLORSIGN] >> 28;
+            if (!sign || !c->tex[st]) {
+                continue;
+            }
+            HleVkTex *tx = tex_find(c->tex[st]);
+            HleVkSurf *sf = tx ? NULL : hle_surf_get(c->tex[st]);
+            const uint32_t gx = tx ? tx->gfmt : sf ? sf->d.xfmt : 0;
+            const uint32_t want = tx || sf ? hle_fmt_sign_rgba(gx, sign) : 0;     /* rgba */
+            const uint32_t ob = tx ? tx->sgn : 0, raw = want & ~ob;
+            k.pk.sgn_ob |= (uint16_t)(ob << (4 * st));
+            k.pk.sgn_raw |= (uint16_t)(raw << (4 * st));
+            static unsigned s_logged;
+            if (s_logged < 8) {
+                s_logged++;
+                hle_log("hakuX-hle-pipe", "colour sign: stage %u %s %u fmt 0x%x sign %x: "
+                        "offset binary %x, as stored %x%s", st, tx ? "tex" : "surf", c->tex[st],
+                        gx, sign, ob, raw, ob | raw ? "" : " (format stays unsigned)");
             }
         }
         for (unsigned st = 0; st < 4; st++) {
