@@ -64,7 +64,7 @@ enum {
     TSS_BUMPENVMAT00 = 22,      /* 00, 01, 10, 11: SetTextureState_BumpEnv pushes types
                                    22..25 to BUMP_ENV_MAT 0..3 (Otogi 0xf5c50) */
     TSS_BUMPENVLSCALE = 26, TSS_BUMPENVLOFFSET,
-    TSS_TEXCOORDINDEX = 28, TSS_BORDERCOLOR = 29,
+    TSS_TEXCOORDINDEX = 28, TSS_BORDERCOLOR = 29, TSS_COLORKEYCOLOR = 30,
 };
 
 /* Two floats (bits) as IEEE halves, a in the low 16 bits (GLSL
@@ -106,6 +106,7 @@ typedef struct HleVkTex {
     VkImageView cube_view;      /* cubes: the six faces as a cube (binding 2) */
     uint32_t slot;              /* sampled_images[] index */
     bool linear;                /* Xbox linear format: texel coordinates */
+    uint32_t gfmt;              /* the guest's format (HleCmdTex.gfmt) */
 } HleVkTex;
 
 /* A pipeline table entry's state: made (VK_NULL_HANDLE: it failed, not tried
@@ -1019,6 +1020,7 @@ void hle_draw_cmd_tex(const HleCmdTex *c, VkCommandBuffer cb)
         t->linear = (hle_fmt_info(c->xfmt)->flags & HLE_FI_LIN) != 0;
         write_tex_slot(t);
     }
+    t->gfmt = c->gfmt;
     VkImageMemoryBarrier2 b = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
         .srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
@@ -1172,6 +1174,44 @@ static unsigned signed_blend(const HleCmdState *s)
         return 0;
     }
     return op == 0xF006 ? 1 : 2;
+}
+
+/* Colour key: a format whose alpha the key's is compared with; an X format,
+ * or one without alpha, matches whatever the key's alpha (the NV2A tests'
+ * XAlphaFormat; an A8R8G8B8 texel of another alpha than the key's survives) */
+static bool ckey_has_alpha(uint32_t xfmt)
+{
+    switch (xfmt) {
+    case HLE_XFMT_X8R8G8B8: case HLE_XFMT_LIN_X8R8G8B8:
+    case HLE_XFMT_X1R5G5B5: case HLE_XFMT_LIN_X1R5G5B5:
+    case HLE_XFMT_R5G6B5: case HLE_XFMT_LIN_R5G6B5:
+    case HLE_XFMT_R6G5B5: case HLE_XFMT_LIN_R6G5B5:
+    case HLE_XFMT_L8: case HLE_XFMT_LIN_L8:
+    case HLE_XFMT_L16: case HLE_XFMT_LIN_L16:
+    case HLE_XFMT_G8B8: case HLE_XFMT_LIN_G8B8:
+    case HLE_XFMT_R8B8: case HLE_XFMT_LIN_R8B8:
+    case HLE_XFMT_YUY2: case HLE_XFMT_UYVY:     /* 0 (no texture) is L8's */
+        return false;
+    default:
+        return true;
+    }
+}
+
+/* Colour key: the precision a guest format's colour channels compare at
+ * (psh.h HlePshKey.ckey_bits: 0 8 bits, 1 R5G6B5, 2 1555, 3 4444) */
+static uint32_t ckey_bits(uint32_t xfmt)
+{
+    switch (xfmt) {
+    case HLE_XFMT_R5G6B5: case HLE_XFMT_LIN_R5G6B5:
+        return 1;
+    case HLE_XFMT_A1R5G5B5: case HLE_XFMT_LIN_A1R5G5B5:
+    case HLE_XFMT_X1R5G5B5: case HLE_XFMT_LIN_X1R5G5B5:
+        return 2;
+    case HLE_XFMT_A4R4G4B4: case HLE_XFMT_LIN_A4R4G4B4:
+        return 3;
+    default:
+        return 0;
+    }
 }
 
 static bool is_colour_rt(uint32_t rt_id)
@@ -3487,6 +3527,30 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
         k.pk.two_side = prog && s->rs[RS_TWOSIDEDLIGHTING] != 0;
         for (unsigned st = 0; st < 4; st++) {
             k.pk.alpha_kill |= (c->tex[st] && s->tss[st][TSS_ALPHAKILL] != 0) << st;
+        }
+        for (unsigned st = 0; st < 4; st++) {
+            /* colour key (TEXTURE_CONTROL0 1:0): the op, the stage's key colour
+             * and the precision the guest format's channels compare at, the
+             * same where the host expanded it (4444 without the 4444 formats:
+             * its 8-bit texels are exact expansions, compared at 4 bits) */
+            const uint32_t op = s->tss[st][TSS_COLORKEYOP] & 3;
+            if (!op || !c->tex[st]) {
+                continue;
+            }
+            HleVkTex *tx = tex_find(c->tex[st]);
+            HleVkSurf *sf = tx ? NULL : hle_surf_get(c->tex[st]);
+            const uint32_t gx = tx ? tx->gfmt : sf ? sf->d.xfmt : 0;
+            const uint32_t bits = ckey_bits(gx);
+            k.pk.ckey |= (uint8_t)(op << (2 * st));
+            k.pk.ckey_bits |= (uint8_t)(bits << (2 * st));
+            k.pk.ckey_alpha |= (uint8_t)(ckey_has_alpha(gx) << st);
+            k.pk.ckey_col[st] = s->tss[st][TSS_COLORKEYCOLOR];
+            static unsigned s_logged;
+            if (s_logged < 8) {
+                s_logged++;
+                hle_log("hakuX-hle-pipe", "colour key: stage %u %s %u fmt 0x%x op %u key %08x",
+                        st, tx ? "tex" : "surf", c->tex[st], gx, op, k.pk.ckey_col[st]);
+            }
         }
         for (unsigned st = 0; st < 4; st++) {
             unsigned sf = shadow_fmt(c->tex[st]);

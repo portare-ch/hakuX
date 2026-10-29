@@ -260,7 +260,9 @@ typedef struct HleCmdTex {
     uint32_t xfmt;              /* X_D3DFORMAT code */
     uint32_t w, h, d, levels, faces;
     uint32_t arena_off, arena_len;
-    uint32_t pad;
+    uint32_t gfmt;              /* the guest's format code the texels came from (xfmt
+                                   is a conversion's for P8, YUV, expanded DXT and
+                                   4444): the colour key compares at its precision */
 } HleCmdTex;
 
 #define HLE_DRAW_MAX_BIND 16
