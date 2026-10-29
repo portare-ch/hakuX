@@ -123,8 +123,8 @@ static void op_expr(Buf *b, const Nv2aVshOperation *o)
 #undef I
 }
 
-/* fogw: set when the program writes oFog */
-static void out_write(Buf *b, const Nv2aVshOutput *o, const char *val, bool *fogw)
+/* wr: a bit per output register the program writes */
+static void out_write(Buf *b, const Nv2aVshOutput *o, const char *val, unsigned *wr)
 {
     char m[5];
     mask_str(o->writemask, m);
@@ -142,9 +142,10 @@ static void out_write(Buf *b, const Nv2aVshOutput *o, const char *val, bool *fog
         if (m[0] && (o->index & 15) == 5) {
             /* oFog: the fog coordinate is x, which takes the most
              * significant masked component (a ".w" write lands in x) */
-            *fogw = true;
+            *wr |= 1u << 5;
             put(b, "    oFog.x = %s.%c;\n", val, m[strlen(m) - 1]);
         } else if (m[0]) {
+            *wr |= 1u << (o->index & 15);
             put(b, "    %s.%s = %s.%s;\n", k_out[o->index & 15], m, val, m);
         }
         break;
@@ -256,14 +257,15 @@ static void head(Buf *bp, const HleVshKey *k)
     *bp = b;
 }
 
-static void tail(Buf *b, const HleVshKey *k, bool fogw);
+static void tail(Buf *b, const HleVshKey *k, unsigned wr);
 
 size_t hle_vsh_glsl(const uint32_t *tokens, unsigned nslots, const HleVshKey *k,
                     char *buf, size_t cap)
 {
     Buf b = { buf, cap, 0, false };
     head(&b, k);
-    bool final = false, fogw = false;
+    bool final = false;
+    unsigned wr = 0;
     for (unsigned s = 0; s < nslots && s < HLE_VSH_MAX_SLOTS && !final; s++) {
         Nv2aVshStep st;
         memset(&st, 0, sizeof(st));
@@ -287,17 +289,17 @@ size_t hle_vsh_glsl(const uint32_t *tokens, unsigned nslots, const HleVshKey *k,
             put(&b, ";\n");
         }
         for (unsigned o = 0; mac && o < 2; o++) {
-            out_write(&b, &st.mac.outputs[o], "m", &fogw);
+            out_write(&b, &st.mac.outputs[o], "m", &wr);
         }
         for (unsigned o = 0; ilu && o < 2; o++) {
-            out_write(&b, &st.ilu.outputs[o], "i", &fogw);
+            out_write(&b, &st.ilu.outputs[o], "i", &wr);
         }
         put(&b, "  }\n");
     }
     if (!final) {
         return 0;
     }
-    tail(&b, k, fogw);
+    tail(&b, k, wr);
     return b.overflow ? 0 : b.len;
 }
 
@@ -306,24 +308,30 @@ size_t hle_vsh_glsl_wrap(const HleVshKey *k, const char *body, bool fogw, char *
     Buf b = { buf, cap, 0, false };
     head(&b, k);
     put(&b, "%s", body);
-    tail(&b, k, fogw);
+    tail(&b, k, (fogw ? 1u << 5 : 0) | 3u << 7);       /* bodies set oB0 / oB1 */
     return b.overflow ? 0 : b.len;
 }
 
 /* main's end: the outputs from the registers, oPos (screen space) to clip
- * space. fogw: oFog was written. */
-static void tail(Buf *bp, const HleVshKey *k, bool fogw)
+ * space. wr: the output registers written (a bit each). */
+static void tail(Buf *bp, const HleVshKey *k, unsigned wr)
 {
     Buf b = *bp;
+    const bool fogw = (wr >> 5) & 1;
     /* specular off (NV2A SPECULAR_ENABLE clear): the pixel stage sees
      * (0, 0, 0, 1) whatever the program wrote */
     const char *d1 = k->spec_off ? "vec4(0.0, 0.0, 0.0, 1.0)" : "clamp(oD1, 0.0, 1.0)";
-    const char *b1 = k->spec_off ? "vec4(0.0, 0.0, 0.0, 1.0)" : "clamp(oB1, 0.0, 1.0)";
+    /* the back colours (two-sided lighting's back faces): a program that
+     * writes none leaves them undefined, so they are the front ones, as with
+     * two-sided lighting off */
+    const char *b1 = k->spec_off ? "vec4(0.0, 0.0, 0.0, 1.0)" :
+                     (wr >> 8) & 1 ? "clamp(oB1, 0.0, 1.0)" : "clamp(oD1, 0.0, 1.0)";
     put(&b, "  vDiffuse = clamp(oD0, 0.0, 1.0);\n"
             "  vSpecular = %s;\n"
-            "  vBack0 = clamp(oB0, 0.0, 1.0);\n"
+            "  vBack0 = clamp(%s, 0.0, 1.0);\n"
             "  vBack1 = %s;\n"
-            "  vTex0 = oT0; vTex1 = oT1; vTex2 = oT2; vTex3 = oT3;\n", d1, b1);
+            "  vTex0 = oT0; vTex1 = oT1; vTex2 = oT2; vTex3 = oT3;\n", d1,
+        (wr >> 7) & 1 ? "oB0" : "oD0", b1);
     /* A program that leaves oFog alone is not fogged: Halo draws its Bink
      * movies with fog enabled through a program writing no oFog, and they
      * show on the console. Unfogged is factor 1 under FOGTABLEMODE NONE

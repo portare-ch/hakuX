@@ -120,6 +120,17 @@ static void lighting(Buf *b, const HleFfhwKey *k)
         k->src[1] == 0 ? amb : src_rgb(k->src[1]), HLE_FFHW_C_EMISSION,
         k->src[0] == 0 ? amb : src_rgb(k->src[0]), a);
     put(b, "    oD1 = vec4(0.0, 0.0, 0.0, v4.a);\n");
+    if (k->two_side) {
+        /* the back the same from the back registers, with the front's colour
+         * sources (SET_COLOR_MATERIAL's back fields aren't decoded) */
+        char ba[32], bamb[16];
+        snprintf(ba, sizeof(ba), alpha, HLE_FFHW_C_BACK_AMBIENT);
+        snprintf(bamb, sizeof(bamb), "c[%u].rgb", HLE_FFHW_C_BACK_AMBIENT);
+        put(b, "    oB0 = vec4(%s * c[%u].rgb + %s, %s);\n",
+            k->src[1] == 0 ? bamb : src_rgb(k->src[1]), HLE_FFHW_C_BACK_EMISSION,
+            k->src[0] == 0 ? bamb : src_rgb(k->src[0]), ba);
+        put(b, "    oB1 = vec4(0.0, 0.0, 0.0, v4.a);\n");
+    }
     /* the direction to the eye: the eye position for a local viewer, else
      * along -z (D3D's eye space looks down +z) */
     if (k->local_eye) {
@@ -171,10 +182,30 @@ static void lighting(Buf *b, const HleFfhwKey *k)
                "        oD0.rgb += c[%u].rgb * att;\n"
                "        oD0.rgb += %s * c[%u].rgb * (att * nl);\n"
                "        oD1.rgb += %s * c[%u].rgb * (att * pf);\n"
-               "      }\n"
-               "    }\n",
+               "      }\n",
             HLE_FFHW_C_PARAMS, L + HLE_FFHW_L_AMBIENT, src_rgb(k->src[2]), L + HLE_FFHW_L_DIFFUSE,
             src_rgb(k->src[3]), L + HLE_FFHW_L_SPECULAR);
+        if (k->two_side) {
+            /* the back faces: the same light along -N, the back light colours
+             * and the back specular power */
+            const unsigned BL = HLE_FFHW_C_BACK_LIGHTS + 3 * i;
+            char h[48];
+            if (t != 1 || k->local_eye) {
+                snprintf(h, sizeof(h), "normalize(%s + eyeV)", t == 1 ? "Ld" : "VP");
+            } else {
+                snprintf(h, sizeof(h), "c[%u].xyz", L + HLE_FFHW_L_HALF);
+            }
+            put(b, "      if (lit) {\n"
+                   "        float bl = max(dot(-tN, %s), 0.0), bh = max(dot(-tN, %s), 0.0);\n"
+                   "        float bf = bl == 0.0 || bh == 0.0 ? 0.0 : pow(bh, c[%u].y);\n"
+                   "        oB0.rgb += c[%u].rgb * att;\n"
+                   "        oB0.rgb += %s * c[%u].rgb * (att * bl);\n"
+                   "        oB1.rgb += %s * c[%u].rgb * (att * bf);\n"
+                   "      }\n",
+                t == 1 ? "Ld" : "VP", h, HLE_FFHW_C_PARAMS, BL, src_rgb(k->src[2]), BL + 1,
+                src_rgb(k->src[3]), BL + 2);
+        }
+        put(b, "    }\n");
     }
 }
 
@@ -199,7 +230,15 @@ size_t hle_ffhw_glsl(const uint32_t *tokens, unsigned nslots, const HleVshKey *v
     }
     texgen(&b, &k);
     lighting(&b, &k);
-    put(&b, "    oB0 = v7;\n    oB1 = v8;\n");
+    /* the back colours without back lighting: the back colour registers
+     * where arrays feed them, else the front ones (D3D's vertices have no
+     * back colours and the registers' current values aren't set: an unlit
+     * draw under SET_TWO_SIDE_LIGHT_EN would show black back faces) */
+    const bool lit2 = k.lighting && k.two_side;
+    if (!lit2) {
+        put(&b, "    oB0 = %s;\n    oB1 = %s;\n", (vk->in_mask >> 7) & 1 ? "v7" : "v3",
+            (vk->in_mask >> 8) & 1 ? "v8" : "v4");
+    }
     if (!k.specular) {
         put(&b, "    oD1 = vec4(0.0, 0.0, 0.0, 1.0);\n    oB1 = vec4(0.0, 0.0, 0.0, 1.0);\n");
     } else {
@@ -208,6 +247,10 @@ size_t hle_ffhw_glsl(const uint32_t *tokens, unsigned nslots, const HleVshKey *v
                 put(&b, "    oD0.rgb += oD1.rgb;\n");
             }
             put(&b, "    oD1 = v4;\n");
+            if (lit2) {
+                put(&b, "    oB0.rgb += oB1.rgb;\n    oB1 = %s;\n",
+                    (vk->in_mask >> 8) & 1 ? "v8" : "v4");
+            }
         }
         if (!k.alpha_mat_spec) {
             put(&b, "    oD1.a = 1.0;\n    oB1.a = 1.0;\n");

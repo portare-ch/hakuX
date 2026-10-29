@@ -81,6 +81,33 @@ static void test_lit_skinned(void)
     HT_CHECK(strstr(buf, "vFog = oFog.x;") != NULL);
 }
 
+/* two-sided lighting: the back colours lit along -N from the back
+ * registers; without lighting the front colours where no array feeds the
+ * back ones */
+static void test_two_side(void)
+{
+    HleFfhwKey k = { .magic = HLE_FFHW_MAGIC, .lighting = 1, .two_side = 1, .specular = 1,
+                     .light = { 1, 2 } };
+    size_t n = gen(&k, 0x1E1F);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("ffhw_two_side");
+    HT_CHECK(strstr(buf, "oB0 = vec4(c[156].rgb * c[157].rgb + c[156].rgb, c[156].w);") != NULL);
+    HT_CHECK(strstr(buf, "float bl = max(dot(-tN, Ld), 0.0), "
+                         "bh = max(dot(-tN, c[80].xyz), 0.0);") != NULL);
+    HT_CHECK(strstr(buf, "float bl = max(dot(-tN, VP), 0.0), "
+                         "bh = max(dot(-tN, normalize(VP + eyeV)), 0.0);") != NULL);
+    HT_CHECK(strstr(buf, "pow(bh, c[73].y)") != NULL);           /* the back power */
+    HT_CHECK(strstr(buf, "oB0.rgb += vec3(1.0) * c[162].rgb * (att * bl);") != NULL);
+    HT_CHECK(strstr(buf, "oB0.rgb += oB1.rgb;") != NULL);        /* not separate */
+    HT_CHECK(strstr(buf, "oB0 = v7;") == NULL);
+    k.lighting = 0;
+    k.two_side = 0;
+    HT_CHECK(gen(&k, 0x1E1F) > 0);
+    HT_CHECK(strstr(buf, "oB0 = v3;\n    oB1 = v4;") != NULL);
+    HT_CHECK(gen(&k, 0x1E1F | 3u << 7) > 0);
+    HT_CHECK(strstr(buf, "oB0 = v7;\n    oB1 = v8;") != NULL);
+}
+
 static void test_not_a_key(void)
 {
     uint32_t tok[12] = { 0 };
@@ -106,6 +133,7 @@ int main(void)
 {
     HT_RUN(test_unlit);
     HT_RUN(test_lit_skinned);
+    HT_RUN(test_two_side);
     HT_RUN(test_not_a_key);
     HT_RUN(test_specular_power);
     HT_DONE();

@@ -44,7 +44,9 @@ typedef struct HleFfhwKey {
     uint8_t texgen[4][4];               /* stage, S T R Q: HLE_FFHW_TG_* */
     uint8_t texmat;                     /* SET_TEXTURE_MATRIX_ENABLE, a bit per stage */
     uint8_t points;                     /* SET_POINT_PARAMS_ENABLE */
-    uint8_t pad[6];
+    uint8_t two_side;                   /* SET_TWO_SIDE_LIGHT_EN with lighting: the back
+                                           colours lit too (back material, -N) */
+    uint8_t pad[5];
 } HleFfhwKey;                           /* 48 bytes: three program slots */
 
 #define HLE_FFHW_SLOTS (sizeof(HleFfhwKey) / 16)
@@ -65,7 +67,11 @@ enum {
     HLE_FFHW_C_PARAMS = 73,             /* specular power (front, back), point size */
     HLE_FFHW_C_POINT = 74,              /* SET_POINT_PARAMS (8) */
     HLE_FFHW_C_LIGHTS = 76,             /* per light HLE_FFHW_LIGHT_VEC4: */
-    HLE_FFHW_COUNT = 156,
+    HLE_FFHW_C_BACK_AMBIENT = 156,      /* SET_BACK_SCENE_AMBIENT_COLOR, SET_BACK_MATERIAL_ALPHA */
+    HLE_FFHW_C_BACK_EMISSION = 157,     /* SET_BACK_MATERIAL_EMISSION */
+    HLE_FFHW_C_BACK_LIGHTS = 158,       /* per light three: SET_BACK_LIGHT_AMBIENT_COLOR,
+                                           _DIFFUSE_COLOR, _SPECULAR_COLOR */
+    HLE_FFHW_COUNT = 182,
 };
 enum {
     HLE_FFHW_L_AMBIENT, HLE_FFHW_L_DIFFUSE, HLE_FFHW_L_SPECULAR,
