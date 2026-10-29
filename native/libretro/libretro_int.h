@@ -44,8 +44,11 @@ void nc_lr_input_set_device(unsigned port, unsigned device);
  * a TV hid, on each side of a w x h frame; a frame of w x h shown as ow x oh
  * (RetroArch told when that changes); the console set to widescreen, which
  * shows a standard-definition frame 16:9 (before the first frame); the
- * overscan cropped (the default) or shown, from the next frame on. */
-void nc_lr_video_run(retro_video_refresh_t video, uint64_t now_ns);
+ * overscan cropped (the default) or shown, from the next frame on. The
+ * front frame looked at, now (vulkan.c, and the read-back here): the
+ * NV2A's vblank keeps clear of the moment. */
+void nc_lr_video_run(retro_video_refresh_t video);
+void nc_lr_video_pickup(void);
 void nc_lr_video_geometry(struct retro_game_geometry *g);
 void nc_lr_overscan(uint32_t w, uint32_t h, uint32_t *cx, uint32_t *cy);
 void nc_lr_video_size(uint32_t w, uint32_t h, uint32_t ow, uint32_t oh);

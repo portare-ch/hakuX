@@ -23,6 +23,7 @@
 #include <glib.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define MAX_W 3840
 #define MAX_H 2160
@@ -94,11 +95,25 @@ void nc_lr_video_size(uint32_t w, uint32_t h, uint32_t ow, uint32_t oh)
            geo.aspect_ratio);
 }
 
+/* The front frame is looked at now: the NV2A's vblank keeps half a period
+ * from here (nc_dev_nv2a_display_pickup). Not retro_run's start, the vsync:
+ * what comes between them - the audio batch, which RetroArch may block in
+ * with audio sync, and wait_sync_index - moves the look by up to a period,
+ * and a vblank beside it then showed a frame twice and skipped the next
+ * (47.5 new frames a second of the guest's 59.9 under ROCKNIX's RetroArch). */
+void nc_lr_video_pickup(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    nc_dev_nv2a_display_pickup((uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec);
+}
+
 /* Without Vulkan: the front frame, if it is newer than the last one shown,
  * read back into g_v.buf (without its overscan). */
 static bool take_new(void)
 {
     uint32_t gen, swap;
+    nc_lr_video_pickup();
     if (!hle_disp_front(&gen, &swap) || (g_v.buf && gen == g_v.gen && swap == g_v.swap)) {
         return false;
     }
@@ -135,10 +150,9 @@ static bool take_new(void)
     return true;
 }
 
-void nc_lr_video_run(retro_video_refresh_t video, uint64_t now_ns)
+void nc_lr_video_run(retro_video_refresh_t video)
 {
     static uint32_t black[640 * 480];
-    nc_dev_nv2a_display_pickup(now_ns);     /* the vblank keeps clear of this look */
     if (nc_lr_vk_run(video)) {
         return;
     }
