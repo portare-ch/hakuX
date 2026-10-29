@@ -66,7 +66,9 @@ static void test_lit_skinned(void)
     HT_CHECK(strstr(buf, "tN = normalize(tN);") != NULL);
     HT_CHECK(strstr(buf, "vec4 sp = XF(tPos, 0);") != NULL);   /* skinned: eye space */
     /* ambient from the diffuse register, scaled by the emission register */
-    HT_CHECK(strstr(buf, "oD0 = vec4(v3.rgb * c[72].rgb + c[71].rgb, v3.a);") != NULL);
+    /* emission from the material, ambient from the diffuse colour: the scene
+     * ambient register plus the vertex colour scaled by the emission one */
+    HT_CHECK(strstr(buf, "oD0 = vec4(c[71].rgb + v3.rgb * c[72].rgb, v3.a);") != NULL);
     HT_CHECK(strstr(buf, "/* light 0 */") && strstr(buf, "/* light 1 */") &&
              strstr(buf, "/* light 2 */") && !strstr(buf, "/* light 3 */"));
     HT_CHECK(strstr(buf, "nh = max(dot(tN, c[80].xyz), 0.0);") != NULL);  /* infinite: half */
@@ -93,9 +95,11 @@ static void test_two_side(void)
     size_t n = gen(&k, 0x1E1F | 3u << 7);               /* back colour arrays too */
     HT_CHECK(n > 0 && n == strlen(buf));
     dump("ffhw_two_side");
-    /* the front's diffuse from the vertex, the back's from the material */
-    HT_CHECK(strstr(buf, "oD0 = vec4(c[71].rgb * c[72].rgb + c[71].rgb, v3.a);") != NULL);
-    HT_CHECK(strstr(buf, "oB0 = vec4(c[156].rgb * c[157].rgb + c[156].rgb, c[156].w);") != NULL);
+    /* the front's diffuse from the vertex, the back's from the material;
+     * emission and ambient from the material: the scene ambient as it is,
+     * not scaled by the emission register again */
+    HT_CHECK(strstr(buf, "oD0 = vec4(c[71].rgb, v3.a);") != NULL);
+    HT_CHECK(strstr(buf, "oB0 = vec4(c[156].rgb, c[156].w);") != NULL);
     HT_CHECK(strstr(buf, "oD0.rgb += v3.rgb * c[77].rgb * (att * nl);") != NULL);
     HT_CHECK(strstr(buf, "oB0.rgb += vec3(1.0) * c[162].rgb * (att * bl);") != NULL);
     HT_CHECK(strstr(buf, "oB1.rgb += v4.rgb * c[163].rgb * (att * bf);") != NULL);
@@ -107,6 +111,14 @@ static void test_two_side(void)
     /* no SEPARATE_SPECULAR: the front vertex specular, back arrays or not */
     HT_CHECK(strstr(buf, "oB0.rgb += oB1.rgb;\n    oB1 = v4;") != NULL);
     HT_CHECK(strstr(buf, "oB1 = v8") == NULL && strstr(buf, "oB0 = v7") == NULL);
+    /* the other compositions: ambient from the material, emission from a
+     * vertex colour; both from vertex colours */
+    k.bsrc[0] = 2;
+    HT_CHECK(gen(&k, 0x1E1F) > 0);
+    HT_CHECK(strstr(buf, "oB0 = vec4(c[156].rgb + v4.rgb * c[157].rgb, c[156].w);") != NULL);
+    k.bsrc[1] = 1;
+    HT_CHECK(gen(&k, 0x1E1F) > 0);
+    HT_CHECK(strstr(buf, "oB0 = vec4(v4.rgb + v3.rgb * c[157].rgb, c[156].w);") != NULL);
     /* unlit: black, alpha 1, whatever the back colour registers hold */
     k.lighting = 0;
     HT_CHECK(gen(&k, 0x1E1F | 3u << 7) > 0);
