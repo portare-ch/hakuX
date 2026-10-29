@@ -224,6 +224,28 @@ static void test_bumpenv(void)
     HT_CHECK(strstr(buf, "t2.rgb *= clamp(l.x * t1.r + l.y, 0.0, 1.0);") != NULL);
 }
 
+/* dithering into a 16-bit target: the ordered offset by its channel steps */
+static void test_dither(void)
+{
+    uint32_t rs[HLE_PS_REGS] = { 0 };
+    rs[HLE_PS_RGB_IN] = IN4(R_V0, R_ZERO | INVERT, R_ZERO, R_ZERO);
+    rs[HLE_PS_RGB_OUT] = R_R0 << 4;
+    rs[HLE_PS_COUNT] = 1;
+    HlePshKey k;
+    hle_psh_key(rs, &k);
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
+    HT_CHECK(strstr(buf, "bm[16]") == NULL);
+    k.dither = 1;
+    size_t n = hle_psh_glsl(&k, buf, sizeof(buf), NULL);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("psh_dither");
+    HT_CHECK(strstr(buf, "oColor.rgb = clamp(oColor.rgb + dt / vec3(31.0, 63.0, 31.0), 0.0, 1.0);")
+             != NULL);
+    k.dither = 2;
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
+    HT_CHECK(strstr(buf, "dt / vec3(31.0)") != NULL);
+}
+
 static void test_overflow(void)
 {
     uint32_t rs[HLE_PS_REGS] = { 0 };
@@ -241,6 +263,7 @@ int main(void)
     HT_RUN(test_reflect);
     HT_RUN(test_shadow_project);
     HT_RUN(test_bumpenv);
+    HT_RUN(test_dither);
     HT_RUN(test_overflow);
     HT_DONE();
 }

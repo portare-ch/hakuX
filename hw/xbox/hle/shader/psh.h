@@ -86,6 +86,8 @@ typedef struct HlePshKey {
                                            v1 (a shader without one) */
     uint8_t sblend;                     /* the NV2A's signed blend equations (ff.h
                                            HleFfPsKey.sblend) */
+    uint8_t dither;                     /* SET_DITHER_ENABLE into a 16-bit target: 1
+                                           R5G6B5, 2 1555 (ordered, 4 x 4) */
 } HlePshKey;
 
 /* Key from the render-state array (rs[0..56] = the pixel-shader block). */

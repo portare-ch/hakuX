@@ -553,6 +553,17 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
         "    ivec4 r = clamp(dv %s sv, ivec4(-128), ivec4(127));\n"
         "    oColor = vec4(r & 255) / 255.0; }\n", "oColor", k->sblend == 1 ? "+" : "-");
     }
+    if (k->dither) {
+        /* ordered dithering (a 4 x 4 Bayer matrix by host pixel) into the
+         * target's 5 / 6 bits: a level's step spread over its neighbours
+         * where the NV2A dithers, before the blend here (after it there) */
+        put(&b, "  { const float bm[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0,\n"
+                "      3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);\n"
+                "    ivec2 p = ivec2(gl_FragCoord.xy) & 3;\n"
+                "    float dt = (bm[p.y * 4 + p.x] + 0.5) / 16.0 - 0.5;\n"
+                "    oColor.rgb = clamp(oColor.rgb + dt / %s, 0.0, 1.0); }\n",
+            k->dither == 1 ? "vec3(31.0, 63.0, 31.0)" : "vec3(31.0)");
+    }
     put(&b, "%s}\n", k->wbuf ? HLE_WBUF_STORE_GLSL : "");
     if (unsupported) {
         *unsupported = unsup;

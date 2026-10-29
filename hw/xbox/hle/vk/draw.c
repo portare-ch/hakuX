@@ -39,7 +39,7 @@
 enum {
     RS_ZFUNC = 57, RS_ALPHAFUNC = 58, RS_ALPHABLENDENABLE = 59, RS_ALPHATESTENABLE = 60,
     RS_ALPHAREF = 61, RS_SRCBLEND = 62, RS_DESTBLEND = 63, RS_ZWRITEENABLE = 64,
-    RS_SHADEMODE = 66, RS_COLORWRITEENABLE = 67, RS_STENCILZFAIL = 68,
+    RS_DITHERENABLE = 65, RS_SHADEMODE = 66, RS_COLORWRITEENABLE = 67, RS_STENCILZFAIL = 68,
     RS_STENCILPASS = 69, RS_STENCILFUNC = 70, RS_STENCILREF = 71, RS_STENCILMASK = 72,
     RS_STENCILWRITEMASK = 73, RS_BLENDOP = 74, RS_BLENDCOLOR = 75,
     RS_FOGENABLE = 92, RS_FOGTABLEMODE = 93, RS_FOGSTART = 94, RS_FOGEND = 95,
@@ -3467,6 +3467,12 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
         k.pk.specular = s->rs[RS_SPECULARENABLE] != 0;
         k.pk.point_sprite = c->prim == 0 && s->rs[RS_POINTSPRITEENABLE] != 0;
         k.pk.out_bgra = rt && hle_surf_out_bgra(rt->fmt);
+        /* SET_DITHER_ENABLE into a 16-bit target: the NV2A dithers what it
+         * writes there (8-bit channels lose nothing to it) */
+        if (s->rs[RS_DITHERENABLE] && rt) {
+            k.pk.dither = rt->fmt == VK_FORMAT_R5G6B5_UNORM_PACK16 ? 1 :
+                          rt->fmt == VK_FORMAT_A1R5G5B5_UNORM_PACK16 ? 2 : 0;
+        }
         for (unsigned st = 0; st < 4; st++) {
             k.pk.alpha_kill |= (c->tex[st] && s->tss[st][TSS_ALPHAKILL] != 0) << st;
         }
