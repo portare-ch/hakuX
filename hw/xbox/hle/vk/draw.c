@@ -47,7 +47,7 @@ enum {
     RS_LOCALVIEWER = 104, RS_COLORVERTEX = 105, RS_SPECULARMATERIALSOURCE = 110,
     RS_DIFFUSEMATERIALSOURCE = 111, RS_AMBIENTMATERIALSOURCE = 112,
     RS_EMISSIVEMATERIALSOURCE = 113, RS_POINTSPRITEENABLE = 118, RS_POINTSCALEENABLE = 119,
-    RS_VERTEXBLEND = 137,
+    RS_VERTEXBLEND = 137, RS_TWOSIDEDLIGHTING = 141,
     RS_NORMALIZENORMALS = 142, RS_FOGCOLOR = 138, RS_ZENABLE = 143, RS_STENCILENABLE = 144,
     RS_STENCILFAIL = 145, RS_FRONTFACE = 146, RS_CULLMODE = 147, RS_TEXTUREFACTOR = 148,
     RS_SHADOWFUNC = 156,
@@ -3482,6 +3482,9 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
         k.pk.specular = s->rs[RS_SPECULARENABLE] != 0;
         k.pk.point_sprite = c->prim == 0 && s->rs[RS_POINTSPRITEENABLE] != 0;
         k.pk.out_bgra = rt && hle_surf_out_bgra(rt->fmt);
+        /* two-sided lighting: back faces take the back colours a vertex
+         * program's shader passes (shader/vsh.c; not the D3D-model FF's) */
+        k.pk.two_side = prog && s->rs[RS_TWOSIDEDLIGHTING] != 0;
         for (unsigned st = 0; st < 4; st++) {
             k.pk.alpha_kill |= (c->tex[st] && s->tss[st][TSS_ALPHAKILL] != 0) << st;
         }

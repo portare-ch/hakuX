@@ -86,6 +86,9 @@ typedef struct HlePshKey {
                                            v1 (a shader without one) */
     uint8_t sblend;                     /* the NV2A's signed blend equations (ff.h
                                            HleFfPsKey.sblend) */
+    uint8_t two_side;                   /* SET_TWO_SIDE_LIGHT_EN (a vertex program's
+                                           shader: it writes the back colours): back
+                                           faces read v0 / v1 from oB0 / oB1 */
 } HlePshKey;
 
 /* Key from the render-state array (rs[0..56] = the pixel-shader block). */
