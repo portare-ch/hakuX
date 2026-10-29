@@ -9,7 +9,7 @@
  * are in the EEPROM the title reads as it starts. The core can't boot again
  * in its process (M2), so a change to one during the game takes effect when
  * the game starts next, and RetroArch shows a message saying so. The crop
- * changes at once (video.c).
+ * (video.c) and rumble (input.c) change at once.
  */
 #include "native/libretro/libretro_int.h"
 #include "native/hle/hle_native.h"
@@ -21,7 +21,7 @@
 
 #define NEXT " Takes effect when the game starts next."
 
-enum { OPT_SCALE, OPT_CROP, OPT_FORMAT, OPT_LANGUAGE, OPT_REGION, OPT_COUNT };
+enum { OPT_SCALE, OPT_CROP, OPT_FORMAT, OPT_LANGUAGE, OPT_REGION, OPT_RUMBLE, OPT_COUNT };
 
 /* The language values follow XC_LANGUAGE after auto: english is 1. */
 static struct retro_core_option_v2_definition g_defs[OPT_COUNT + 1] = {
@@ -65,6 +65,13 @@ static struct retro_core_option_v2_definition g_defs[OPT_COUNT + 1] = {
         {{"auto", "Auto"}, {"ntsc-m", "NTSC-M (Americas)"}, {"ntsc-j", "NTSC-J (Japan)"},
          {"pal", "PAL (Europe)"}, {NULL, NULL}},
         "auto"},
+    [OPT_RUMBLE] = {
+        "hakux_rumble", "Rumble", NULL,
+        "Passes the game's controller vibration on to the controllers' motors, where RetroArch and the "
+        "controller have them.",
+        NULL, NULL,
+        {{"disabled", "Off"}, {"enabled", "On"}, {NULL, NULL}},
+        "disabled"},
     {NULL},
 };
 
@@ -155,6 +162,8 @@ void nc_lr_options_apply(void)
     nc_hle_set_render_scale(scale);
     const bool crop = strcmp(g_defs[OPT_CROP].values[g_applied[OPT_CROP]].value, "disabled") != 0;
     nc_lr_video_set_crop(crop);
+    const bool rumble = strcmp(g_defs[OPT_RUMBLE].values[g_applied[OPT_RUMBLE]].value, "enabled") == 0;
+    nc_lr_input_set_rumble(rumble);
 
     /* PAL60 always: RetroArch runs at 59.94 Hz, and an NTSC title ignores it.
      * No 480p, 720p or 1080i, as before the options. */
@@ -173,9 +182,9 @@ void nc_lr_options_apply(void)
                             : !strcmp(region, "ntsc-j") ? NC_AV_REGION_NTSC_J
                             : !strcmp(region, "pal")    ? NC_AV_REGION_PAL_I
                                                         : 0);
-    nc_log("hakuX-libretro", "options: render scale %dx, overscan %s, screen %s, language %d (%s), video region %s",
-           scale, crop ? "cropped" : "shown", format, language,
-           g_defs[OPT_LANGUAGE].values[g_applied[OPT_LANGUAGE]].value, region);
+    nc_log("hakuX-libretro", "options: render scale %dx, overscan %s, screen %s, language %d (%s), video region %s, "
+           "rumble %s", scale, crop ? "cropped" : "shown", format, language,
+           g_defs[OPT_LANGUAGE].values[g_applied[OPT_LANGUAGE]].value, region, rumble ? "on" : "off");
 }
 
 void nc_lr_options_run(void)
@@ -189,10 +198,15 @@ void nc_lr_options_run(void)
         g_applied[OPT_CROP] = crop;
         nc_lr_video_set_crop(strcmp(g_defs[OPT_CROP].values[crop].value, "disabled") != 0);
     }
+    const int rumble = value_of(OPT_RUMBLE);
+    if (rumble != g_applied[OPT_RUMBLE]) {
+        g_applied[OPT_RUMBLE] = rumble;
+        nc_lr_input_set_rumble(strcmp(g_defs[OPT_RUMBLE].values[rumble].value, "enabled") == 0);
+    }
     char names[256] = "";
     size_t n = 0;
     for (int i = 0; i < OPT_COUNT; i++) {
-        if (i != OPT_CROP && value_of(i) != g_applied[i] && n < sizeof(names)) {
+        if (i != OPT_CROP && i != OPT_RUMBLE && value_of(i) != g_applied[i] && n < sizeof(names)) {
             n += (size_t)snprintf(names + n, sizeof(names) - n, "%s%s", n ? ", " : "", g_defs[i].desc);
         }
     }
