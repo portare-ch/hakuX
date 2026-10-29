@@ -198,6 +198,7 @@ static void caps_override(HleCaps *c)
         { "dynrender", offsetof(HleCaps, dyn_render) }, { "sync2", offsetof(HleCaps, sync2) },
         { "eds1", offsetof(HleCaps, eds1) },         { "eds2", offsetof(HleCaps, eds2) },
         { "aniso", offsetof(HleCaps, aniso) },
+        { "widelines", offsetof(HleCaps, wide_lines) },
     };
     for (char *save = NULL, *t = strtok_r(v, ", ", &save); t; t = strtok_r(NULL, ", ", &save)) {
         const char *name = *t == '-' ? t + 1 : t;
@@ -366,6 +367,7 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
     bool e_gpl = has_ext(ext, ne, VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME) &&
                  has_ext(ext, ne, VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
     bool e_lr = has_ext(ext, ne, VK_KHR_DYNAMIC_RENDERING_LOCAL_READ_EXTENSION_NAME);
+    bool e_roa = has_ext(ext, ne, VK_EXT_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_EXTENSION_NAME);
     bool e_pd = has_ext(ext, ne, VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
     /* Below 1.3 (vk/compat.c): what 1.2 and 1.3 made core, from extensions;
      * a 1.2 device has 1.2's in its core (the structs are core 1.2's then) */
@@ -426,6 +428,8 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT };
     VkPhysicalDeviceDynamicRenderingLocalReadFeaturesKHR q_lr = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_LOCAL_READ_FEATURES_KHR };
+    VkPhysicalDeviceRasterizationOrderAttachmentAccessFeaturesEXT q_roa = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_FEATURES_EXT };
     VkPhysicalDeviceVulkan13Features q13 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
     VkPhysicalDeviceVulkan12Features q12 = {
@@ -470,6 +474,7 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
     if (e_eds3) chain(&tail, &q_eds3);
     if (e_gpl) chain(&tail, &q_gpl);
     if (e_lr) chain(&tail, &q_lr);
+    if (e_roa) chain(&tail, &q_roa);
     vkGetPhysicalDeviceFeatures2(v->phys, &q);
     /* the limits the bindless set and the samplers need (Vulkan 1.2's: a 1.1
      * device fails the floor without them) */
@@ -512,6 +517,7 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
     c->floor_ok = true;
     need(c, v->qfam != UINT32_MAX, "graphics queue");
     c->wide_lines = q.features.wideLines;
+    c->max_line_width = c->wide_lines ? v->props.limits.lineWidthRange[1] : 1.0f;
     need(c, q.features.largePoints, "largePoints");
     c->depth_clamp = q.features.depthClamp;
     need(c, ok_tl, "timelineSemaphore");
@@ -596,7 +602,11 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
     vkGetPhysicalDeviceFormatProperties(v->phys, VK_FORMAT_R16G16_SSCALED, &fp);
     c->sscaled = fp.bufferFeatures & VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT;
     caps_override(c);
+    c->max_line_width = c->wide_lines ? c->max_line_width : 1.0f;
     c->fbfetch = c->fbfetch && c->dyn_render;  /* local read is dynamic rendering's */
+    /* with local read, dynamic rendering's pipelines may ask for it (VUID-06482) */
+    c->raster_order = c->fbfetch && e_roa && q_roa.rasterizationOrderColorAttachmentAccess &&
+                      !getenv("HAKUX_HLE_NO_RASTER_ORDER");
     c->cbc_any = c->cbc_any && c->cbc;
     if (!c->bindless) {                 /* the draw sets' arrays, by the push block's index */
         need(c, q.features.shaderSampledImageArrayDynamicIndexing, "sampledImageDynamicIndexing");
@@ -646,6 +656,8 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
         .sType = q_gpl.sType, .graphicsPipelineLibrary = VK_TRUE };
     VkPhysicalDeviceDynamicRenderingLocalReadFeaturesKHR f_lr = {
         .sType = q_lr.sType, .dynamicRenderingLocalRead = VK_TRUE };
+    VkPhysicalDeviceRasterizationOrderAttachmentAccessFeaturesEXT f_roa = {
+        .sType = q_roa.sType, .rasterizationOrderColorAttachmentAccess = VK_TRUE };
     VkPhysicalDeviceVulkan13Features f13 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
         .synchronization2 = VK_TRUE, .dynamicRendering = VK_TRUE,
@@ -713,6 +725,7 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
     if (c->eds3) chain(&tail, &f_eds3);
     if (c->gpl) chain(&tail, &f_gpl);
     if (c->fbfetch) chain(&tail, &f_lr);
+    if (c->raster_order) chain(&tail, &f_roa);
 
     const char *exts[32];
     uint32_t nx = 0;
@@ -751,6 +764,9 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
     if (c->gpl) {
         exts[nx++] = VK_EXT_GRAPHICS_PIPELINE_LIBRARY_EXTENSION_NAME;
         exts[nx++] = VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME;
+    }
+    if (c->raster_order) {
+        exts[nx++] = VK_EXT_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_EXTENSION_NAME;
     }
     if (c->fbfetch) {
         exts[nx++] = VK_KHR_DYNAMIC_RENDERING_LOCAL_READ_EXTENSION_NAME;
@@ -795,13 +811,13 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
         vkGetDeviceProcAddr(v->dev, "vkGetAndroidHardwareBufferPropertiesANDROID") : NULL;
 #endif
     hle_log("hakuX-hle-back", "vk: device \"%s\" api %u.%u.%u driver 0x%x floor=ok "
-            "plus: gpl=%d eds3=%d dbuf=%d m5=%d sscaled=%d local_read=%d fbfetch=%d cache_control=%d "
-            "swapchain=%d",
+            "plus: gpl=%d eds3=%d dbuf=%d m5=%d sscaled=%d local_read=%d fbfetch=%d "
+            "raster_order=%d cache_control=%d swapchain=%d",
             v->props.deviceName, VK_API_VERSION_MAJOR(v->props.apiVersion),
             VK_API_VERSION_MINOR(v->props.apiVersion),
             VK_API_VERSION_PATCH(v->props.apiVersion), v->props.driverVersion,
             c->gpl, c->eds3, c->descriptor_buffer, c->maint5, c->sscaled,
-            c->local_read, c->fbfetch, c->cache_control, c->swapchain);
+            c->local_read, c->fbfetch, c->raster_order, c->cache_control, c->swapchain);
     hle_log("hakuX-hle-back", "vk: bc=%d vids=%d push=%d push_desc=%d cbc=%d cbc_any=%d "
             "x4444=%d d24s8=%d bda=%d ahb=%d vk13=%d dyn_render=%d sync2=%d eds1=%d eds2=%d "
             "bindless=%d depth_clamp=%d (0: the substitute runs)", c->bc, c->vids, c->push,

@@ -322,6 +322,54 @@ static void test_sign(void)
     HT_CHECK(strstr(buf, "* vec2(t0.b, sgn8(t0.bg).y);") != NULL);
 }
 
+/* dithering into a 16-bit target: the ordered offset by its channel steps */
+static void test_dither(void)
+{
+    uint32_t rs[HLE_PS_REGS] = { 0 };
+    rs[HLE_PS_RGB_IN] = IN4(R_V0, R_ZERO | INVERT, R_ZERO, R_ZERO);
+    rs[HLE_PS_RGB_OUT] = R_R0 << 4;
+    rs[HLE_PS_COUNT] = 1;
+    HlePshKey k;
+    hle_psh_key(rs, &k);
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
+    HT_CHECK(strstr(buf, "bm[16]") == NULL);
+    k.dither = 1;
+    size_t n = hle_psh_glsl(&k, buf, sizeof(buf), NULL);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("psh_dither");
+    HT_CHECK(strstr(buf, "oColor.rgb = clamp(oColor.rgb + dt / vec3(31.0, 63.0, 31.0), 0.0, 1.0);")
+             != NULL);
+    /* by guest pixel: the target's resolution scale divided out */
+    HT_CHECK(strstr(buf, "ivec2 p = ivec2(gl_FragCoord.xy / float(max((pc.flags >> 16) & 255u, "
+                         "1u))) & 3;") != NULL);
+    HT_CHECK(strstr(buf, "subpassLoad") == NULL);       /* blending: the pipeline's */
+    k.dither = 2;
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
+    HT_CHECK(strstr(buf, "dt / vec3(31.0)") != NULL);
+    /* blended: the shader blends with the target's pixel, then dithers */
+    k.dither = 1;
+    k.fblend = 1;
+    k.fb_src = 0x302;                                   /* SRCALPHA */
+    k.fb_dst = 0x303;                                   /* INVSRCALPHA */
+    k.fb_op = 0x8006;
+    n = hle_psh_glsl(&k, buf, sizeof(buf), NULL);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("psh_dither_blend");
+    HT_CHECK(strstr(buf, "uniform subpassInput uFb;") != NULL);
+    const char *bl = strstr(buf, "vec4 sf = vec4(s.a), df = vec4(1.0 - s.a);\n"
+                                 "    oColor = clamp(s * sf + d * df, 0.0, 1.0);");
+    const char *dt = strstr(buf, "oColor.rgb = clamp(oColor.rgb + dt");
+    HT_CHECK(bl != NULL && dt != NULL && bl < dt);
+    k.fb_src = 0x8001;                                  /* constant colour, reverse subtract */
+    k.fb_dst = 1;
+    k.fb_op = 0x800B;
+    k.fb_const = 0x80FF0000u;
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
+    HT_CHECK(strstr(buf, "c = col(2164195328u);") != NULL);
+    HT_CHECK(strstr(buf, "vec4 sf = c, df = vec4(1.0);") != NULL);
+    HT_CHECK(strstr(buf, "oColor = clamp(d * df - s * sf, 0.0, 1.0);") != NULL);
+}
+
 static void test_overflow(void)
 {
     uint32_t rs[HLE_PS_REGS] = { 0 };
@@ -342,6 +390,7 @@ int main(void)
     HT_RUN(test_two_side);
     HT_RUN(test_color_key);
     HT_RUN(test_sign);
+    HT_RUN(test_dither);
     HT_RUN(test_overflow);
     HT_DONE();
 }
