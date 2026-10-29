@@ -106,6 +106,7 @@ typedef struct HleVkTex {
     VkImageView cube_view;      /* cubes: the six faces as a cube (binding 2) */
     uint32_t slot;              /* sampled_images[] index */
     bool linear;                /* Xbox linear format: texel coordinates */
+    uint32_t gfmt;              /* the guest's format (HleCmdTex.gfmt) */
 } HleVkTex;
 
 /* A pipeline table entry's state: made (VK_NULL_HANDLE: it failed, not tried
@@ -1019,6 +1020,7 @@ void hle_draw_cmd_tex(const HleCmdTex *c, VkCommandBuffer cb)
         t->linear = (hle_fmt_info(c->xfmt)->flags & HLE_FI_LIN) != 0;
         write_tex_slot(t);
     }
+    t->gfmt = c->gfmt;
     VkImageMemoryBarrier2 b = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
         .srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
@@ -1192,6 +1194,23 @@ static bool ckey_has_alpha(uint32_t xfmt)
         return false;
     default:
         return true;
+    }
+}
+
+/* Colour key: the precision a guest format's colour channels compare at
+ * (psh.h HlePshKey.ckey_bits: 0 8 bits, 1 R5G6B5, 2 1555, 3 4444) */
+static uint32_t ckey_bits(uint32_t xfmt)
+{
+    switch (xfmt) {
+    case HLE_XFMT_R5G6B5: case HLE_XFMT_LIN_R5G6B5:
+        return 1;
+    case HLE_XFMT_A1R5G5B5: case HLE_XFMT_LIN_A1R5G5B5:
+    case HLE_XFMT_X1R5G5B5: case HLE_XFMT_LIN_X1R5G5B5:
+        return 2;
+    case HLE_XFMT_A4R4G4B4: case HLE_XFMT_LIN_A4R4G4B4:
+        return 3;
+    default:
+        return 0;
     }
 }
 
@@ -3511,26 +3530,26 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
         }
         for (unsigned st = 0; st < 4; st++) {
             /* colour key (TEXTURE_CONTROL0 1:0): the op, the stage's key colour
-             * and the precision its format's channels compare at */
+             * and the precision the guest format's channels compare at, the
+             * same where the host expanded it (4444 without the 4444 formats:
+             * its 8-bit texels are exact expansions, compared at 4 bits) */
             const uint32_t op = s->tss[st][TSS_COLORKEYOP] & 3;
             if (!op || !c->tex[st]) {
                 continue;
             }
             HleVkTex *tx = tex_find(c->tex[st]);
             HleVkSurf *sf = tx ? NULL : hle_surf_get(c->tex[st]);
-            const VkFormat f = tx ? tx->fmt : sf ? sf->fmt : VK_FORMAT_UNDEFINED;
-            const uint32_t bits = f == VK_FORMAT_R5G6B5_UNORM_PACK16 ? 1 :
-                                  f == VK_FORMAT_A1R5G5B5_UNORM_PACK16 ? 2 :
-                                  f == VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT ? 3 : 0;
+            const uint32_t gx = tx ? tx->gfmt : sf ? sf->d.xfmt : 0;
+            const uint32_t bits = ckey_bits(gx);
             k.pk.ckey |= (uint8_t)(op << (2 * st));
             k.pk.ckey_bits |= (uint8_t)(bits << (2 * st));
-            k.pk.ckey_alpha |= (uint8_t)(ckey_has_alpha(tx ? tx->xfmt : sf ? sf->d.xfmt : 0) << st);
+            k.pk.ckey_alpha |= (uint8_t)(ckey_has_alpha(gx) << st);
             k.pk.ckey_col[st] = s->tss[st][TSS_COLORKEYCOLOR];
             static unsigned s_logged;
             if (s_logged < 8) {
                 s_logged++;
-                hle_log("hakuX-hle-pipe", "colour key: stage %u %s %u vkfmt %d op %u key %08x",
-                        st, tx ? "tex" : "surf", c->tex[st], (int)f, op, k.pk.ckey_col[st]);
+                hle_log("hakuX-hle-pipe", "colour key: stage %u %s %u fmt 0x%x op %u key %08x",
+                        st, tx ? "tex" : "surf", c->tex[st], gx, op, k.pk.ckey_col[st]);
             }
         }
         for (unsigned st = 0; st < 4; st++) {
