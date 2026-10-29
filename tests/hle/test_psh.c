@@ -224,6 +224,29 @@ static void test_bumpenv(void)
     HT_CHECK(strstr(buf, "t2.rgb *= clamp(l.x * t1.r + l.y, 0.0, 1.0);") != NULL);
 }
 
+/* two-sided lighting: back faces read v0 / v1 from the back colours */
+static void test_two_side(void)
+{
+    uint32_t rs[HLE_PS_REGS] = { 0 };
+    rs[HLE_PS_RGB_IN] = IN4(R_V0, R_ZERO | INVERT, R_ZERO, R_ZERO);
+    rs[HLE_PS_RGB_OUT] = R_R0 << 4;
+    rs[HLE_PS_COUNT] = 1;
+    HlePshKey k;
+    hle_psh_key(rs, &k);
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
+    HT_CHECK(strstr(buf, "vBack0") == NULL);
+    HT_CHECK(strstr(buf, "vec4 v0 = vDiffuse, v1 = vSpecular;") != NULL);
+    k.two_side = 1;
+    k.flat = 1;
+    size_t n = hle_psh_glsl(&k, buf, sizeof(buf), NULL);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("psh_two_side");
+    HT_CHECK(strstr(buf, "layout(location = 7) flat in vec4 vBack0;") != NULL);
+    HT_CHECK(strstr(buf, "layout(location = 8) flat in vec4 vBack1;") != NULL);
+    HT_CHECK(strstr(buf, "vec4 v0 = gl_FrontFacing ? vDiffuse : vBack0;") != NULL);
+    HT_CHECK(strstr(buf, "vec4 v1 = gl_FrontFacing ? vSpecular : vBack1;") != NULL);
+}
+
 /* colour key: a matching texel's alpha zeroed (1), ARGB zeroed (2) or the
  * fragment killed (3), compared at the format's precision, alpha included
  * where the format has one (the NV2A tests: an A8R8G8B8 texel 0xFF0000FF
@@ -285,6 +308,7 @@ int main(void)
     HT_RUN(test_reflect);
     HT_RUN(test_shadow_project);
     HT_RUN(test_bumpenv);
+    HT_RUN(test_two_side);
     HT_RUN(test_color_key);
     HT_RUN(test_overflow);
     HT_DONE();

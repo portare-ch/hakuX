@@ -93,6 +93,7 @@ typedef struct HleCaps {
     bool swapchain;             /* the Android surface and VK_KHR_swapchain: the window's
                                    presenter (vk/swapchain.c) */
     float max_lod_bias;         /* maxSamplerLodBias */
+    float max_aniso;            /* maxSamplerAnisotropy */
 } HleCaps;
 
 typedef struct HleVk {

@@ -86,6 +86,9 @@ typedef struct HlePshKey {
                                            v1 (a shader without one) */
     uint8_t sblend;                     /* the NV2A's signed blend equations (ff.h
                                            HleFfPsKey.sblend) */
+    uint8_t two_side;                   /* SET_TWO_SIDE_LIGHT_EN (a vertex program's
+                                           shader: it writes the back colours): back
+                                           faces read v0 / v1 from oB0 / oB1 */
     /* Colour key (TEXTURE_CONTROL0 1:0, D3DTSS_COLORKEYOP), 2 bits a stage:
      * a texel that is the stage's key colour gets 1 its alpha zeroed, 2 its
      * ARGB zeroed, 3 the fragment killed. Compared at the format's channel
