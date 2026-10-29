@@ -717,7 +717,7 @@ RETRO_API void retro_run(void)
     gap_tick(now);
     nc_lr_audio_run(g_audio_batch);
     const uint64_t tv = now_ns();
-    nc_lr_video_run(g_video, now);
+    nc_lr_video_run(g_video);
     run_stat(now, tv, now_ns());
     nc_lr_options_run();
 

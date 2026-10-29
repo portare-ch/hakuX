@@ -302,6 +302,7 @@ bool nc_lr_vk_run(retro_video_refresh_t video)
 
     hle_disp_use_begin();
     HleDispFrame f;
+    nc_lr_video_pickup();
     if (idx >= MAX_SYNC || !hle_disp_acquire(&f)) {
         hle_disp_use_end();
         video(NULL, 640, 480, 0);   /* no frame yet (the boot) */
