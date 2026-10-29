@@ -44,9 +44,11 @@ typedef struct HleFfhwKey {
     uint8_t texgen[4][4];               /* stage, S T R Q: HLE_FFHW_TG_* */
     uint8_t texmat;                     /* SET_TEXTURE_MATRIX_ENABLE, a bit per stage */
     uint8_t points;                     /* SET_POINT_PARAMS_ENABLE */
-    uint8_t two_side;                   /* SET_TWO_SIDE_LIGHT_EN with lighting: the back
-                                           colours lit too (back material, -N) */
-    uint8_t pad[5];
+    uint8_t two_side;                   /* SET_TWO_SIDE_LIGHT_EN: the back colours lit
+                                           (back registers, -N), or unlit (0, 0, 0, 1) */
+    uint8_t bsrc[4];                    /* SET_COLOR_MATERIAL 15:8: the back's emission,
+                                           ambient, diffuse, specular sources (as src) */
+    uint8_t pad[1];
 } HleFfhwKey;                           /* 48 bytes: three program slots */
 
 #define HLE_FFHW_SLOTS (sizeof(HleFfhwKey) / 16)

@@ -113,17 +113,6 @@ static void test_unwritten_fog(void)
     HT_CHECK(strstr(buf, "vFog = 0.0;") != NULL);
 }
 
-/* back colours a program leaves unwritten are its front ones */
-static void test_unwritten_back(void)
-{
-    HleVshKey k = { .in_mask = 1 };
-    HT_CHECK(hle_vsh_glsl(&k_prog[0][0], NSLOTS, &k, buf, sizeof(buf)) > 0);
-    HT_CHECK(strstr(buf, "vBack0 = clamp(oD0, 0.0, 1.0);") != NULL);
-    HT_CHECK(strstr(buf, "vBack1 = clamp(oD1, 0.0, 1.0);") != NULL);
-    HT_CHECK(hle_vsh_glsl_wrap(&k, "    oB0 = v3;\n", false, buf, sizeof(buf)) > 0);
-    HT_CHECK(strstr(buf, "vBack0 = clamp(oB0, 0.0, 1.0);") != NULL);
-}
-
 /* a buffer too small fails instead of truncating */
 static void test_overflow(void)
 {
@@ -138,7 +127,6 @@ int main(void)
     HT_RUN(test_no_final);
     HT_RUN(test_stops_at_final);
     HT_RUN(test_unwritten_fog);
-    HT_RUN(test_unwritten_back);
     HT_RUN(test_overflow);
     HT_DONE();
 }

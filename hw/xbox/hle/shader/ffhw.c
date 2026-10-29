@@ -121,14 +121,17 @@ static void lighting(Buf *b, const HleFfhwKey *k)
         k->src[0] == 0 ? amb : src_rgb(k->src[0]), a);
     put(b, "    oD1 = vec4(0.0, 0.0, 0.0, v4.a);\n");
     if (k->two_side) {
-        /* the back the same from the back registers, with the front's colour
-         * sources (SET_COLOR_MATERIAL's back fields aren't decoded) */
+        /* the back the same from the back registers, by the back's colour
+         * sources (SET_COLOR_MATERIAL 15:8), whose vertex colours are the
+         * front's (v3, v4): the NV2A tests pass the front specular through
+         * on back faces as well (Specular back, ControlFlags_FF) */
+        const char *balpha = k->bsrc[2] == 1 ? "v3.a" : k->bsrc[2] == 2 ? "v4.a" : "c[%u].w";
         char ba[32], bamb[16];
-        snprintf(ba, sizeof(ba), alpha, HLE_FFHW_C_BACK_AMBIENT);
+        snprintf(ba, sizeof(ba), balpha, HLE_FFHW_C_BACK_AMBIENT);
         snprintf(bamb, sizeof(bamb), "c[%u].rgb", HLE_FFHW_C_BACK_AMBIENT);
         put(b, "    oB0 = vec4(%s * c[%u].rgb + %s, %s);\n",
-            k->src[1] == 0 ? bamb : src_rgb(k->src[1]), HLE_FFHW_C_BACK_EMISSION,
-            k->src[0] == 0 ? bamb : src_rgb(k->src[0]), ba);
+            k->bsrc[1] == 0 ? bamb : src_rgb(k->bsrc[1]), HLE_FFHW_C_BACK_EMISSION,
+            k->bsrc[0] == 0 ? bamb : src_rgb(k->bsrc[0]), ba);
         put(b, "    oB1 = vec4(0.0, 0.0, 0.0, v4.a);\n");
     }
     /* the direction to the eye: the eye position for a local viewer, else
@@ -202,8 +205,8 @@ static void lighting(Buf *b, const HleFfhwKey *k)
                    "        oB0.rgb += %s * c[%u].rgb * (att * bl);\n"
                    "        oB1.rgb += %s * c[%u].rgb * (att * bf);\n"
                    "      }\n",
-                t == 1 ? "Ld" : "VP", h, HLE_FFHW_C_PARAMS, BL, src_rgb(k->src[2]), BL + 1,
-                src_rgb(k->src[3]), BL + 2);
+                t == 1 ? "Ld" : "VP", h, HLE_FFHW_C_PARAMS, BL, src_rgb(k->bsrc[2]), BL + 1,
+                src_rgb(k->bsrc[3]), BL + 2);
         }
         put(b, "    }\n");
     }
@@ -230,14 +233,16 @@ size_t hle_ffhw_glsl(const uint32_t *tokens, unsigned nslots, const HleVshKey *v
     }
     texgen(&b, &k);
     lighting(&b, &k);
-    /* the back colours without back lighting: the back colour registers
-     * where arrays feed them, else the front ones (D3D's vertices have no
-     * back colours and the registers' current values aren't set: an unlit
-     * draw under SET_TWO_SIDE_LIGHT_EN would show black back faces) */
+    /* the back colours: lit by lighting() under two-sided lighting; unlit,
+     * (0, 0, 0, 1) whatever the back colour registers hold and whatever
+     * SET_LIGHT_CONTROL says (the NV2A tests' Specular back,
+     * ControlFlagsLightDisable_FF). Without two-sided lighting the pixel
+     * stage doesn't read them. */
     const bool lit2 = k.lighting && k.two_side;
     if (!lit2) {
-        put(&b, "    oB0 = %s;\n    oB1 = %s;\n", (vk->in_mask >> 7) & 1 ? "v7" : "v3",
-            (vk->in_mask >> 8) & 1 ? "v8" : "v4");
+        put(&b, k.two_side ? "    oB0 = vec4(0.0, 0.0, 0.0, 1.0);\n"
+                             "    oB1 = vec4(0.0, 0.0, 0.0, 1.0);\n"
+                           : "    oB0 = v7;\n    oB1 = v8;\n");
     }
     if (!k.specular) {
         put(&b, "    oD1 = vec4(0.0, 0.0, 0.0, 1.0);\n    oB1 = vec4(0.0, 0.0, 0.0, 1.0);\n");
@@ -248,8 +253,9 @@ size_t hle_ffhw_glsl(const uint32_t *tokens, unsigned nslots, const HleVshKey *v
             }
             put(&b, "    oD1 = v4;\n");
             if (lit2) {
-                put(&b, "    oB0.rgb += oB1.rgb;\n    oB1 = %s;\n",
-                    (vk->in_mask >> 8) & 1 ? "v8" : "v4");
+                /* the front vertex specular on back faces too (Specular back,
+                 * ControlFlagsNoLight_FF and ControlFlags_FF) */
+                put(&b, "    oB0.rgb += oB1.rgb;\n    oB1 = v4;\n");
             }
         }
         if (!k.alpha_mat_spec) {

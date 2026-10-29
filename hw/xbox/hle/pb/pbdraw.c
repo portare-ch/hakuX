@@ -1753,6 +1753,7 @@ static uint64_t ff_program(void)
     uint32_t cm = R(0x0298);
     for (unsigned i = 0; i < 4; i++) {
         k.src[i] = (cm >> (2 * i)) & 3;
+        k.bsrc[i] = (cm >> (8 + 2 * i)) & 3;    /* BACK_EMISSION .. BACK_SPECULAR */
     }
     uint32_t le = R(0x03BC);
     for (unsigned i = 0; i < 8; i++) {
@@ -1765,7 +1766,7 @@ static uint64_t ff_program(void)
         k.texmat |= (uint8_t)((R(0x0420 + 4 * s) & 1) << s);
     }
     k.points = R(0x0318) & 1;
-    k.two_side = k.lighting && (R(0x17C4) & 1);   /* SET_TWO_SIDE_LIGHT_EN */
+    k.two_side = R(0x17C4) & 1;                   /* SET_TWO_SIDE_LIGHT_EN */
     return send_vsh(&k, HLE_FFHW_SLOTS, &g_vh_ff);
 }
 

@@ -81,30 +81,41 @@ static void test_lit_skinned(void)
     HT_CHECK(strstr(buf, "vFog = oFog.x;") != NULL);
 }
 
-/* two-sided lighting: the back colours lit along -N from the back
- * registers; without lighting the front colours where no array feeds the
- * back ones */
+/* two-sided lighting, as the NV2A tests (Lighting Two Sided, Specular back)
+ * show it: lit, the back colours from the back registers along -N by the
+ * back's own colour sources, and without SEPARATE_SPECULAR the front vertex
+ * specular passed through; unlit, (0, 0, 0, 1) whatever the back colour
+ * registers hold */
 static void test_two_side(void)
 {
     HleFfhwKey k = { .magic = HLE_FFHW_MAGIC, .lighting = 1, .two_side = 1, .specular = 1,
-                     .light = { 1, 2 } };
-    size_t n = gen(&k, 0x1E1F);
+                     .src = { 0, 0, 1, 0 }, .bsrc = { 0, 0, 0, 2 }, .light = { 1, 2 } };
+    size_t n = gen(&k, 0x1E1F | 3u << 7);               /* back colour arrays too */
     HT_CHECK(n > 0 && n == strlen(buf));
     dump("ffhw_two_side");
+    /* the front's diffuse from the vertex, the back's from the material */
+    HT_CHECK(strstr(buf, "oD0 = vec4(c[71].rgb * c[72].rgb + c[71].rgb, v3.a);") != NULL);
     HT_CHECK(strstr(buf, "oB0 = vec4(c[156].rgb * c[157].rgb + c[156].rgb, c[156].w);") != NULL);
+    HT_CHECK(strstr(buf, "oD0.rgb += v3.rgb * c[77].rgb * (att * nl);") != NULL);
+    HT_CHECK(strstr(buf, "oB0.rgb += vec3(1.0) * c[162].rgb * (att * bl);") != NULL);
+    HT_CHECK(strstr(buf, "oB1.rgb += v4.rgb * c[163].rgb * (att * bf);") != NULL);
     HT_CHECK(strstr(buf, "float bl = max(dot(-tN, Ld), 0.0), "
                          "bh = max(dot(-tN, c[80].xyz), 0.0);") != NULL);
     HT_CHECK(strstr(buf, "float bl = max(dot(-tN, VP), 0.0), "
                          "bh = max(dot(-tN, normalize(VP + eyeV)), 0.0);") != NULL);
     HT_CHECK(strstr(buf, "pow(bh, c[73].y)") != NULL);           /* the back power */
-    HT_CHECK(strstr(buf, "oB0.rgb += vec3(1.0) * c[162].rgb * (att * bl);") != NULL);
-    HT_CHECK(strstr(buf, "oB0.rgb += oB1.rgb;") != NULL);        /* not separate */
-    HT_CHECK(strstr(buf, "oB0 = v7;") == NULL);
+    /* no SEPARATE_SPECULAR: the front vertex specular, back arrays or not */
+    HT_CHECK(strstr(buf, "oB0.rgb += oB1.rgb;\n    oB1 = v4;") != NULL);
+    HT_CHECK(strstr(buf, "oB1 = v8") == NULL && strstr(buf, "oB0 = v7") == NULL);
+    /* unlit: black, alpha 1, whatever the back colour registers hold */
     k.lighting = 0;
+    HT_CHECK(gen(&k, 0x1E1F | 3u << 7) > 0);
+    HT_CHECK(strstr(buf, "oB0 = vec4(0.0, 0.0, 0.0, 1.0);\n"
+                         "    oB1 = vec4(0.0, 0.0, 0.0, 1.0);") != NULL);
+    HT_CHECK(strstr(buf, "oB1 = v4") == NULL);
+    /* off: as before (the pixel stage doesn't read them) */
     k.two_side = 0;
     HT_CHECK(gen(&k, 0x1E1F) > 0);
-    HT_CHECK(strstr(buf, "oB0 = v3;\n    oB1 = v4;") != NULL);
-    HT_CHECK(gen(&k, 0x1E1F | 3u << 7) > 0);
     HT_CHECK(strstr(buf, "oB0 = v7;\n    oB1 = v8;") != NULL);
 }
 
