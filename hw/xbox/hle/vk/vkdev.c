@@ -197,6 +197,7 @@ static void caps_override(HleCaps *c)
         { "fbfetch", offsetof(HleCaps, fbfetch) },   { "vk13", offsetof(HleCaps, vk13) },
         { "dynrender", offsetof(HleCaps, dyn_render) }, { "sync2", offsetof(HleCaps, sync2) },
         { "eds1", offsetof(HleCaps, eds1) },         { "eds2", offsetof(HleCaps, eds2) },
+        { "aniso", offsetof(HleCaps, aniso) },
         { "widelines", offsetof(HleCaps, wide_lines) },
     };
     for (char *save = NULL, *t = strtok_r(v, ", ", &save); t; t = strtok_r(NULL, ", ", &save)) {
@@ -574,6 +575,7 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
     c->bda = v13 ? q12.bufferDeviceAddress : e_bda && q_bda.bufferDeviceAddress;
     c->ahb = e_ahb;
     c->max_lod_bias = v->props.limits.maxSamplerLodBias;
+    c->max_aniso = v->props.limits.maxSamplerAnisotropy;
     /* (unused, enabled where present: on 1.3 only) */
     c->gpl = v13 && e_gpl && q_gpl.graphicsPipelineLibrary;
     c->eds3 = v13 && e_eds3 && q_eds3.extendedDynamicState3ColorBlendEnable &&

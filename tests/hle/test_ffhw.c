@@ -66,7 +66,9 @@ static void test_lit_skinned(void)
     HT_CHECK(strstr(buf, "tN = normalize(tN);") != NULL);
     HT_CHECK(strstr(buf, "vec4 sp = XF(tPos, 0);") != NULL);   /* skinned: eye space */
     /* ambient from the diffuse register, scaled by the emission register */
-    HT_CHECK(strstr(buf, "oD0 = vec4(v3.rgb * c[72].rgb + c[71].rgb, v3.a);") != NULL);
+    /* emission from the material, ambient from the diffuse colour: the scene
+     * ambient register plus the vertex colour scaled by the emission one */
+    HT_CHECK(strstr(buf, "oD0 = vec4(c[71].rgb + v3.rgb * c[72].rgb, v3.a);") != NULL);
     HT_CHECK(strstr(buf, "/* light 0 */") && strstr(buf, "/* light 1 */") &&
              strstr(buf, "/* light 2 */") && !strstr(buf, "/* light 3 */"));
     HT_CHECK(strstr(buf, "nh = max(dot(tN, c[80].xyz), 0.0);") != NULL);  /* infinite: half */
@@ -79,6 +81,54 @@ static void test_lit_skinned(void)
     HT_CHECK(strstr(buf, "oT1 = XF(oT1, 40);") != NULL);
     HT_CHECK(strstr(buf, "oFog = vec4(dot(c[69].xyz, tPos.xyz) + c[69].w);") != NULL);
     HT_CHECK(strstr(buf, "vFog = oFog.x;") != NULL);
+}
+
+/* two-sided lighting, as the NV2A tests (Lighting Two Sided, Specular back)
+ * show it: lit, the back colours from the back registers along -N by the
+ * back's own colour sources, and without SEPARATE_SPECULAR the front vertex
+ * specular passed through; unlit, (0, 0, 0, 1) whatever the back colour
+ * registers hold */
+static void test_two_side(void)
+{
+    HleFfhwKey k = { .magic = HLE_FFHW_MAGIC, .lighting = 1, .two_side = 1, .specular = 1,
+                     .src = { 0, 0, 1, 0 }, .bsrc = { 0, 0, 0, 2 }, .light = { 1, 2 } };
+    size_t n = gen(&k, 0x1E1F | 3u << 7);               /* back colour arrays too */
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("ffhw_two_side");
+    /* the front's diffuse from the vertex, the back's from the material;
+     * emission and ambient from the material: the scene ambient as it is,
+     * not scaled by the emission register again */
+    HT_CHECK(strstr(buf, "oD0 = vec4(c[71].rgb, v3.a);") != NULL);
+    HT_CHECK(strstr(buf, "oB0 = vec4(c[156].rgb, c[156].w);") != NULL);
+    HT_CHECK(strstr(buf, "oD0.rgb += v3.rgb * c[77].rgb * (att * nl);") != NULL);
+    HT_CHECK(strstr(buf, "oB0.rgb += vec3(1.0) * c[162].rgb * (att * bl);") != NULL);
+    HT_CHECK(strstr(buf, "oB1.rgb += v4.rgb * c[163].rgb * (att * bf);") != NULL);
+    HT_CHECK(strstr(buf, "float bl = max(dot(-tN, Ld), 0.0), "
+                         "bh = max(dot(-tN, c[80].xyz), 0.0);") != NULL);
+    HT_CHECK(strstr(buf, "float bl = max(dot(-tN, VP), 0.0), "
+                         "bh = max(dot(-tN, normalize(VP + eyeV)), 0.0);") != NULL);
+    HT_CHECK(strstr(buf, "pow(bh, c[73].y)") != NULL);           /* the back power */
+    /* no SEPARATE_SPECULAR: the front vertex specular, back arrays or not */
+    HT_CHECK(strstr(buf, "oB0.rgb += oB1.rgb;\n    oB1 = v4;") != NULL);
+    HT_CHECK(strstr(buf, "oB1 = v8") == NULL && strstr(buf, "oB0 = v7") == NULL);
+    /* the other compositions: ambient from the material, emission from a
+     * vertex colour; both from vertex colours */
+    k.bsrc[0] = 2;
+    HT_CHECK(gen(&k, 0x1E1F) > 0);
+    HT_CHECK(strstr(buf, "oB0 = vec4(c[156].rgb + v4.rgb * c[157].rgb, c[156].w);") != NULL);
+    k.bsrc[1] = 1;
+    HT_CHECK(gen(&k, 0x1E1F) > 0);
+    HT_CHECK(strstr(buf, "oB0 = vec4(v4.rgb + v3.rgb * c[157].rgb, c[156].w);") != NULL);
+    /* unlit: black, alpha 1, whatever the back colour registers hold */
+    k.lighting = 0;
+    HT_CHECK(gen(&k, 0x1E1F | 3u << 7) > 0);
+    HT_CHECK(strstr(buf, "oB0 = vec4(0.0, 0.0, 0.0, 1.0);\n"
+                         "    oB1 = vec4(0.0, 0.0, 0.0, 1.0);") != NULL);
+    HT_CHECK(strstr(buf, "oB1 = v4") == NULL);
+    /* off: as before (the pixel stage doesn't read them) */
+    k.two_side = 0;
+    HT_CHECK(gen(&k, 0x1E1F) > 0);
+    HT_CHECK(strstr(buf, "oB0 = v7;\n    oB1 = v8;") != NULL);
 }
 
 static void test_not_a_key(void)
@@ -106,6 +156,7 @@ int main(void)
 {
     HT_RUN(test_unlit);
     HT_RUN(test_lit_skinned);
+    HT_RUN(test_two_side);
     HT_RUN(test_not_a_key);
     HT_RUN(test_specular_power);
     HT_DONE();
