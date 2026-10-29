@@ -224,6 +224,32 @@ static void test_bumpenv(void)
     HT_CHECK(strstr(buf, "t2.rgb *= clamp(l.x * t1.r + l.y, 0.0, 1.0);") != NULL);
 }
 
+/* the convolution filters: PROJECT2D stages through sampk, with the kernel
+ * and where it applies */
+static void test_convolution(void)
+{
+    uint32_t rs[HLE_PS_REGS] = { 0 };
+    rs[HLE_PS_RGB_IN] = IN4(R_T0, R_T1, R_ZERO, R_ZERO);
+    rs[HLE_PS_RGB_OUT] = R_R0 << 4;
+    rs[HLE_PS_COUNT] = 1;
+    rs[HLE_PS_TEXMODES] = HLE_PST_PROJECT2D | HLE_PST_PROJECT2D << 5;
+    HlePshKey k;
+    hle_psh_key(rs, &k);
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
+    HT_CHECK(strstr(buf, "sampk") == NULL);
+    k.conv = 1 | 2 << 2;                                /* quincunx, gaussian */
+    k.conv_mm = 3 | 1 << 2;                             /* both; minification */
+    size_t n = hle_psh_glsl(&k, buf, sizeof(buf), NULL);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("psh_convolution");
+    HT_CHECK(strstr(buf, "vec4 sampk(uint s, vec2 uv, uint kern, uint when)") != NULL);
+    HT_CHECK(strstr(buf, "vec4 t0 = sampk(0u, nvproj(vTex0).xy, 1u, 3u);") != NULL);
+    HT_CHECK(strstr(buf, "vec4 t1 = sampk(1u, nvproj(vTex1).xy, 2u, 1u);") != NULL);
+    k.vol = 1;                                          /* a volume: not filtered so */
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
+    HT_CHECK(strstr(buf, "vec4 t0 = samp3(0u") != NULL);
+}
+
 static void test_overflow(void)
 {
     uint32_t rs[HLE_PS_REGS] = { 0 };
@@ -241,6 +267,7 @@ int main(void)
     HT_RUN(test_reflect);
     HT_RUN(test_shadow_project);
     HT_RUN(test_bumpenv);
+    HT_RUN(test_convolution);
     HT_RUN(test_overflow);
     HT_DONE();
 }

@@ -65,6 +65,7 @@ enum {
                                    22..25 to BUMP_ENV_MAT 0..3 (Otogi 0xf5c50) */
     TSS_BUMPENVLSCALE = 26, TSS_BUMPENVLOFFSET,
     TSS_TEXCOORDINDEX = 28, TSS_BORDERCOLOR = 29,
+    TSS_CONVOLUTION = 31,       /* HLE's own (pb/kelvin.c): HlePshKey.conv */
 };
 
 /* Two floats (bits) as IEEE halves, a in the low 16 bits (GLSL
@@ -3469,6 +3470,25 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
         k.pk.out_bgra = rt && hle_surf_out_bgra(rt->fmt);
         for (unsigned st = 0; st < 4; st++) {
             k.pk.alpha_kill |= (c->tex[st] && s->tss[st][TSS_ALPHAKILL] != 0) << st;
+        }
+        for (unsigned st = 0; st < 4; st++) {
+            /* the convolution filters (quincunx, gaussian 3 x 3): the kernel,
+             * and whether minification, magnification or both use it */
+            const uint32_t cv = c->tex[st] ? s->tss[st][TSS_CONVOLUTION] : 0, kern = cv & 7;
+            if (!cv) {
+                continue;
+            }
+            if (kern == 1 || kern == 2) {
+                k.pk.conv |= (uint8_t)(kern << (2 * st));
+                k.pk.conv_mm |= (uint8_t)(((cv >> 3) & 3) << (2 * st));
+            }
+            static unsigned s_logged;
+            if (s_logged < 8) {
+                s_logged++;
+                hle_log("hakuX-hle-pipe", "convolution: stage %u tex %u kernel %u%s%s%s", st,
+                        c->tex[st], kern, cv & 8 ? " min" : "", cv & 16 ? " mag" : "",
+                        kern == 1 || kern == 2 ? "" : " (unknown: bilinear)");
+            }
         }
         for (unsigned st = 0; st < 4; st++) {
             unsigned sf = shadow_fmt(c->tex[st]);

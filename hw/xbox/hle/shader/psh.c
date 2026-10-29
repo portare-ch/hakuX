@@ -222,6 +222,35 @@ static void final_combiner(Buf *b, const HlePshKey *k)
            "    outc = vec4(A * B + (1.0 - A) * C + D, G);\n  }\n");
 }
 
+/* The convolution filters at the texture's own texels (guest ones: a scaled
+ * surface's are the resolution scale's wide), level 0. sampk's when: bit 0
+ * minification, 1 magnification (else bilinear, as the sampler). Quincunx
+ * takes the centre at 1/2 and the four diagonal neighbours at 1/8 each;
+ * gaussian the 3 x 3 neighbourhood weighted 1 2 1 by 1 2 1, over 16. */
+static const char k_conv_glsl[] =
+    "vec4 tap(uint ti, uint si, vec2 uv) {\n"
+    "  return texture(sampler2D(uTex2D[nonuniformEXT(ti)], uSmp[nonuniformEXT(si)]), uv);\n"
+    "}\n"
+    "vec4 sampk(uint s, vec2 uv, uint kern, uint when) {\n"
+    "  uint ti = pc.tex[s] & 0xFFFFu, si = pc.tex[s] >> 16;\n"
+    "  vec2 sz = vec2(textureSize(sampler2D(uTex2D[nonuniformEXT(ti)], uSmp[0]), 0));\n"
+    "  float sc = (pc.flags & (256u << s)) != 0u ? float(pc.flags >> 24) : 1.0;\n"
+    "  if ((pc.flags & (1u << s)) != 0u)\n"
+    "    uv /= sz / sc;\n"
+    "  float lod = textureQueryLod(sampler2D(uTex2D[nonuniformEXT(ti)], "
+    "uSmp[nonuniformEXT(si)]), uv).y;\n"
+    "  if ((when & (lod > 0.0 ? 1u : 2u)) == 0u)\n"
+    "    return tap(ti, si, uv);\n"
+    "  vec2 d = sc / sz;\n"
+    "  vec4 diag = tap(ti, si, uv - d) + tap(ti, si, uv + d) +\n"
+    "              tap(ti, si, uv + vec2(d.x, -d.y)) + tap(ti, si, uv + vec2(-d.x, d.y));\n"
+    "  if (kern == 1u)\n"
+    "    return 0.5 * tap(ti, si, uv) + 0.125 * diag;\n"
+    "  vec4 edge = tap(ti, si, uv + vec2(d.x, 0.0)) + tap(ti, si, uv - vec2(d.x, 0.0)) +\n"
+    "              tap(ti, si, uv + vec2(0.0, d.y)) + tap(ti, si, uv - vec2(0.0, d.y));\n"
+    "  return (4.0 * tap(ti, si, uv) + 2.0 * edge + diag) / 16.0;\n"
+    "}\n";
+
 static const char *k_cmp[8] = {
     "false", "a < r", "a == r", "a <= r", "a > r", "a != r", "a >= r", "true",
 };
@@ -325,6 +354,7 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             "  vec2 v = floor(c * 255.0 + 0.5);\n"
             "  return mix(v, v - 256.0, greaterThanEqual(v, vec2(128.0))) / 127.0;\n"
             "}\n"
+            "%s"
             "void main() {\n"
             "  vec4 v0 = vDiffuse, v1 = vSpecular;\n"
             "  vec4 vTex3 = %s;\n", interp, interp, k->wbuf ? HLE_WBUF_IN_GLSL : "",
@@ -332,6 +362,7 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             "layout(input_attachment_index = 0, set = 2, binding = 0) "
             "uniform subpassInput uFb;\n" : "",
         k->fbfetch & HLE_FB_ZEQ ? HLE_ZEQ_DECL_GLSL : "",
+        k->conv ? k_conv_glsl : "",
         k->point_sprite ? "vec4(gl_PointCoord, 1.0, 1.0)" : "vTex3i");
     if (k->wbuf) {
         put(&b, HLE_WBUF_CALC_GLSL);
@@ -408,6 +439,11 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             }
             break;
         case HLE_PST_PROJECT2D:
+            if (((k->conv >> (2 * s)) & 3) && !((k->vol >> s) & 1)) {
+                put(&b, "  vec4 t%u = sampk(%uu, nvproj(vTex%u).xy, %uu, %uu);\n", s, s, s,
+                    (k->conv >> (2 * s)) & 3, (k->conv_mm >> (2 * s)) & 3);
+                break;
+            }
             put(&b, (k->vol >> s) & 1 ? "  vec4 t%u = samp3(%uu, vec3(nvproj(vTex%u).xy, 0.0));\n"
                                       : "  vec4 t%u = samp(%uu, nvproj(vTex%u).xy);\n", s, s, s);
             break;

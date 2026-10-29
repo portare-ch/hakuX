@@ -86,6 +86,10 @@ typedef struct HlePshKey {
                                            v1 (a shader without one) */
     uint8_t sblend;                     /* the NV2A's signed blend equations (ff.h
                                            HleFfPsKey.sblend) */
+    /* The NV2A's convolution filters (CONVOLUTION_2D_LOD0), 2 bits a stage:
+     * conv the kernel (1 quincunx, 2 gaussian 3 x 3), conv_mm where it
+     * applies (bit 0 minification, 1 magnification). PROJECT2D only. */
+    uint8_t conv, conv_mm;
 } HlePshKey;
 
 /* Key from the render-state array (rs[0..56] = the pixel-shader block). */
