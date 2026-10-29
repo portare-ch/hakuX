@@ -102,24 +102,51 @@ static void texgen(Buf *b, const HleFfhwKey *k)
     }
 }
 
+/* The colour lighting starts from, before the lights: src[0] the emission
+ * source, src[1] the ambient one (SET_COLOR_MATERIAL), amb the scene ambient
+ * register (SET_SCENE_AMBIENT_COLOR or the back's), emi the material
+ * emission one (SET_MATERIAL_EMISSION or the back's), diffuse's source the
+ * alpha (the material's in amb's w). Where either source is the material,
+ * the scene ambient register already holds what D3D folds into it (ambient
+ * times material ambient, plus emission) and is used as it is, plus the
+ * vertex colour the other source names scaled by the emission register; the
+ * Xbox draws FromMaterial and FromMaterial_me0_5 (material emission 0 and
+ * 0.5) alike (nxdk_pgraph_tests). With both from vertex colours, the
+ * emission colour plus the ambient one scaled by the emission register (as
+ * xemu). */
+static void base_colour(Buf *b, const char *out, const uint8_t src[4], unsigned amb, unsigned emi)
+{
+    char alpha[32];
+    snprintf(alpha, sizeof(alpha), src[2] == 1 ? "v3.a" : src[2] == 2 ? "v4.a" : "c[%u].w", amb);
+    if (src[0] == 0 && src[1] == 0) {
+        put(b, "    %s = vec4(c[%u].rgb, %s);\n", out, amb, alpha);
+    } else if (src[0] == 0 || src[1] == 0) {
+        put(b, "    %s = vec4(c[%u].rgb + %s * c[%u].rgb, %s);\n", out, amb,
+            src_rgb(src[0] ? src[0] : src[1]), emi, alpha);
+    } else {
+        put(b, "    %s = vec4(%s + %s * c[%u].rgb, %s);\n", out, src_rgb(src[0]),
+            src_rgb(src[1]), emi, alpha);
+    }
+}
+
 static void lighting(Buf *b, const HleFfhwKey *k)
 {
     if (!k->lighting) {
         put(b, "    oD0 = v3;\n    oD1 = v4;\n");
         return;
     }
-    const char *alpha = k->src[2] == 1 ? "v3.a" : k->src[2] == 2 ? "v4.a" : "c[%u].w";
-    char a[32];
-    snprintf(a, sizeof(a), alpha, HLE_FFHW_C_AMBIENT);
-    /* the ambient source scaled by the emission register, plus the
-     * emission source (the scene ambient register for the material: D3D
-     * folds ambient * material ambient + emissive into it) */
-    char amb[16];
-    snprintf(amb, sizeof(amb), "c[%u].rgb", HLE_FFHW_C_AMBIENT);
-    put(b, "    oD0 = vec4(%s * c[%u].rgb + %s, %s);\n",
-        k->src[1] == 0 ? amb : src_rgb(k->src[1]), HLE_FFHW_C_EMISSION,
-        k->src[0] == 0 ? amb : src_rgb(k->src[0]), a);
+    base_colour(b, "oD0", k->src, HLE_FFHW_C_AMBIENT, HLE_FFHW_C_EMISSION);
     put(b, "    oD1 = vec4(0.0, 0.0, 0.0, v4.a);\n");
+    if (k->two_side) {
+        /* the back the same from the back registers, by the back's colour
+         * sources (SET_COLOR_MATERIAL 15:8), whose vertex colours are the
+         * front's (v3, v4): the NV2A tests pass the front specular through
+         * on back faces as well (Specular back, ControlFlags_FF), and its
+         * NoLight reference shows the back specular alpha uniform where the
+         * back specular colours' alphas vary (v4.a) */
+        base_colour(b, "oB0", k->bsrc, HLE_FFHW_C_BACK_AMBIENT, HLE_FFHW_C_BACK_EMISSION);
+        put(b, "    oB1 = vec4(0.0, 0.0, 0.0, v4.a);\n");
+    }
     /* the direction to the eye: the eye position for a local viewer, else
      * along -z (D3D's eye space looks down +z) */
     if (k->local_eye) {
@@ -171,10 +198,30 @@ static void lighting(Buf *b, const HleFfhwKey *k)
                "        oD0.rgb += c[%u].rgb * att;\n"
                "        oD0.rgb += %s * c[%u].rgb * (att * nl);\n"
                "        oD1.rgb += %s * c[%u].rgb * (att * pf);\n"
-               "      }\n"
-               "    }\n",
+               "      }\n",
             HLE_FFHW_C_PARAMS, L + HLE_FFHW_L_AMBIENT, src_rgb(k->src[2]), L + HLE_FFHW_L_DIFFUSE,
             src_rgb(k->src[3]), L + HLE_FFHW_L_SPECULAR);
+        if (k->two_side) {
+            /* the back faces: the same light along -N, the back light colours
+             * and the back specular power */
+            const unsigned BL = HLE_FFHW_C_BACK_LIGHTS + 3 * i;
+            char h[48];
+            if (t != 1 || k->local_eye) {
+                snprintf(h, sizeof(h), "normalize(%s + eyeV)", t == 1 ? "Ld" : "VP");
+            } else {
+                snprintf(h, sizeof(h), "c[%u].xyz", L + HLE_FFHW_L_HALF);
+            }
+            put(b, "      if (lit) {\n"
+                   "        float bl = max(dot(-tN, %s), 0.0), bh = max(dot(-tN, %s), 0.0);\n"
+                   "        float bf = bl == 0.0 || bh == 0.0 ? 0.0 : pow(bh, c[%u].y);\n"
+                   "        oB0.rgb += c[%u].rgb * att;\n"
+                   "        oB0.rgb += %s * c[%u].rgb * (att * bl);\n"
+                   "        oB1.rgb += %s * c[%u].rgb * (att * bf);\n"
+                   "      }\n",
+                t == 1 ? "Ld" : "VP", h, HLE_FFHW_C_PARAMS, BL, src_rgb(k->bsrc[2]), BL + 1,
+                src_rgb(k->bsrc[3]), BL + 2);
+        }
+        put(b, "    }\n");
     }
 }
 
@@ -199,7 +246,17 @@ size_t hle_ffhw_glsl(const uint32_t *tokens, unsigned nslots, const HleVshKey *v
     }
     texgen(&b, &k);
     lighting(&b, &k);
-    put(&b, "    oB0 = v7;\n    oB1 = v8;\n");
+    /* the back colours: lit by lighting() under two-sided lighting; unlit,
+     * (0, 0, 0, 1) whatever the back colour registers hold and whatever
+     * SET_LIGHT_CONTROL says (the NV2A tests' Specular back,
+     * ControlFlagsLightDisable_FF). Without two-sided lighting the pixel
+     * stage doesn't read them. */
+    const bool lit2 = k.lighting && k.two_side;
+    if (!lit2) {
+        put(&b, k.two_side ? "    oB0 = vec4(0.0, 0.0, 0.0, 1.0);\n"
+                             "    oB1 = vec4(0.0, 0.0, 0.0, 1.0);\n"
+                           : "    oB0 = v7;\n    oB1 = v8;\n");
+    }
     if (!k.specular) {
         put(&b, "    oD1 = vec4(0.0, 0.0, 0.0, 1.0);\n    oB1 = vec4(0.0, 0.0, 0.0, 1.0);\n");
     } else {
@@ -208,6 +265,11 @@ size_t hle_ffhw_glsl(const uint32_t *tokens, unsigned nslots, const HleVshKey *v
                 put(&b, "    oD0.rgb += oD1.rgb;\n");
             }
             put(&b, "    oD1 = v4;\n");
+            if (lit2) {
+                /* the front vertex specular on back faces too (Specular back,
+                 * ControlFlagsNoLight_FF and ControlFlags_FF) */
+                put(&b, "    oB0.rgb += oB1.rgb;\n    oB1 = v4;\n");
+            }
         }
         if (!k.alpha_mat_spec) {
             put(&b, "    oD1.a = 1.0;\n    oB1.a = 1.0;\n");

@@ -86,6 +86,9 @@ typedef struct HlePshKey {
                                            v1 (a shader without one) */
     uint8_t sblend;                     /* the NV2A's signed blend equations (ff.h
                                            HleFfPsKey.sblend) */
+    uint8_t two_side;                   /* SET_TWO_SIDE_LIGHT_EN (a vertex program's
+                                           shader: it writes the back colours): back
+                                           faces read v0 / v1 from oB0 / oB1 */
     /* The NV2A's convolution filters (CONVOLUTION_2D_LOD0), 2 bits a stage:
      * conv the kernel (1 quincunx, 2 gaussian 3 x 3), conv_mm where it
      * applies (bit 0 minification, 1 magnification). PROJECT2D only. */
