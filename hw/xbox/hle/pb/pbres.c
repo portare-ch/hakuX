@@ -233,6 +233,7 @@ static bool yuv_define(uint32_t id, const uint32_t h5[5], const HleResDesc *d)
     HleCmdTex *c = hle_fe_begin(HLE_OP_TEX, sizeof(*c));
     c->id = id;
     c->xfmt = HLE_XFMT_LIN_A8R8G8B8;
+    c->gfmt = d->fmt;
     c->w = d->w;
     c->h = d->h;
     c->d = 1;
@@ -424,6 +425,7 @@ static bool tex_define(uint32_t id, const uint32_t h5[5], const HleResDesc *dp,
     HleCmdTex *c = hle_fe_begin(HLE_OP_TEX, sizeof(*c));
     c->id = id;
     c->xfmt = oxfmt;
+    c->gfmt = d.fmt;
     c->w = d.w;
     c->h = d.h;
     c->d = depth;

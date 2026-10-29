@@ -260,6 +260,36 @@ static void shadow_sample(Buf *b, const HlePshKey *k, unsigned s, bool project3d
     put(b, "  }\n");
 }
 
+/* Colour key (HlePshKey ckey): a fetched texel that matches stage s's key
+ * colour (its ARGB, or RGB where the format's alpha isn't compared) has its
+ * alpha or ARGB zeroed, which later combiner stages may ignore, or kills the
+ * fragment. After filtering: a linear-filtered edge between keyed and other
+ * texels matches neither. */
+static void color_key(Buf *b, const HlePshKey *k, unsigned s, unsigned m)
+{
+    /* levels a channel (r g b, a); an alpha not compared has 0: ckeq's
+     * floor(x * 0 + 0.5) is 0 for both */
+    static const char *const k_n[4][2] = {
+        { "vec4(255.0, 255.0, 255.0, 0.0)", "vec4(255.0)" },
+        { "vec4(31.0, 63.0, 31.0, 0.0)", "vec4(31.0, 63.0, 31.0, 0.0)" },
+        { "vec4(31.0, 31.0, 31.0, 0.0)", "vec4(31.0, 31.0, 31.0, 1.0)" },
+        { "vec4(15.0, 15.0, 15.0, 0.0)", "vec4(15.0)" } };
+    const unsigned op = (k->ckey >> (2 * s)) & 3, bits = (k->ckey_bits >> (2 * s)) & 3;
+    const unsigned alpha = (k->ckey_alpha >> s) & 1;
+    const uint32_t c = k->ckey_col[s];
+    if (!op || m == HLE_PST_NONE || m == HLE_PST_PASSTHRU || m == HLE_PST_CLIPPLANE ||
+        m == HLE_PST_DOTPRODUCT) {
+        return;
+    }
+    put(b, "  if (ckeq(t%u, vec4(%u.0, %u.0, %u.0, %u.0) / 255.0, %s)) ", s, (c >> 16) & 255,
+        (c >> 8) & 255, c & 255, c >> 24, k_n[bits][alpha]);
+    switch (op) {
+    case 1: put(b, "t%u.a = 0.0;\n", s); break;
+    case 2: put(b, "t%u = vec4(0.0);\n", s); break;
+    default: put(b, "discard;\n"); break;
+    }
+}
+
 /* Texture colour sign: stage s's signed channels (HlePshKey sgn_ob,
  * sgn_raw) as the NV2A reads them, before anything uses the texel. */
 static void sign_decode(Buf *b, const HlePshKey *k, unsigned s, unsigned m)
@@ -348,7 +378,7 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             "  vec2 v = floor(c * 255.0 + 0.5);\n"
             "  return mix(v, v - 256.0, greaterThanEqual(v, vec2(128.0))) / 127.0;\n"
             "}\n"
-            "%s"
+            "%s%s"
             "void main() {\n"
             "%s"
             "  vec4 vTex3 = %s;\n", interp, interp, back, k->wbuf ? HLE_WBUF_IN_GLSL : "",
@@ -364,6 +394,10 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             "  float v = floor(c * 255.0 + 0.5);\n"
             "  return max((v >= 128.0 ? v - 256.0 : v) / 127.0, -1.0);\n"
             "}\n" : "",
+        /* colour key: the texel and the key the same at n levels a channel */
+        k->ckey ? "bool ckeq(vec4 t, vec4 c, vec4 n) {\n"
+                  "  return all(equal(floor(t * n + 0.5), floor(c * n + 0.5)));\n"
+                  "}\n" : "",
         k->two_side ? "  vec4 v0 = gl_FrontFacing ? vDiffuse : vBack0;\n"
                       "  vec4 v1 = gl_FrontFacing ? vSpecular : vBack1;\n"
                     : "  vec4 v0 = vDiffuse, v1 = vSpecular;\n",
@@ -416,6 +450,7 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             /* the target drawn into: this pixel as the earlier draws left it
              * (an 8-bit target holds blue: back to its colour) */
             put(&b, "  vec4 t%u = subpassLoad(uFb)%s;\n", s, k->out_bgra ? ".bgra" : "");
+            color_key(&b, k, s, m);
             alpha_kill(&b, k, s, m);
             continue;
         }
@@ -555,6 +590,7 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
                 s, s, s, m);
             break;
         }
+        color_key(&b, k, s, m);         /* on the texel as stored */
         sign_decode(&b, k, s, m);
         alpha_kill(&b, k, s, m);
     }
