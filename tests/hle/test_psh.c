@@ -322,6 +322,56 @@ static void test_sign(void)
     HT_CHECK(strstr(buf, "* vec2(t0.b, sgn8(t0.bg).y);") != NULL);
 }
 
+/* colour key on signed channels: compared as the guest stores them (an
+ * offset-binary channel's top bit flipped back), the key's zero written
+ * after the sign is decoded; a target read by fbfetch decoded too */
+static void test_sign_color_key(void)
+{
+    uint32_t rs[HLE_PS_REGS] = { 0 };
+    rs[HLE_PS_RGB_IN] = IN4(R_T0, R_T1, R_ZERO, R_ZERO);
+    rs[HLE_PS_RGB_OUT] = R_R0 << 4;
+    rs[HLE_PS_COUNT] = 1;
+    rs[HLE_PS_TEXMODES] = HLE_PST_PROJECT2D | HLE_PST_PROJECT2D << 5 | HLE_PST_PROJECT2D << 10;
+    HlePshKey k;
+    hle_psh_key(rs, &k);
+    k.ckey = 1 | 2 << 2 | 3 << 4;                       /* alpha, ARGB, kill */
+    k.ckey_alpha = 1 | 2 | 4;
+    k.ckey_col[0] = 0x00000000u;
+    k.ckey_col[1] = 0x80FF0000u;
+    k.ckey_col[2] = 0x00000000u;
+    k.sgn_ob = 0x8 | 0x7 << 4 | 0x1 << 8;               /* t0 a; t1 rgb; t2 r */
+    size_t n = hle_psh_glsl(&k, buf, sizeof(buf), NULL);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("psh_sign_color_key");
+    const char *m0 = strstr(buf, "  bool ck0 = ckeq(mix(t0, mod(floor(t0 * 255.0 + 0.5) + 128.0, "
+                                 "256.0) / 255.0, vec4(0.0, 0.0, 0.0, 1.0)), vec4(0.0, 0.0, 0.0, "
+                                 "0.0) / 255.0, vec4(255.0));\n");
+    const char *d0 = strstr(buf, "  t0.a = sgnob(t0.a);\n");
+    const char *z0 = strstr(buf, "  if (ck0) t0.a = 0.0;\n");
+    HT_CHECK(m0 != NULL && d0 != NULL && z0 != NULL && m0 < d0 && d0 < z0);
+    const char *m1 = strstr(buf, "  bool ck1 = ckeq(mix(t1, mod(floor(t1 * 255.0 + 0.5) + 128.0, "
+                                 "256.0) / 255.0, vec4(1.0, 1.0, 1.0, 0.0)), vec4(255.0, 0.0, 0.0, "
+                                 "128.0) / 255.0, vec4(255.0));\n");
+    const char *z1 = strstr(buf, "  if (ck1) t1 = vec4(0.0);\n");
+    HT_CHECK(m1 != NULL && z1 != NULL && m1 < strstr(buf, "  t1.b = sgnob(t1.b);\n") &&
+             strstr(buf, "  t1.b = sgnob(t1.b);\n") < z1);
+    /* a kill needs no zero: the test, then the decode */
+    const char *k2 = strstr(buf, "  if (ckeq(mix(t2, mod(floor(t2 * 255.0 + 0.5) + 128.0, "
+                                 "256.0) / 255.0, vec4(1.0, 0.0, 0.0, 0.0)), vec4(0.0, 0.0, 0.0, "
+                                 "0.0) / 255.0, vec4(255.0))) discard;\n");
+    HT_CHECK(k2 != NULL && k2 < strstr(buf, "  t2.r = sgnob(t2.r);\n"));
+    /* a target's channels as stored, through fbfetch */
+    k.ckey = 0;
+    k.sgn_ob = 0;
+    k.sgn_raw = 0x7;
+    k.fbfetch = 1;
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
+    dump("psh_sign_fb");
+    const char *fb = strstr(buf, "vec4 t0 = subpassLoad(uFb);");
+    const char *r0 = strstr(buf, "  t0.r = sgnraw(t0.r);\n");
+    HT_CHECK(fb != NULL && r0 != NULL && fb < r0 && strstr(buf, "  t0.b = sgnraw(t0.b);\n"));
+}
+
 /* dithering into a 16-bit target: the ordered offset by its channel steps */
 static void test_dither(void)
 {
@@ -390,6 +440,7 @@ int main(void)
     HT_RUN(test_two_side);
     HT_RUN(test_color_key);
     HT_RUN(test_sign);
+    HT_RUN(test_sign_color_key);
     HT_RUN(test_dither);
     HT_RUN(test_overflow);
     HT_DONE();

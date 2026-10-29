@@ -2483,6 +2483,24 @@ static uint32_t stage_lod_down(const HleCmdDraw *c, unsigned st, uint32_t rt_id)
     return (uint32_t)lrintf(log2f((float)ts->scale / (float)rt->scale) * 16.0f);
 }
 
+/* Stage st's sampler state (sampler_index), its border colour encoded as
+ * the texture's texels are: an offset-binary channel's byte (colour sign,
+ * HleVkTex.sgn) with its top bit flipped, so that the border filters with
+ * the texels and decodes (psh.c sgnob) to the colour's signed value; *t
+ * holds the copy. */
+static const uint32_t *stage_tss(const HleCmdState *s, const HleCmdDraw *c, unsigned st,
+                                 uint32_t t[HLE_TSS_COUNT])
+{
+    HleVkTex *tx = c->tex[st] ? tex_find(c->tex[st]) : NULL;
+    if (!tx || !tx->sgn) {
+        return s->tss[st];
+    }
+    memcpy(t, s->tss[st], HLE_TSS_COUNT * sizeof(t[0]));
+    t[TSS_BORDERCOLOR] ^= (tx->sgn & 1 ? 0x00800000u : 0) | (tx->sgn & 2 ? 0x00008000u : 0) |
+                          (tx->sgn & 4 ? 0x00000080u : 0) | (tx->sgn & 8 ? 0x80000000u : 0);
+    return t;
+}
+
 /* Surfaces sampled as textures, each told once (the first 64 ids below 8192) */
 static uint8_t g_rt_seen[8192 / 8];
 static unsigned g_rt_told;
@@ -3545,8 +3563,10 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
         memset(&k.ps, 0, sizeof(k.ps));
         pc.flags = 0;
         for (unsigned st = 0; st < HLE_FF_STAGES; st++) {
+            uint32_t tt[HLE_TSS_COUNT];
             pc.tex[st] = stage_slot(c, st, rt_id, &pc.flags) |
-                         sampler_index(s->tss[st], stage_lod_down(c, st, rt_id)) << 16;
+                         sampler_index(stage_tss(s, c, st, tt), stage_lod_down(c, st, rt_id))
+                             << 16;
             k.vs.texcoord[st] = s->tss[st][TSS_TEXCOORDINDEX] & 7;
         }
         k.vs.ntex = HLE_FF_STAGES;
@@ -3600,28 +3620,27 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
         for (unsigned st = 0; st < 4; st++) {
             /* colour sign (D3DTSIGN_*: A R G B): an uploaded texture's signed
              * 8-bit channels came offset binary (pb/pbres.c) and map back
-             * exactly; a target's, and another format's 8-bit ones, are read
-             * as stored, two's complement after filtering. DXT and 16-bit
-             * formats stay unsigned. */
+             * exactly; a target's, and L8's, AL8's, A8's and A8L8's, are read
+             * as stored, two's complement after filtering. By the guest's
+             * format: DXT, 16-bit and P8 stay unsigned where the host
+             * expanded them to 8888 too. */
             const uint32_t sign = s->tss[st][TSS_COLORSIGN] >> 28;
             if (!sign || !c->tex[st]) {
                 continue;
             }
             HleVkTex *tx = tex_find(c->tex[st]);
             HleVkSurf *sf = tx ? NULL : hle_surf_get(c->tex[st]);
-            const VkFormat f = tx ? tx->fmt : sf ? sf->fmt : VK_FORMAT_UNDEFINED;
-            const bool b8 = f == VK_FORMAT_R8_UNORM || f == VK_FORMAT_R8G8_UNORM ||
-                            f == VK_FORMAT_R8G8B8A8_UNORM || f == VK_FORMAT_B8G8R8A8_UNORM;
-            const uint32_t want = (sign & 1) << 3 | ((sign >> 1) & 7);     /* rgba */
-            const uint32_t ob = tx ? tx->sgn : 0, raw = b8 ? want & ~ob : 0;
+            const uint32_t gx = tx ? tx->gfmt : sf ? sf->d.xfmt : 0;
+            const uint32_t want = tx || sf ? hle_fmt_sign_rgba(gx, sign) : 0;     /* rgba */
+            const uint32_t ob = tx ? tx->sgn : 0, raw = want & ~ob;
             k.pk.sgn_ob |= (uint16_t)(ob << (4 * st));
             k.pk.sgn_raw |= (uint16_t)(raw << (4 * st));
             static unsigned s_logged;
             if (s_logged < 8) {
                 s_logged++;
-                hle_log("hakuX-hle-pipe", "colour sign: stage %u %s %u vkfmt %d sign %x: "
+                hle_log("hakuX-hle-pipe", "colour sign: stage %u %s %u fmt 0x%x sign %x: "
                         "offset binary %x, as stored %x%s", st, tx ? "tex" : "surf", c->tex[st],
-                        (int)f, sign, ob, raw, ob | raw ? "" : " (format stays unsigned)");
+                        gx, sign, ob, raw, ob | raw ? "" : " (format stays unsigned)");
             }
         }
         for (unsigned st = 0; st < 4; st++) {

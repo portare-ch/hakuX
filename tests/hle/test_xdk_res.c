@@ -204,6 +204,19 @@ static void test_sign(void)
     HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_R8B8, 0x2), 1 | 8);
     HT_EQ_U32(hle_fmt_sign_xor(HLE_XFMT_DXT1, 0xF), 0);                    /* no bytes */
     HT_EQ_U32(hle_fmt_sign_xor(HLE_XFMT_R5G6B5, 0xF), 0);
+    /* read as stored: their bytes' channels, nothing flipped */
+    HT_EQ_U32(hle_fmt_sign_xor(HLE_XFMT_L8, 0xF), 0);
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_L8, 0xF), 0x7);                   /* alpha is 1 */
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_LIN_AL8, 0x1), 0x8);
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_A8, 0xF), 0x8);                   /* rgb are 1 */
+    HT_EQ_U32(hle_fmt_sign_xor(HLE_XFMT_A8L8, 0xF), 0);
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_A8L8, 0x3), 0x9);
+    /* by the guest's format: those the host expands to 8888 stay unsigned */
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_DXT1, 0xF), 0);
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_DXT5, 0xF), 0);
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_A4R4G4B4, 0xF), 0);
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_P8, 0xF), 0);
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_R5G6B5, 0xF), 0);
 }
 
 int main(void)

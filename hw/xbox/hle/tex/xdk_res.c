@@ -38,7 +38,8 @@ const HleFmtInfo *hle_fmt_info(uint32_t code)
 
 /* Per format and sign bit (A, R, G, B): the texel bits flipped, and the
  * view channels (rgba bits) that byte reaches. G8B8 views as (B, G, B, G),
- * R8B8 as (R, B, B, R) (vk/draw.c tex_format). */
+ * R8B8 as (R, B, B, R) (vk/draw.c tex_format). L8, AL8, A8 and A8L8 are
+ * read as stored (no bits flipped): the channels their bytes reach. */
 static const struct {
     uint8_t code[2];        /* swizzled, linear */
     uint32_t xor[4];
@@ -58,6 +59,10 @@ static const struct {
       { 0, 0, 0x8000u, 0x0080u }, { 0, 0, 2 | 8, 1 | 4 } },
     { { HLE_XFMT_R8B8, HLE_XFMT_LIN_R8B8 },             /* bytes B R */
       { 0, 0x8000u, 0, 0x0080u }, { 0, 1 | 8, 0, 2 | 4 } },
+    { { HLE_XFMT_L8, HLE_XFMT_LIN_L8 }, { 0 }, { 0, 1, 2, 4 } },        /* (L, L, L, 1) */
+    { { HLE_XFMT_AL8, HLE_XFMT_LIN_AL8 }, { 0 }, { 8, 1, 2, 4 } },      /* (L, L, L, L) */
+    { { HLE_XFMT_A8, HLE_XFMT_LIN_A8 }, { 0 }, { 8, 0, 0, 0 } },        /* (1, 1, 1, A) */
+    { { HLE_XFMT_A8L8, HLE_XFMT_LIN_A8L8 }, { 0 }, { 8, 1, 2, 4 } },    /* (L, L, L, A) */
 };
 
 static int sign_row(uint32_t code)

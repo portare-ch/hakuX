@@ -31,7 +31,10 @@ const HleFmtInfo *hle_fmt_info(uint32_t code);
  * 8-bit one of the format (X8's unused alpha is none). */
 uint32_t hle_fmt_sign_xor(uint32_t code, uint32_t sign);
 /* The channels of the back end's view of the format (bit 0 r, 1 g, 2 b,
- * 3 a: vk/draw.c tex_format) that hle_fmt_sign_xor's bytes reach. */
+ * 3 a: vk/draw.c tex_format) that sign's 8-bit channels reach: those
+ * hle_fmt_sign_xor flips, and L8's, AL8's, A8's and A8L8's, read as
+ * stored. 0 for the formats without (DXT, 16-bit channels, P8, YUV): by
+ * the guest's format, not a conversion's. */
 uint32_t hle_fmt_sign_rgba(uint32_t code, uint32_t sign);
 
 enum HleResKind {
