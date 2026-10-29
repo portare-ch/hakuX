@@ -97,6 +97,12 @@ typedef struct HlePshKey {
      * stage; an X format's is not compared). */
     uint8_t ckey, ckey_bits, ckey_alpha;
     uint32_t ckey_col[4];               /* SET_COLOR_KEY_COLOR per stage (D3DCOLOR) */
+    /* Colour sign, 4 bits a stage (bit 0 r .. 3 a) as two's complement:
+     * sgn_ob the channels uploaded offset binary (tex/xdk_res.h), mapped
+     * back exactly; sgn_raw those read as stored (targets, formats not
+     * converted), mapped after filtering, inexact where texels of both
+     * signs blend. */
+    uint16_t sgn_ob, sgn_raw;
     uint8_t dither;                     /* SET_DITHER_ENABLE into a 16-bit target: 1
                                            R5G6B5, 2 1555 (ordered, 4 x 4 by guest
                                            pixel) */

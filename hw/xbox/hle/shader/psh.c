@@ -295,11 +295,32 @@ static void shadow_sample(Buf *b, const HlePshKey *k, unsigned s, bool project3d
     put(b, "  }\n");
 }
 
-/* Colour key (HlePshKey ckey): a fetched texel that matches stage s's key
- * colour (its ARGB, or RGB where the format's alpha isn't compared) has its
- * alpha or ARGB zeroed, which later combiner stages may ignore, or kills the
- * fragment. After filtering: a linear-filtered edge between keyed and other
- * texels matches neither. */
+/* Texture colour sign: stage s's signed channels (HlePshKey sgn_ob,
+ * sgn_raw) as the NV2A reads them, before anything uses the texel. */
+static void sign_decode(Buf *b, const HlePshKey *k, unsigned s, unsigned m)
+{
+    const unsigned ob = (k->sgn_ob >> (4 * s)) & 15, raw = (k->sgn_raw >> (4 * s)) & 15 & ~ob;
+    if (m == HLE_PST_NONE || m == HLE_PST_PASSTHRU || m == HLE_PST_CLIPPLANE ||
+        m == HLE_PST_DOTPRODUCT) {
+        return;
+    }
+    for (unsigned c = 0; c < 4; c++) {
+        if (((ob | raw) >> c) & 1) {
+            put(b, "  t%u.%c = %s(t%u.%c);\n", s, "rgba"[c], (ob >> c) & 1 ? "sgnob" : "sgnraw",
+                s, "rgba"[c]);
+        }
+    }
+}
+
+/* Colour key (HlePshKey ckey) and colour sign (sign_decode) on stage s's
+ * fetched texel. A texel that matches the stage's key colour (its ARGB, or
+ * RGB where the format's alpha isn't compared) has its alpha or ARGB
+ * zeroed, which later combiner stages may ignore, or kills the fragment.
+ * After filtering: a linear-filtered edge between keyed and other texels
+ * matches neither. The key compares the texel as the guest stores it (an
+ * offset-binary channel's top bit flipped back), and its zero is written
+ * after the sign is decoded: a signed channel's 0, not the -1 an
+ * offset-binary 0 decodes to. */
 static void color_key(Buf *b, const HlePshKey *k, unsigned s, unsigned m)
 {
     /* levels a channel (r g b, a); an alpha not compared has 0: ckeq's
@@ -311,18 +332,37 @@ static void color_key(Buf *b, const HlePshKey *k, unsigned s, unsigned m)
         { "vec4(15.0, 15.0, 15.0, 0.0)", "vec4(15.0)" } };
     const unsigned op = (k->ckey >> (2 * s)) & 3, bits = (k->ckey_bits >> (2 * s)) & 3;
     const unsigned alpha = (k->ckey_alpha >> s) & 1;
+    const unsigned ob = (k->sgn_ob >> (4 * s)) & 15;
+    const bool sgn = ((k->sgn_ob | k->sgn_raw) >> (4 * s)) & 15;
     const uint32_t c = k->ckey_col[s];
     if (!op || m == HLE_PST_NONE || m == HLE_PST_PASSTHRU || m == HLE_PST_CLIPPLANE ||
         m == HLE_PST_DOTPRODUCT) {
+        sign_decode(b, k, s, m);
         return;
     }
-    put(b, "  if (ckeq(t%u, vec4(%u.0, %u.0, %u.0, %u.0) / 255.0, %s)) ", s, (c >> 16) & 255,
-        (c >> 8) & 255, c & 255, c >> 24, k_n[bits][alpha]);
-    switch (op) {
-    case 1: put(b, "t%u.a = 0.0;\n", s); break;
-    case 2: put(b, "t%u = vec4(0.0);\n", s); break;
-    default: put(b, "discard;\n"); break;
+    char t[160], act[24];
+    if (ob) {                           /* offset binary: 8-bit channels (ckey_bits 0) */
+        snprintf(t, sizeof(t), "mix(t%u, mod(floor(t%u * 255.0 + 0.5) + 128.0, 256.0) / 255.0, "
+                 "vec4(%u.0, %u.0, %u.0, %u.0))", s, s, ob & 1, (ob >> 1) & 1, (ob >> 2) & 1,
+                 ob >> 3);
+    } else {
+        snprintf(t, sizeof(t), "t%u", s);
     }
+    switch (op) {
+    case 1: snprintf(act, sizeof(act), "t%u.a = 0.0", s); break;
+    case 2: snprintf(act, sizeof(act), "t%u = vec4(0.0)", s); break;
+    default: snprintf(act, sizeof(act), "discard"); break;
+    }
+    if (op == 3 || !sgn) {
+        put(b, "  if (ckeq(%s, vec4(%u.0, %u.0, %u.0, %u.0) / 255.0, %s)) %s;\n", t,
+            (c >> 16) & 255, (c >> 8) & 255, c & 255, c >> 24, k_n[bits][alpha], act);
+        sign_decode(b, k, s, m);
+        return;
+    }
+    put(b, "  bool ck%u = ckeq(%s, vec4(%u.0, %u.0, %u.0, %u.0) / 255.0, %s);\n", s, t,
+        (c >> 16) & 255, (c >> 8) & 255, c & 255, c >> 24, k_n[bits][alpha]);
+    sign_decode(b, k, s, m);
+    put(b, "  if (ck%u) %s;\n", s, act);
 }
 
 /* D3DTSS_ALPHAKILL: a fetched texel with alpha 0 discards the fragment. A
@@ -396,7 +436,7 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             "  vec2 v = floor(c * 255.0 + 0.5);\n"
             "  return mix(v, v - 256.0, greaterThanEqual(v, vec2(128.0))) / 127.0;\n"
             "}\n"
-            "%s"
+            "%s%s"
             "void main() {\n"
             "%s"
             "  vec4 vTex3 = %s;\n", interp, interp, back, k->wbuf ? HLE_WBUF_IN_GLSL : "",
@@ -404,6 +444,14 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             "layout(input_attachment_index = 0, set = 2, binding = 0) "
             "uniform subpassInput uFb;\n" : "",
         k->fbfetch & HLE_FB_ZEQ ? HLE_ZEQ_DECL_GLSL : "",
+        /* colour sign: a channel offset binary, or as stored, as two's
+         * complement over 127 */
+        k->sgn_ob | k->sgn_raw ?
+            "float sgnob(float c) { return max((c * 255.0 - 128.0) / 127.0, -1.0); }\n"
+            "float sgnraw(float c) {\n"
+            "  float v = floor(c * 255.0 + 0.5);\n"
+            "  return max((v >= 128.0 ? v - 256.0 : v) / 127.0, -1.0);\n"
+            "}\n" : "",
         /* colour key: the texel and the key the same at n levels a channel */
         k->ckey ? "bool ckeq(vec4 t, vec4 c, vec4 n) {\n"
                   "  return all(equal(floor(t * n + 0.5), floor(c * n + 0.5)));\n"
@@ -460,7 +508,7 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             /* the target drawn into: this pixel as the earlier draws left it
              * (an 8-bit target holds blue: back to its colour) */
             put(&b, "  vec4 t%u = subpassLoad(uFb)%s;\n", s, k->out_bgra ? ".bgra" : "");
-            color_key(&b, k, s, m);
+            color_key(&b, k, s, m);     /* and the target's colour sign (sgn_raw) */
             alpha_kill(&b, k, s, m);
             continue;
         }
@@ -512,9 +560,22 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             static const char *const mat[4][2] = {
                 { "", "" }, { "pc.bump.x", "pc.bump.y" }, { "pc.bump.z", "pc.bump.w" },
                 { "pc.bump3.x", "pc.bump3.y" } };
+            /* (du, dv) the input's signed bytes; a channel colour sign already
+             * made signed (sign_decode) as it is */
+            const unsigned sd = ((k->sgn_ob | k->sgn_raw) >> (4 * in)) & 6;
+            char duv[64], du[24], dv[24];
+            snprintf(du, sizeof(du), sd & 4 ? "t%u.b" : "sgn8(t%u.bg).x", in);
+            snprintf(dv, sizeof(dv), sd & 2 ? "t%u.g" : "sgn8(t%u.bg).y", in);
+            if (sd == 6) {
+                snprintf(duv, sizeof(duv), "t%u.bg", in);
+            } else if (!sd) {
+                snprintf(duv, sizeof(duv), "sgn8(t%u.bg)", in);
+            } else {
+                snprintf(duv, sizeof(duv), "vec2(%s, %s)", du, dv);
+            }
             put(&b, "  vec4 t%u;\n"
                     "  { vec2 d = mat2(unpackHalf2x16(%s), unpackHalf2x16(%s)) * "
-                    "sgn8(t%u.bg);\n", s, mat[s][0], mat[s][1], in);
+                    "%s;\n", s, mat[s][0], mat[s][1], duv);
             if ((k->vol >> s) & 1) {            /* a volume: r passes through (Conker's
                                                  * electricity, animated along r) */
                 put(&b, "    t%u = samp3(%uu, vec3(nvproj(vTex%u).xy + d, vTex%u.z));\n",
@@ -587,7 +648,7 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
                 s, s, s, m);
             break;
         }
-        color_key(&b, k, s, m);
+        color_key(&b, k, s, m);         /* and the texel's colour sign */
         alpha_kill(&b, k, s, m);
     }
     put(&b, "  vec4 r0 = vec4(0.0, 0.0, 0.0, t0.a), r1 = vec4(0.0);\n"

@@ -263,6 +263,10 @@ typedef struct HleCmdTex {
     uint32_t gfmt;              /* the guest's format code the texels came from (xfmt
                                    is a conversion's for P8, YUV, expanded DXT and
                                    4444): the colour key compares at its precision */
+    uint32_t sign;              /* colour sign bits its texels were converted for:
+                                   those 8-bit channels offset binary (tex/xdk_res.h
+                                   hle_fmt_sign_xor) */
+    uint32_t pad;               /* 8-byte words */
 } HleCmdTex;
 
 #define HLE_DRAW_MAX_BIND 16

@@ -187,6 +187,38 @@ static void test_format_helpers(void)
     HT_EQ_U32(hle_res_data_pa(0x80123000), 0x00123000);
 }
 
+/* colour sign: the signed 8-bit channels' top bits, and the view
+ * channels they reach */
+static void test_sign(void)
+{
+    HT_EQ_U32(hle_fmt_sign_xor(HLE_XFMT_A8R8G8B8, 0xF), 0x80808080u);
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_A8R8G8B8, 0xF), 0xF);
+    HT_EQ_U32(hle_fmt_sign_xor(HLE_XFMT_LIN_A8R8G8B8, 0x2), 0x00800000u);   /* R */
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_LIN_A8R8G8B8, 0x2), 0x1);
+    HT_EQ_U32(hle_fmt_sign_xor(HLE_XFMT_X8R8G8B8, 0x1), 0);                 /* no alpha */
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_X8R8G8B8, 0x1), 0);
+    HT_EQ_U32(hle_fmt_sign_xor(HLE_XFMT_R8G8B8A8, 0x2), 0x80000000u);
+    HT_EQ_U32(hle_fmt_sign_xor(HLE_XFMT_G8B8, 0x8), 0x0080u);               /* B: du */
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_G8B8, 0x8), 1 | 4);
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_G8B8, 0xC), 0xF);
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_R8B8, 0x2), 1 | 8);
+    HT_EQ_U32(hle_fmt_sign_xor(HLE_XFMT_DXT1, 0xF), 0);                    /* no bytes */
+    HT_EQ_U32(hle_fmt_sign_xor(HLE_XFMT_R5G6B5, 0xF), 0);
+    /* read as stored: their bytes' channels, nothing flipped */
+    HT_EQ_U32(hle_fmt_sign_xor(HLE_XFMT_L8, 0xF), 0);
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_L8, 0xF), 0x7);                   /* alpha is 1 */
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_LIN_AL8, 0x1), 0x8);
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_A8, 0xF), 0x8);                   /* rgb are 1 */
+    HT_EQ_U32(hle_fmt_sign_xor(HLE_XFMT_A8L8, 0xF), 0);
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_A8L8, 0x3), 0x9);
+    /* by the guest's format: those the host expands to 8888 stay unsigned */
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_DXT1, 0xF), 0);
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_DXT5, 0xF), 0);
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_A4R4G4B4, 0xF), 0);
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_P8, 0xF), 0);
+    HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_R5G6B5, 0xF), 0);
+}
+
 int main(void)
 {
     HT_RUN(test_texture_full_chain);
@@ -197,5 +229,6 @@ int main(void)
     HT_RUN(test_border_texture);
     HT_RUN(test_buffers_and_rejects);
     HT_RUN(test_format_helpers);
+    HT_RUN(test_sign);
     HT_DONE();
 }
