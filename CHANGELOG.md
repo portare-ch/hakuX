@@ -1,5 +1,29 @@
 # Changelog
 
+## linux-v0.9.0 (PortareOS)
+
+More of the Xbox GPU's texture and drawing features.
+
+### What's new
+
+- **Anisotropic filtering** — Textures a game filters anisotropically, such as floors and roads seen at an angle, are filtered at the game's degree (2x to 8x, up to what the GPU supports) instead of blurring.
+- **Two-sided lighting** — Lit geometry drawn with both sides visible, such as foliage, cloth and flags, gets its own lighting on the back faces instead of the front's.
+- **Colour key** — Textures keyed by a colour, such as sprites, no longer show that colour: matching texels become transparent, black, or are not drawn, as the game chooses.
+- **Line width** — Lines, such as HUDs, radars and beams, are as wide as the game asks, scaled with the render scale. At 2x they were half as thick as on an Xbox.
+- **Dithering** — Games that dither into 16-bit images are dithered, so skies, fog and gradients there no longer show bands.
+- **Quincunx and gaussian filters** — Textures read through the Xbox's convolution filters, used by D3D's quincunx and gaussian antialiasing and by blur effects, are filtered with those kernels instead of plainly.
+- **Signed textures** — Texture channels a game reads as signed, such as the normal maps of bump lighting, are read as signed, so bumps are no longer flat or inverted.
+- **First start after updating** — The GPU pipelines are built again once, so a game may stutter briefly the first time.
+
+These follow the Xbox GPU's registers and its published hardware tests, and pass the build's tests and shader checks. They haven't been tried in games on the Nova yet. The dither pattern, the quincunx kernel and the exact signed range haven't been compared against an Xbox.
+
+### Current limitations
+
+- Save states are not yet available.
+- Upstream's LAN and XLink Kai backends are included, but this release does not add network settings to RetroArch. Networking is off by default.
+- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
+- Full disc dumps (Redump), as `.iso` or CHD, haven't been tested with a real game yet.
+
 ## linux-v0.8.0 (PortareOS)
 
 Rumble, and a sharper picture by default.
