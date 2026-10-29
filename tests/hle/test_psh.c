@@ -413,6 +413,14 @@ static void test_convolution(void)
     /* the stages' own samplers: the index's 8 bits */
     HT_CHECK(strstr(buf, "uint ti = pc.tex[s] & 0xFFFFu, si = (pc.tex[s] >> 16) & 0xFFu;\n"
                          "  if ((pc.flags & (1u << s)) != 0u)") != NULL);
+    /* no descriptor indexing: the draw set's samplers (vk/draw.c fixed_bind),
+     * the taps' at 1 + HLE_FF_STAGES + s, inside the sized array */
+    HT_CHECK(hle_glsl_fixed_slots(buf, sizeof(buf)) == strlen(buf));
+    HT_CHECK(strstr(buf, "uniform sampler uSmp[9];") != NULL);
+    HT_CHECK(1 + 2 * HLE_FF_STAGES == 9);
+    HT_CHECK(strstr(buf, "uSmp[(ci)]), uv, 0.0);") != NULL);
+    dump("psh_convolution_fixed");
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
     k.vol = 1;                                          /* a volume: not filtered so */
     HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
     HT_CHECK(strstr(buf, "vec4 t0 = samp3(0u") != NULL);

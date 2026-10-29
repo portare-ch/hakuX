@@ -57,7 +57,7 @@ static void test_fixed_slots(void)
     HT_CHECK(m > 0 && m == strlen(buf));
     HT_CHECK(strstr(buf, "nonuniform") == NULL);
     HT_CHECK(strstr(buf, "uniform texture2D uTex2D[4];") != NULL);
-    HT_CHECK(strstr(buf, "uniform sampler uSmp[5];") != NULL);
+    HT_CHECK(strstr(buf, "uniform sampler uSmp[9];") != NULL);
     HT_CHECK(strstr(buf, "uTex2D[(pc.tex[0] & 0xFFFFu)]") != NULL);
     dump("fixed", "frag");
     /* a cap it doesn't fit in: 0, the text as it was */
