@@ -223,32 +223,39 @@ static void final_combiner(Buf *b, const HlePshKey *k)
 }
 
 /* The convolution filters at the texture's own texels (guest ones: a scaled
- * surface's are the resolution scale's wide), level 0. sampk's when: bit 0
- * minification, 1 magnification (else bilinear, as the sampler). Quincunx
- * takes the centre at 1/2 and the four diagonal neighbours at 1/8 each;
- * gaussian the 3 x 3 neighbourhood weighted 1 2 1 by 1 2 1, over 16. */
+ * surface's are the resolution scale's wide), level 0: taps through the
+ * stage's level-0 sampler (pc.tex bits 24-31, vk/draw.c sampler_lod0), at
+ * an explicit LOD, whatever the stage's MAXMIPLEVEL and LOD bias. sampk's
+ * when: bit 0 minification, 1 magnification; else the stage's sampler, by
+ * the gradients taken before the branch (a quad's fragments may take either
+ * side, where implicit derivatives are undefined). Quincunx takes the
+ * centre at 1/2 and the four diagonal neighbours at 1/8 each; gaussian the
+ * 3 x 3 neighbourhood weighted 1 2 1 by 1 2 1, over 16. */
 static const char k_conv_glsl[] =
-    "vec4 tap(uint ti, uint si, vec2 uv) {\n"
-    "  return texture(sampler2D(uTex2D[nonuniformEXT(ti)], uSmp[nonuniformEXT(si)]), uv);\n"
+    "vec4 tap(uint ti, uint ci, vec2 uv) {\n"
+    "  return textureLod(sampler2D(uTex2D[nonuniformEXT(ti)], uSmp[nonuniformEXT(ci)]), uv, "
+    "0.0);\n"
     "}\n"
     "vec4 sampk(uint s, vec2 uv, uint kern, uint when) {\n"
-    "  uint ti = pc.tex[s] & 0xFFFFu, si = pc.tex[s] >> 16;\n"
+    "  uint ti = pc.tex[s] & 0xFFFFu, si = (pc.tex[s] >> 16) & 0xFFu, ci = pc.tex[s] >> 24;\n"
     "  vec2 sz = vec2(textureSize(sampler2D(uTex2D[nonuniformEXT(ti)], uSmp[0]), 0));\n"
     "  float sc = (pc.flags & (256u << s)) != 0u ? float(pc.flags >> 24) : 1.0;\n"
     "  if ((pc.flags & (1u << s)) != 0u)\n"
     "    uv /= sz / sc;\n"
+    "  vec2 gx = dFdx(uv), gy = dFdy(uv);\n"
     "  float lod = textureQueryLod(sampler2D(uTex2D[nonuniformEXT(ti)], "
     "uSmp[nonuniformEXT(si)]), uv).y;\n"
     "  if ((when & (lod > 0.0 ? 1u : 2u)) == 0u)\n"
-    "    return tap(ti, si, uv);\n"
+    "    return textureGrad(sampler2D(uTex2D[nonuniformEXT(ti)], uSmp[nonuniformEXT(si)]), "
+    "uv, gx, gy);\n"
     "  vec2 d = sc / sz;\n"
-    "  vec4 diag = tap(ti, si, uv - d) + tap(ti, si, uv + d) +\n"
-    "              tap(ti, si, uv + vec2(d.x, -d.y)) + tap(ti, si, uv + vec2(-d.x, d.y));\n"
+    "  vec4 diag = tap(ti, ci, uv - d) + tap(ti, ci, uv + d) +\n"
+    "              tap(ti, ci, uv + vec2(d.x, -d.y)) + tap(ti, ci, uv + vec2(-d.x, d.y));\n"
     "  if (kern == 1u)\n"
-    "    return 0.5 * tap(ti, si, uv) + 0.125 * diag;\n"
-    "  vec4 edge = tap(ti, si, uv + vec2(d.x, 0.0)) + tap(ti, si, uv - vec2(d.x, 0.0)) +\n"
-    "              tap(ti, si, uv + vec2(0.0, d.y)) + tap(ti, si, uv - vec2(0.0, d.y));\n"
-    "  return (4.0 * tap(ti, si, uv) + 2.0 * edge + diag) / 16.0;\n"
+    "    return 0.5 * tap(ti, ci, uv) + 0.125 * diag;\n"
+    "  vec4 edge = tap(ti, ci, uv + vec2(d.x, 0.0)) + tap(ti, ci, uv - vec2(d.x, 0.0)) +\n"
+    "              tap(ti, ci, uv + vec2(0.0, d.y)) + tap(ti, ci, uv - vec2(0.0, d.y));\n"
+    "  return (4.0 * tap(ti, ci, uv) + 2.0 * edge + diag) / 16.0;\n"
     "}\n";
 
 /* A D3D blend factor (Vulkan's as vk/draw.c blend_factor maps them) as a
@@ -304,7 +311,7 @@ static void shadow_sample(Buf *b, const HlePshKey *k, unsigned s, bool project3d
         return;
     }
     const char *r = project3d ? "clamp(pq.z, 0.0, m)" : "0.0";
-    put(b, "  vec4 t%u;\n  { uint ti = pc.tex[%u] & 0xFFFFu, si = pc.tex[%u] >> 16;\n"
+    put(b, "  vec4 t%u;\n  { uint ti = pc.tex[%u] & 0xFFFFu, si = (pc.tex[%u] >> 16) & 0xFFu;\n"
            "    vec3 pq = nvproj(vTex%u);\n"
            "    vec2 uv = pq.xy;\n"
            "    vec2 sz = vec2(textureSize(sampler2D(uTex2D[nonuniformEXT(ti)], uSmp[0]), 0));\n"
@@ -395,19 +402,19 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             HLE_NVPROJ_GLSL
             /* Xbox linear (non-swizzled) textures use texel coordinates */
             "vec4 samp(uint s, vec2 uv) {\n"
-            "  uint ti = pc.tex[s] & 0xFFFFu, si = pc.tex[s] >> 16;\n"
+            "  uint ti = pc.tex[s] & 0xFFFFu, si = (pc.tex[s] >> 16) & 0xFFu;\n"
             "  if ((pc.flags & (1u << s)) != 0u)\n"
             "    uv /= vec2(textureSize(sampler2D(uTex2D[nonuniformEXT(ti)], uSmp[0]), 0)) /\n"
             "          ((pc.flags & (256u << s)) != 0u ? float(pc.flags >> 24) : 1.0);\n"
             "  return texture(sampler2D(uTex2D[nonuniformEXT(ti)], uSmp[nonuniformEXT(si)]), uv);\n"
             "}\n"
             "vec4 samp3(uint s, vec3 uvw) {\n"
-            "  uint ti = pc.tex[s] & 0xFFFFu, si = pc.tex[s] >> 16;\n"
+            "  uint ti = pc.tex[s] & 0xFFFFu, si = (pc.tex[s] >> 16) & 0xFFu;\n"
             "  return texture(sampler3D(uTex3D[nonuniformEXT(ti)], uSmp[nonuniformEXT(si)]), "
             "uvw);\n"
             "}\n"
             "vec4 sampc(uint s, vec3 dir) {\n"
-            "  uint ti = pc.tex[s] & 0xFFFFu, si = pc.tex[s] >> 16;\n"
+            "  uint ti = pc.tex[s] & 0xFFFFu, si = (pc.tex[s] >> 16) & 0xFFu;\n"
             "  return texture(samplerCube(uTexCube[nonuniformEXT(ti)], uSmp[nonuniformEXT(si)]), "
             "dir);\n"
             "}\n"
@@ -579,7 +586,7 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
                 break;
             }
             put(&b, "  vec4 t%u;\n"
-                    "  { uint ti = pc.tex[%u] & 0xFFFFu, si = pc.tex[%u] >> 16;\n"
+                    "  { uint ti = pc.tex[%u] & 0xFFFFu, si = (pc.tex[%u] >> 16) & 0xFFu;\n"
                     "    t%u = texture(sampler2D(uTex2D[nonuniformEXT(ti)], "
                     "uSmp[nonuniformEXT(si)]), t%u.%s); }\n",
                 s, s, s, s, in, m == HLE_PST_DPNDNT_AR ? "ar" : "gb");

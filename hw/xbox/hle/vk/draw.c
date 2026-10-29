@@ -134,10 +134,11 @@ typedef struct FixedImg {
     uint32_t layout[3];
 } FixedImg;
 
-/* A draw's own set (fixed_bind): its stages' slots and samplers */
+/* A draw's own set (fixed_bind): its stages' slots and samplers, and their
+ * convolution taps' (sampler_lod0) */
 typedef struct FixedKey {
     FixedImg img[HLE_FF_STAGES];
-    VkSampler smp[HLE_FF_STAGES];
+    VkSampler smp[HLE_FF_STAGES], smp0[HLE_FF_STAGES];
 } FixedKey;
 
 #define FX_POOLS 16                     /* a command buffer's pools of draw sets */
@@ -515,12 +516,13 @@ static gboolean fx_equal(gconstpointer a, gconstpointer b)
 
 /* caps.bindless off: set 0 is a draw's own (fixed_bind): its stages' images
  * at bindings 0, 2 and 3 (2D, cube, 3D, as the bindless set's), binding 1 the
- * first sampler and the stages' */
+ * first sampler, the stages' and their convolution taps' */
 static bool fixed_init(void)
 {
     VkDescriptorSetLayoutBinding b[4] = {
         { 0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, HLE_FF_STAGES, VK_SHADER_STAGE_FRAGMENT_BIT, NULL },
-        { 1, VK_DESCRIPTOR_TYPE_SAMPLER, 1 + HLE_FF_STAGES, VK_SHADER_STAGE_FRAGMENT_BIT, NULL },
+        { 1, VK_DESCRIPTOR_TYPE_SAMPLER, 1 + 2 * HLE_FF_STAGES, VK_SHADER_STAGE_FRAGMENT_BIT,
+          NULL },
         { 2, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, HLE_FF_STAGES, VK_SHADER_STAGE_FRAGMENT_BIT, NULL },
         { 3, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, HLE_FF_STAGES, VK_SHADER_STAGE_FRAGMENT_BIT, NULL },
     };
@@ -551,7 +553,7 @@ static VkDescriptorSet fixed_set(const FixedKey *k)
         if (f->cur == f->npool) {
             VkDescriptorPoolSize ps[2] = {
                 { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 3 * HLE_FF_STAGES * FX_SETS },
-                { VK_DESCRIPTOR_TYPE_SAMPLER, (1 + HLE_FF_STAGES) * FX_SETS },
+                { VK_DESCRIPTOR_TYPE_SAMPLER, (1 + 2 * HLE_FF_STAGES) * FX_SETS },
             };
             VkDescriptorPoolCreateInfo pci = {
                 .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, .maxSets = FX_SETS,
@@ -581,13 +583,14 @@ static VkDescriptorSet fixed_set(const FixedKey *k)
         }
         f->cur++;                       /* this pool is full: the next */
     }
-    VkDescriptorImageInfo ii[3][HLE_FF_STAGES], si[1 + HLE_FF_STAGES];
+    VkDescriptorImageInfo ii[3][HLE_FF_STAGES], si[1 + 2 * HLE_FF_STAGES];
     for (unsigned s = 0; s < HLE_FF_STAGES; s++) {
         for (unsigned v = 0; v < 3; v++) {
             ii[v][s] = (VkDescriptorImageInfo){ .imageView = k->img[s].v[v],
                                                 .imageLayout = (VkImageLayout)k->img[s].layout[v] };
         }
         si[1 + s] = (VkDescriptorImageInfo){ .sampler = k->smp[s] };
+        si[1 + HLE_FF_STAGES + s] = (VkDescriptorImageInfo){ .sampler = k->smp0[s] };
     }
     si[0] = (VkDescriptorImageInfo){ .sampler = g_dr.smp[0].s };
     static const uint32_t k_binding[3] = { 0, 2, 3 };
@@ -600,7 +603,7 @@ static VkDescriptorSet fixed_set(const FixedKey *k)
     }
     w[3] = (VkWriteDescriptorSet){
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 1,
-        .descriptorCount = 1 + HLE_FF_STAGES, .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
+        .descriptorCount = 1 + 2 * HLE_FF_STAGES, .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
         .pImageInfo = si };
     T.vkUpdateDescriptorSets(g_hvk.dev, 4, w, 0, NULL);
     g_hash_table_insert(f->sets, g_memdup2(k, sizeof(*k)), set);
@@ -1263,6 +1266,23 @@ static unsigned ff_fb_stages(const HleCmdDraw *c, uint32_t rt_id)
     return m && !tex_find(rt_id) && is_colour_rt(rt_id) ? m : 0;
 }
 
+/* Stage st's convolution kernel (TSS_CONVOLUTION, pb/kelvin.c: 1 quincunx, 2
+ * gaussian 3 x 3); 0 without one, or with one the shader doesn't know */
+static uint32_t conv_kernel(const HleCmdState *s, const HleCmdDraw *c, unsigned st)
+{
+    uint32_t kern = c->tex[st] ? s->tss[st][TSS_CONVOLUTION] & 7 : 0;
+    return kern == 1 || kern == 2 ? kern : 0;
+}
+
+/* The target can be copied before the draw (hle_draw_snap): not a level or
+ * face of a mipmapped one */
+static bool snap_ok(uint32_t rt_id)
+{
+    HleVkSurf *rt = !tex_find(rt_id) ? hle_surf_get(rt_id) : NULL;
+    return rt && rt->img && !rt->general && !rt->d.parent &&
+           (rt->aspect & VK_IMAGE_ASPECT_COLOR_BIT);
+}
+
 /* Several times a draw: the target is looked up only when a stage samples it. */
 unsigned hle_draw_fb_stages(const HleCmdDraw *c, uint32_t rt_id)
 {
@@ -1275,12 +1295,27 @@ unsigned hle_draw_fb_stages(const HleCmdDraw *c, uint32_t rt_id)
     if (!g_dr.st.psh) {
         return ff_fb_stages(c, rt_id);
     }
-    unsigned m = 0;
+    unsigned m = 0, conv = 0;
     for (unsigned st = 0; st < HLE_TSS_STAGES; st++) {
         unsigned mode = (g_dr.st.rs[HLE_PS_TEXMODES] >> (5 * st)) & 0x1F;
         if (c->tex[st] == rt_id && (mode == HLE_PST_PROJECT2D || mode == HLE_PST_PROJECT3D)) {
-            m |= 1u << st;
+            if (conv_kernel(&g_dr.st, c, st)) {
+                conv |= 1u << st;
+            } else {
+                m |= 1u << st;
+            }
         }
+    }
+    /* a convolving stage (psh.c sampk) reads the pixels around its own: the
+     * target's copy (hle_draw_snap_needed), where one can be made; else
+     * its own pixel, unfiltered */
+    if (conv && !snap_ok(rt_id)) {
+        static unsigned s_logged;
+        if (s_logged++ < 4) {
+            hle_log("hakuX-hle-back", "convolution on target %u it renders: no copy of it, "
+                    "its own pixel (stages 0x%x)", rt_id, conv);
+        }
+        m |= conv;
     }
     m = m && is_colour_rt(rt_id) ? m : 0;
     return m | (dither_blend(&g_dr.st, rt_id) ? 0x10 : 0);     /* the shader blends */
@@ -1521,12 +1556,7 @@ bool hle_draw_snap_needed(const HleCmdDraw *c, uint32_t rt_id)
             m |= 1u << st;
         }
     }
-    HleVkSurf *rt = m && !tex_find(rt_id) ? hle_surf_get(rt_id) : NULL;
-    if (!rt || !rt->img || rt->general || rt->d.parent ||
-        !(rt->aspect & VK_IMAGE_ASPECT_COLOR_BIT)) {
-        return false;
-    }
-    return (m & ~hle_draw_fb_stages(c, rt_id)) != 0;
+    return m && snap_ok(rt_id) && (m & ~hle_draw_fb_stages(c, rt_id)) != 0;
 }
 
 static int snap_get(const HleVkSurf *rt)
@@ -1649,7 +1679,9 @@ static VkSamplerAddressMode addr_mode(uint32_t a)
 static uint16_t g_smp_hot[64];
 
 /* sampler_index's lod_down: how many levels finer the stage must sample (the
- * source surface's resolution scale over the target's, as log2 in 1/16ths). */
+ * source surface's resolution scale over the target's, as log2 in 1/16ths).
+ * The index fits 8 bits (HleFfPush.tex). */
+HLE_BUILD_BUG_ON(HLE_MAX_SAMPLERS > 256);
 static uint32_t sampler_index(const uint32_t *tss, uint32_t lod_down)
 {
     uint32_t base = MIN(tss[TSS_MAXMIPLEVEL], 15u);
@@ -1746,6 +1778,19 @@ static uint32_t sampler_index(const uint32_t *tss, uint32_t lod_down)
         T.vkUpdateDescriptorSets(g_hvk.dev, 1, &w, 0, NULL);
     }
     return i;
+}
+
+/* A convolving stage's taps (psh.c sampk): level 0, bilinear, whatever the
+ * stage's MAXMIPLEVEL (its sampler's minLod), LOD bias and anisotropy
+ * (CONVOLUTION_2D_LOD0); its addressing and border colour */
+static uint32_t sampler_lod0(const uint32_t *tss)
+{
+    uint32_t t[HLE_TSS_COUNT];
+    memcpy(t, tss, sizeof(t));
+    t[TSS_MAGFILTER] = t[TSS_MINFILTER] = 2;
+    t[TSS_MIPFILTER] = t[TSS_MAXMIPLEVEL] = t[TSS_MIPMAPLODBIAS] = 0;
+    t[TSS_MAXANISOTROPY] = 1;
+    return sampler_index(t, 0);
 }
 
 /* ---- pipelines ----------------------------------------------------------------- */
@@ -2505,12 +2550,15 @@ static uint32_t stage_slot(const HleCmdDraw *c, unsigned st, uint32_t rt_id, uin
     } else if (c->tex[st] == rt_id && g_snap_cur >= 0 && g_snap_rt == rt_id &&
                (rt = hle_surf_get(rt_id)) != NULL) {
         slot = g_snap[g_snap_cur].slot;  /* the target, copied before the draw */
-        *flags |= (c->tex_lin >> st & 1) ? (1u << st) | (256u << st) : 0;
+        *flags |= (c->tex_lin >> st & 1) ? (1u << st) | (256u << st) :
+                  rt->scale > 1 ? 256u << st : 0;
         return slot;
     } else if (ts && (ts->general || ts->layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)) {
         slot = surf_slot(ts, c->tex_ord >> 2 * st & 3);  /* RT as texture (identity) */
-        /* linear format: texel coords, of a scaled image */
-        *flags |= (c->tex_lin >> st & 1) ? (1u << st) | (256u << st) : 0;
+        /* linear format: texel coords, of a scaled image; normalized, a
+         * scaled image's texels are still the scale wide (psh.c sampk) */
+        *flags |= (c->tex_lin >> st & 1) ? (1u << st) | (256u << st) :
+                  ts->scale > 1 ? 256u << st : 0;
     }
     uint32_t id = c->tex[st];
     if (id && !tx && id < 8192 && g_rt_told < 64 && !(g_rt_seen[id >> 3] >> (id & 7) & 1)) {
@@ -3298,10 +3346,12 @@ static void fixed_bind(VkCommandBuffer cb, HleFfPush *pc)
     FixedKey k;
     memset(&k, 0, sizeof(k));
     for (unsigned s = 0; s < HLE_FF_STAGES; s++) {
-        uint32_t slot = pc->tex[s] & 0xFFFFu, smp = pc->tex[s] >> 16;
+        uint32_t slot = pc->tex[s] & 0xFFFFu, smp = (pc->tex[s] >> 16) & 0xFFu,
+                 smp0 = pc->tex[s] >> 24;
         k.img[s] = g_dr.mirror[MIN(slot, HLE_MAX_IMAGES - 1u)];
         k.smp[s] = g_dr.smp[smp < g_dr.nsmp ? smp : 0].s;
-        pc->tex[s] = s | (1u + s) << 16;
+        k.smp0[s] = g_dr.smp[smp0 < g_dr.nsmp ? smp0 : 0].s;
+        pc->tex[s] = s | (1u + s) << 16 | (smp0 ? (1u + HLE_FF_STAGES + s) << 24 : 0);
     }
     VkDescriptorSet set = fixed_set(&k);
     if (set && (!g_rec.valid || g_rec.set0 != set)) {
@@ -3545,6 +3595,9 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
         for (unsigned st = 0; st < HLE_FF_STAGES; st++) {
             pc.tex[st] = stage_slot(c, st, rt_id, &pc.flags) |
                          sampler_index(s->tss[st], stage_lod_down(c, st, rt_id)) << 16;
+            if (conv_kernel(s, c, st)) {
+                pc.tex[st] |= sampler_lod0(s->tss[st]) << 24;   /* sampk's taps */
+            }
             k.vs.texcoord[st] = s->tss[st][TSS_TEXCOORDINDEX] & 7;
         }
         k.vs.ntex = HLE_FF_STAGES;

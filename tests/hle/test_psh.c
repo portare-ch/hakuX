@@ -312,6 +312,26 @@ static void test_convolution(void)
     HT_CHECK(strstr(buf, "vec4 sampk(uint s, vec2 uv, uint kern, uint when)") != NULL);
     HT_CHECK(strstr(buf, "vec4 t0 = sampk(0u, nvproj(vTex0).xy, 1u, 3u);") != NULL);
     HT_CHECK(strstr(buf, "vec4 t1 = sampk(1u, nvproj(vTex1).xy, 2u, 1u);") != NULL);
+    /* the taps at level 0 through the level-0 sampler (bits 24-31), at an
+     * explicit LOD; the other side of the branch by gradients taken before
+     * it: no implicit derivatives where a quad's fragments may diverge */
+    const char *fn = strstr(buf, "vec4 tap(uint ti, uint ci, vec2 uv) {");
+    const char *end = fn ? strstr(strstr(fn, "vec4 sampk("), "\n}\n") : NULL;
+    HT_CHECK(fn != NULL && end != NULL);
+    char seg[2048] = { 0 };
+    if (fn && end && (size_t)(end - fn) < sizeof(seg)) {
+        memcpy(seg, fn, (size_t)(end - fn));
+    }
+    HT_CHECK(strstr(seg, "uSmp[nonuniformEXT(ci)]), uv, 0.0);") != NULL);
+    HT_CHECK(strstr(seg, "si = (pc.tex[s] >> 16) & 0xFFu, ci = pc.tex[s] >> 24;") != NULL);
+    HT_CHECK(strstr(seg, "texture(") == NULL);
+    const char *grad = strstr(seg, "vec2 gx = dFdx(uv), gy = dFdy(uv);");
+    const char *br = strstr(seg, "if ((when & (lod > 0.0 ? 1u : 2u)) == 0u)");
+    HT_CHECK(grad != NULL && br != NULL && grad < br);
+    HT_CHECK(strstr(seg, "uSmp[nonuniformEXT(si)]), uv, gx, gy);") != NULL);
+    /* the stages' own samplers: the index's 8 bits */
+    HT_CHECK(strstr(buf, "uint ti = pc.tex[s] & 0xFFFFu, si = (pc.tex[s] >> 16) & 0xFFu;\n"
+                         "  if ((pc.flags & (1u << s)) != 0u)") != NULL);
     k.vol = 1;                                          /* a volume: not filtered so */
     HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
     HT_CHECK(strstr(buf, "vec4 t0 = samp3(0u") != NULL);

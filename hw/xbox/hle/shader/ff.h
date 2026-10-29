@@ -159,7 +159,9 @@ typedef struct HleFfPush {
                                          -2 aa / target h, then + (-1, 1) (aa: the
                                          NV2A's antialiasing scale, else 1) */
     uint32_t bump3[2];                /* stage 3's BUMPENVMAT (as bump) */
-    uint32_t tex[HLE_FF_STAGES];      /* image index | sampler index << 16 */
+    uint32_t tex[HLE_FF_STAGES];      /* image index | sampler index << 16 (8 bits)
+                                         | a convolving stage's level-0 sampler
+                                         << 24 (psh.c sampk) */
     uint32_t tfactor;                 /* TEXTUREFACTOR (D3DCOLOR) */
     uint32_t bumpl[3];                /* stages 1..3: BUMPENVLSCALE, LOFFSET (half
                                          pair) */
