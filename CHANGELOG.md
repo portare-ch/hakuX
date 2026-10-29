@@ -1,5 +1,22 @@
 # Changelog
 
+## linux-v0.7.1 (PortareOS)
+
+Sound after a game starts again in RetroArch.
+
+### What's fixed
+
+- **Sound after a restart** — After RetroArch's Restart, a video driver rebuild, or a game switching to another of its programs (Jade Empire after New Game), the game went on without sound. Each new boot now gets its audio output set up again. Reported, with the fix and a test, by the pocket-ui project.
+- **Build image** — The pinned Debian image now has a Vulkan loader with Mesa's drivers and `llvm-strip-19`, so `linux-build.sh`'s checks and `linux-package.sh` run in it without extra packages.
+
+### Current limitations
+
+- Rumble is not passed on to the controllers yet.
+- Save states are not yet available.
+- Upstream's LAN and XLink Kai backends are included, but this release does not add network settings to RetroArch. Networking is off by default.
+- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
+- Full disc dumps (Redump), as `.iso` or CHD, haven't been tested with a real game yet.
+
 ## linux-v0.7.0 (PortareOS)
 
 Upstream hakuX 1.2.0, with game compatibility and sound fixes.
