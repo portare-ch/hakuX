@@ -87,11 +87,12 @@ typedef struct HlePshKey {
     uint8_t sblend;                     /* the NV2A's signed blend equations (ff.h
                                            HleFfPsKey.sblend) */
     /* Colour key (TEXTURE_CONTROL0 1:0, D3DTSS_COLORKEYOP), 2 bits a stage:
-     * a texel whose RGB is the stage's key colour gets 1 its alpha zeroed,
-     * 2 its ARGB zeroed, 3 the fragment killed. Compared at the format's
-     * channel precision (ckey_bits, 2 bits a stage: 0 8 bits, 1 R5G6B5,
-     * 2 1555, 3 4444). */
-    uint8_t ckey, ckey_bits;
+     * a texel that is the stage's key colour gets 1 its alpha zeroed, 2 its
+     * ARGB zeroed, 3 the fragment killed. Compared at the format's channel
+     * precision (ckey_bits, 2 bits a stage: 0 8 bits, 1 R5G6B5, 2 1555,
+     * 3 4444), alpha included where the format has one (ckey_alpha, a bit a
+     * stage; an X format's is not compared). */
+    uint8_t ckey, ckey_bits, ckey_alpha;
     uint32_t ckey_col[4];               /* SET_COLOR_KEY_COLOR per stage (D3DCOLOR) */
 } HlePshKey;
 

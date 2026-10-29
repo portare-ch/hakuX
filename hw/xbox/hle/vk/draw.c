@@ -1174,6 +1174,27 @@ static unsigned signed_blend(const HleCmdState *s)
     return op == 0xF006 ? 1 : 2;
 }
 
+/* Colour key: a format whose alpha the key's is compared with; an X format,
+ * or one without alpha, matches whatever the key's alpha (the NV2A tests'
+ * XAlphaFormat; an A8R8G8B8 texel of another alpha than the key's survives) */
+static bool ckey_has_alpha(uint32_t xfmt)
+{
+    switch (xfmt) {
+    case HLE_XFMT_X8R8G8B8: case HLE_XFMT_LIN_X8R8G8B8:
+    case HLE_XFMT_X1R5G5B5: case HLE_XFMT_LIN_X1R5G5B5:
+    case HLE_XFMT_R5G6B5: case HLE_XFMT_LIN_R5G6B5:
+    case HLE_XFMT_R6G5B5: case HLE_XFMT_LIN_R6G5B5:
+    case HLE_XFMT_L8: case HLE_XFMT_LIN_L8:
+    case HLE_XFMT_L16: case HLE_XFMT_LIN_L16:
+    case HLE_XFMT_G8B8: case HLE_XFMT_LIN_G8B8:
+    case HLE_XFMT_R8B8: case HLE_XFMT_LIN_R8B8:
+    case HLE_XFMT_YUY2: case HLE_XFMT_UYVY:     /* 0 (no texture) is L8's */
+        return false;
+    default:
+        return true;
+    }
+}
+
 static bool is_colour_rt(uint32_t rt_id)
 {
     HleVkSurf *rt = hle_surf_get(rt_id);
@@ -3485,6 +3506,7 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
                                   f == VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT ? 3 : 0;
             k.pk.ckey |= (uint8_t)(op << (2 * st));
             k.pk.ckey_bits |= (uint8_t)(bits << (2 * st));
+            k.pk.ckey_alpha |= (uint8_t)(ckey_has_alpha(tx ? tx->xfmt : sf ? sf->d.xfmt : 0) << st);
             k.pk.ckey_col[st] = s->tss[st][TSS_COLORKEYCOLOR];
             static unsigned s_logged;
             if (s_logged < 8) {
