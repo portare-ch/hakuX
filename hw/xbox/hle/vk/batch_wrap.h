@@ -193,6 +193,12 @@ static VKAPI_ATTR void VKAPI_CALL w_vkCmdSetFrontFace(VkCommandBuffer commandBuf
     R.vkCmdSetFrontFace(commandBuffer, frontFace);
 }
 
+static VKAPI_ATTR void VKAPI_CALL w_vkCmdSetLineWidth(VkCommandBuffer commandBuffer, float lineWidth)
+{
+    batch_before(commandBuffer);
+    R.vkCmdSetLineWidth(commandBuffer, lineWidth);
+}
+
 static VKAPI_ATTR void VKAPI_CALL w_vkCmdSetPrimitiveRestartEnable(VkCommandBuffer commandBuffer, VkBool32 primitiveRestartEnable)
 {
     batch_before(commandBuffer);
@@ -362,6 +368,9 @@ static void wrap_table(struct VolkDeviceTable *t)
     }
     if (t->vkCmdSetFrontFace) {
         t->vkCmdSetFrontFace = w_vkCmdSetFrontFace;
+    }
+    if (t->vkCmdSetLineWidth) {
+        t->vkCmdSetLineWidth = w_vkCmdSetLineWidth;
     }
     if (t->vkCmdSetPrimitiveRestartEnable) {
         t->vkCmdSetPrimitiveRestartEnable = w_vkCmdSetPrimitiveRestartEnable;

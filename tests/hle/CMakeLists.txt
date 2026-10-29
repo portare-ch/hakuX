@@ -57,6 +57,13 @@ hle_test(test_psh)
 hle_test(test_apu_hrtf)
 hle_test(test_cheats)
 hle_test(test_vkcompat)
+hle_test(test_batch_wrap)
+# the back end's sources and the batch's wrappers, read at run time
+file(GLOB HLE_VK_SOURCES ${REPO_ROOT}/hw/xbox/hle/vk/*.c)
+list(JOIN HLE_VK_SOURCES "|" HLE_VK_SOURCES_STR)
+target_compile_definitions(test_batch_wrap PRIVATE
+  HLE_VK_SOURCES="${HLE_VK_SOURCES_STR}"
+  HLE_BATCH_WRAP="${REPO_ROOT}/hw/xbox/hle/vk/batch_wrap.h")
 # vk/compat_map.h: the Khronos headers alone (SDL3's copy)
 target_include_directories(test_vkcompat PRIVATE ${NC_DEPS}/SDL3/src/video/khronos)
 target_compile_definitions(test_vkcompat PRIVATE VK_NO_PROTOTYPES)
