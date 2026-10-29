@@ -3318,6 +3318,17 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
         drop(DROP_TARGET, c, rt_id, ds_id);
         return;
     }
+    if ((c->prim == VK_PRIMITIVE_TOPOLOGY_LINE_LIST ||
+         c->prim == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP) && !(s->rs[RS_LINEWIDTH] & 0x1FF)) {
+        /* SET_LINE_WIDTH 0: the NV2A rasterizes no line fragments (the Xbox's
+         * reference images); Vulkan's lines are at least 1 wide */
+        static unsigned s_logged;
+        if (s_logged++ < 4) {
+            hle_log("hakuX-hle-back", "line draw at SET_LINE_WIDTH 0: no fragments (n=%u)",
+                    c->count);
+        }
+        return;
+    }
     {   /* debug: HAKUX_HLE_SKIPVSH=<hash>[/<count>[/<alphatest>]][,...], those
          * programs' draws (with that index count, alpha test on/off) are dropped;
          * the property debug.hakux.skipvsh (same syntax, "0" = none) replaces
@@ -3996,14 +4007,17 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
         g_dr.emits[EM_DYN]++;
     }
     {
-        /* SET_LINE_WIDTH (6.3 fixed point; never written: 1) at the target's
-         * resolution scale, as point sizes (vsh.c), where the device draws
-         * wide lines; recorded for line draws, and once for the others (the
-         * pipelines' state) */
+        /* SET_LINE_WIDTH (6.3 fixed point; never written: 1, pb/kelvin.c; 0
+         * dropped above) at the target's resolution scale, as point sizes
+         * (vsh.c), where the device draws wide lines; recorded for line
+         * draws, and once for the others (the pipelines' state). A width
+         * under one host pixel draws one pixel wide, Vulkan's least: an
+         * approximation of the NV2A's subpixel lines (0.125 .. 0.875 at 1x
+         * all look alike) */
         const uint32_t lr = s->rs[RS_LINEWIDTH] & 0x1FF;
         const bool line = c->prim == VK_PRIMITIVE_TOPOLOGY_LINE_LIST ||
                           c->prim == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
-        float lw = (lr ? lr / 8.0f : 1.0f) * (float)MAX(rs, 1u);
+        float lw = lr / 8.0f * (float)MAX(rs, 1u);
         lw = MAX(MIN(lw, g_hvk.caps.max_line_width), 1.0f);
         if (!line && g_rec.valid) {
             lw = g_rec.lw;
