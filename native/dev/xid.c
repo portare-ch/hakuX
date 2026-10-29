@@ -304,6 +304,12 @@ NcUsbDev *nc_xid_gamepad_new(unsigned player)
 {
     Xid *x = calloc(1, sizeof(Xid));
     x->player = player % XID_PLAYERS;
+    /* Each boot makes its controllers (nc_dev_ohci_init), and they start
+     * still: the libretro core boots again in its process, and the last
+     * title's strengths shook them until the new one sent its own. */
+    pthread_mutex_lock(&g_lock);
+    g_rumble[x->player][0] = g_rumble[x->player][1] = 0;
+    pthread_mutex_unlock(&g_lock);
     x->dev.name = "gamepad";
     x->dev.dev_desc = k_dev_desc;
     x->dev.dev_desc_len = sizeof(k_dev_desc);

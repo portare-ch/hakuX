@@ -130,11 +130,12 @@ before the console boots, so a change takes effect when the game starts next:
 
 | Key | Values | Default |
 | --- | --- | --- |
-| `hakux_render_scale` | `1`-`4`: the renderer's resolution, times the game's | `1` |
+| `hakux_render_scale` | `1`-`4`: the renderer's resolution, times the game's | `2` |
 | `hakux_crop_overscan` | `enabled`, `disabled` (the whole frame); changes at once | `enabled` |
 | `hakux_screen_format` | `normal`, `widescreen` (shown 16:9), `letterbox` | `normal` |
 | `hakux_language` | `auto` (RetroArch's), `english`, `japanese`, `german`, `french`, `spanish`, `italian`, `korean`, `chinese`, `portuguese` | `auto` |
 | `hakux_video_region` | `auto` (the game's region), `ntsc-m`, `ntsc-j`, `pal` | `auto` |
+| `hakux_rumble` | `disabled`, `enabled` (the game's vibration to the controllers' motors); changes at once | `disabled` |
 
 PAL games are offered 60 Hz (the console's PAL60 setting) whatever the
 options. 480p, 720p and 1080i stay off. Filters (FXAA) and the picture's

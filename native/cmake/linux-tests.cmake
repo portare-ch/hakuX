@@ -27,6 +27,13 @@ if(TARGET hakux_libretro)
   target_link_libraries(apu-reinit-smoke PRIVATE hakux_native)
   add_test(NAME apu-reinit-smoke COMMAND apu-reinit-smoke)
   set_tests_properties(apu-reinit-smoke PROPERTIES TIMEOUT 10)
+  # The title's rumble through the real controller to RetroArch's motors,
+  # with the core option on and off.
+  add_executable(rumble-smoke "${NC_REPO}/tests/native/linux/rumble.c"
+                              "${NC_REPO}/native/libretro/input.c" "${NC_APU_OUT_NULL}")
+  target_link_libraries(rumble-smoke PRIVATE hakux_native)
+  add_test(NAME rumble-smoke COMMAND rumble-smoke)
+  set_tests_properties(rumble-smoke PROPERTIES TIMEOUT 10)
   # The core through a minimal frontend: exports, info and a synthetic title.
   add_executable(libretro-harness "${NC_REPO}/tests/native/libretro/harness.c"
                                   "${NC_REPO}/tests/native/libretro/vk.c")

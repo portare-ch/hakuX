@@ -105,9 +105,11 @@ game; other titles may have bugs or fail to start.
 - **Controllers:** RetroArch ports 1–4 are Xbox players 1–4. Face buttons
   follow their Xbox positions. **L1 is White**, **R1 is Black**, and
   **L2/R2 are the triggers**. Remap through **Quick Menu → Controls**.
-  Rumble is not yet available.
-- **Picture:** open **Quick Menu → Core Options**. Start with **Render
-  Scale: 1x**; higher values draw a sharper picture and need more GPU power.
+  **Rumble** is off by default: turn it on in **Quick Menu → Core
+  Options**.
+- **Picture:** open **Quick Menu → Core Options**. **Render Scale** is
+  **2x** by default; higher values draw a sharper picture and need more GPU
+  power, and **1x** helps a game that runs slowly.
   Set **Screen Format: Widescreen** for games that support it, and use
   RetroArch's **Core provided** aspect ratio. Close and reopen the game
   after changing render scale, screen format, language or video region.

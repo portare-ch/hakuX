@@ -13,6 +13,14 @@
  * The face buttons, White and Black are pressure-sensitive on the Duke:
  * fully pressed here. The triggers are analog where RetroArch reports them
  * so, else 0 or 255. Remapping is RetroArch's.
+ *
+ * Rumble, when the core option turns it on (off by default): each port's
+ * motors get the strengths the title last sent its controller
+ * (nc_pad_rumble), the Duke's left motor, the heavy one, as RetroArch's
+ * strong and its right as the weak, both 0..65535 as RetroArch's. A
+ * strength is sent when it changes. Paused, the title's strengths read 0
+ * (xid.c): the motors stop with the emulation, as RetroArch's menu stops
+ * them, and start again with it.
  */
 #include "native/libretro/libretro_int.h"
 #include "native/dev/usb.h"
@@ -20,6 +28,13 @@
 #define NC_LR_PORTS 4
 
 static unsigned g_ports = (1u << NC_LR_PORTS) - 1;  /* bit n: port n + 1 has a controller */
+
+static struct {
+    bool on;                            /* the core option */
+    bool asked;                         /* RetroArch asked for its interface */
+    retro_set_rumble_state_t set;       /* NULL: RetroArch has none */
+    uint16_t sent[NC_LR_PORTS][2];      /* each port's strong and weak strengths, as last sent */
+} g_rumble;
 
 static int16_t clamp16(int v)
 {
@@ -88,6 +103,55 @@ void nc_lr_input_set_device(unsigned port, unsigned device)
     nc_pad_plug(port, in);
 }
 
+void nc_lr_input_set_rumble(bool on)
+{
+    g_rumble.on = on;       /* off: the next retro_run stops the motors */
+}
+
+static void rumble_send(unsigned port, uint16_t strong, uint16_t weak)
+{
+    if (g_rumble.sent[port][0] != strong) {
+        g_rumble.set(port, RETRO_RUMBLE_STRONG, strong);
+        g_rumble.sent[port][0] = strong;
+    }
+    if (g_rumble.sent[port][1] != weak) {
+        g_rumble.set(port, RETRO_RUMBLE_WEAK, weak);
+        g_rumble.sent[port][1] = weak;
+    }
+}
+
+static void rumble_run(void)
+{
+    if (!g_rumble.on && !g_rumble.set) {
+        return;
+    }
+    if (!g_rumble.asked) {
+        g_rumble.asked = true;
+        struct retro_rumble_interface ri = {0};
+        if (nc_lr_env(RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE, &ri) && ri.set_rumble_state) {
+            g_rumble.set = ri.set_rumble_state;
+        }
+        nc_log("hakuX-libretro", "rumble: %s", g_rumble.set ? "on" : "the frontend has none");
+    }
+    if (!g_rumble.set) {
+        return;
+    }
+    for (unsigned port = 0; port < NC_LR_PORTS; port++) {
+        uint16_t left = 0, right = 0;
+        if (g_rumble.on && g_ports & 1u << port) {
+            nc_pad_rumble(port, &left, &right);
+        }
+        rumble_send(port, left, right);
+    }
+}
+
+void nc_lr_input_rumble_stop(void)
+{
+    for (unsigned port = 0; g_rumble.set && port < NC_LR_PORTS; port++) {
+        rumble_send(port, 0, 0);
+    }
+}
+
 /* A trigger: RetroArch's analog value (0..0x7fff) where the pad has one,
  * else the button. */
 static uint8_t trigger(retro_input_state_t state, unsigned port, unsigned id)
@@ -140,4 +204,5 @@ void nc_lr_input_run(retro_input_poll_t poll, retro_input_state_t state)
         s.ry = clamp16(-state(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y));
         nc_pad_set(port, &s);
     }
+    rumble_run();
 }

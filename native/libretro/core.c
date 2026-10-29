@@ -515,6 +515,7 @@ static void stop_core(const char *why)
     if (!g_started) {
         return;
     }
+    nc_lr_input_rumble_stop();      /* a title shaking its controller stops with it */
     const uint64_t t0 = now_ns();
     const bool wd = wd_start(why, t0);
     wd_stage("the guest CPU");

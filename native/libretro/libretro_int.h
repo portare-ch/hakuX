@@ -29,8 +29,12 @@ void nc_lr_end(const char *why);
 /* audio.c — one period's samples to RetroArch (retro_run). */
 void nc_lr_audio_run(retro_audio_sample_batch_t batch);
 
-/* input.c — each port's RetroPad to its player (retro_run). */
+/* input.c — each port's RetroPad to its player, and with rumble on (the
+ * core option, nc_lr_input_set_rumble) the title's rumble to its motors
+ * (retro_run); the motors stopped, the game stopping (stop_core). */
 void nc_lr_input_run(retro_input_poll_t poll, retro_input_state_t state);
+void nc_lr_input_set_rumble(bool on);
+void nc_lr_input_rumble_stop(void);
 /* The controller info and input descriptors (retro_load_game). */
 void nc_lr_input_describe(retro_environment_t env);
 /* A controller on every port (retro_init); the port's device from RetroArch,
@@ -60,8 +64,8 @@ void nc_lr_video_set_crop(bool on);
 /* options.c — the core options: declared to the frontend
  * (retro_set_environment), applied to the console before it boots
  * (retro_load_game), and a change during the game noted (retro_run): every
- * option but the overscan crop takes effect when the game starts next, as
- * the core can't boot again in its process (M2). */
+ * option but the overscan crop and rumble takes effect when the game starts
+ * next. */
 void nc_lr_options_declare(retro_environment_t env);
 void nc_lr_options_apply(void);
 void nc_lr_options_run(void);
