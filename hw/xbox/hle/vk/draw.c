@@ -47,7 +47,7 @@ enum {
     RS_LOCALVIEWER = 104, RS_COLORVERTEX = 105, RS_SPECULARMATERIALSOURCE = 110,
     RS_DIFFUSEMATERIALSOURCE = 111, RS_AMBIENTMATERIALSOURCE = 112,
     RS_EMISSIVEMATERIALSOURCE = 113, RS_POINTSPRITEENABLE = 118, RS_POINTSCALEENABLE = 119,
-    RS_VERTEXBLEND = 137,
+    RS_VERTEXBLEND = 137, RS_TWOSIDEDLIGHTING = 141,
     RS_NORMALIZENORMALS = 142, RS_FOGCOLOR = 138, RS_ZENABLE = 143, RS_STENCILENABLE = 144,
     RS_STENCILFAIL = 145, RS_FRONTFACE = 146, RS_CULLMODE = 147, RS_TEXTUREFACTOR = 148,
     RS_SHADOWFUNC = 156,
@@ -1596,12 +1596,18 @@ static uint16_t g_smp_hot[64];
 static uint32_t sampler_index(const uint32_t *tss, uint32_t lod_down)
 {
     uint32_t base = MIN(tss[TSS_MAXMIPLEVEL], 15u);
+    /* CONTROL0's MAX_ANISOTROPY (pb/kelvin.c): the degree the title set,
+     * whatever the minification filter, which stays the title's (the NV2A
+     * tests vary the degree under nearest filtering; xemu applies it there
+     * too). Vulkan's anisotropic filtering is the driver's: an approximation
+     * of the NV2A's, nearest filtering's especially. */
+    uint32_t aniso = g_hvk.caps.aniso ? MAX(MIN(tss[TSS_MAXANISOTROPY], 16u), 1u) : 1;
     uint64_t key = (uint64_t)(tss[TSS_ADDRESSU] & 7) | (uint64_t)(tss[TSS_ADDRESSV] & 7) << 3 |
                    (uint64_t)(tss[TSS_MAGFILTER] & 7) << 6 |
                    (uint64_t)(tss[TSS_MINFILTER] & 7) << 9 |
                    (uint64_t)(tss[TSS_MIPFILTER] & 7) << 12 |
                    (uint64_t)(tss[TSS_ADDRESSW] & 7) << 15 | (uint64_t)base << 18 |
-                   (uint64_t)tss[TSS_BORDERCOLOR] << 32;
+                   (uint64_t)aniso << 22 | (uint64_t)tss[TSS_BORDERCOLOR] << 32;
     uint64_t key2 = tss[TSS_MIPMAPLODBIAS] | (uint64_t)lod_down << 32;
     unsigned h = (unsigned)(((key ^ key2 * 0x9E3779B97F4A7C15ull) * 0xFF51AFD7ED558CCDull) >> 58);
     uint32_t i = g_smp_hot[h];
@@ -1655,10 +1661,19 @@ static uint32_t sampler_index(const uint32_t *tss, uint32_t lod_down)
         .addressModeW = addr_mode(tss[TSS_ADDRESSW]),
         .mipLodBias = bias, .minLod = (float)base,
         .maxLod = mip ? VK_LOD_CLAMP_NONE : base + 0.25f,
+        .anisotropyEnable = aniso > 1,
+        .maxAnisotropy = aniso > 1 ? MIN((float)aniso, g_hvk.caps.max_aniso) : 1.0f,
         .borderColor = border };
     VkSampler s;
     if (T.vkCreateSampler(g_hvk.dev, &sci, NULL, &s) != VK_SUCCESS) {
         return 0;
+    }
+    static unsigned s_aniso_logged;
+    if (aniso > 1 && s_aniso_logged < 4) {
+        s_aniso_logged++;
+        hle_log("hakuX-hle-back", "sampler %u: anisotropic %ux (max %.0f), min filter %s, "
+                "mip filter %u", g_dr.nsmp, aniso, g_hvk.caps.max_aniso,
+                lin_min ? "linear" : "nearest", mip);
     }
     i = g_dr.nsmp++;
     g_smp_hot[h] = (uint16_t)i;
@@ -3470,6 +3485,9 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
         k.pk.specular = s->rs[RS_SPECULARENABLE] != 0;
         k.pk.point_sprite = c->prim == 0 && s->rs[RS_POINTSPRITEENABLE] != 0;
         k.pk.out_bgra = rt && hle_surf_out_bgra(rt->fmt);
+        /* two-sided lighting: back faces take the back colours a vertex
+         * program's shader passes (shader/vsh.c; not the D3D-model FF's) */
+        k.pk.two_side = prog && s->rs[RS_TWOSIDEDLIGHTING] != 0;
         for (unsigned st = 0; st < 4; st++) {
             k.pk.alpha_kill |= (c->tex[st] && s->tss[st][TSS_ALPHAKILL] != 0) << st;
         }

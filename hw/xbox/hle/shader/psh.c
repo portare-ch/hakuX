@@ -293,6 +293,12 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
     Buf b = { buf, cap, 0, false };
     const char *interp = k->flat ? "flat " : "";
     unsigned unsup = 0;
+    /* two-sided lighting: the back colours (vsh.h's outputs 7, 8) */
+    char back[160] = "";
+    if (k->two_side) {
+        snprintf(back, sizeof(back), "layout(location = 7) %sin vec4 vBack0;\n"
+                 "layout(location = 8) %sin vec4 vBack1;\n", interp, interp);
+    }
     put(&b, "#version 450\n#extension GL_EXT_nonuniform_qualifier : require\n%s",
         hle_push_glsl());
     put(&b, "layout(set = 0, binding = 0) uniform texture2D uTex2D[];\n"
@@ -306,7 +312,7 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             "layout(location = 4) in vec4 vTex2;\n"
             "layout(location = 5) in vec4 vTex3i;\n"
             "layout(location = 6) in float vFog;\n"
-            "%s%s%s"
+            "%s%s%s%s"
             "layout(location = 0) out vec4 oColor;\n"
             "vec4 col(uint c) { return unpackUnorm4x8(c).zyxw; }\n"
             HLE_NVPROJ_GLSL
@@ -344,8 +350,8 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             "}\n"
             "%s"
             "void main() {\n"
-            "  vec4 v0 = vDiffuse, v1 = vSpecular;\n"
-            "  vec4 vTex3 = %s;\n", interp, interp, k->wbuf ? HLE_WBUF_IN_GLSL : "",
+            "%s"
+            "  vec4 vTex3 = %s;\n", interp, interp, back, k->wbuf ? HLE_WBUF_IN_GLSL : "",
         (k->fbfetch & ~HLE_FB_ZEQ) || k->sblend ?
             "layout(input_attachment_index = 0, set = 2, binding = 0) "
             "uniform subpassInput uFb;\n" : "",
@@ -358,6 +364,9 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             "  float v = floor(c * 255.0 + 0.5);\n"
             "  return max((v >= 128.0 ? v - 256.0 : v) / 127.0, -1.0);\n"
             "}\n" : "",
+        k->two_side ? "  vec4 v0 = gl_FrontFacing ? vDiffuse : vBack0;\n"
+                      "  vec4 v1 = gl_FrontFacing ? vSpecular : vBack1;\n"
+                    : "  vec4 v0 = vDiffuse, v1 = vSpecular;\n",
         k->point_sprite ? "vec4(gl_PointCoord, 1.0, 1.0)" : "vTex3i");
     if (k->wbuf) {
         put(&b, HLE_WBUF_CALC_GLSL);

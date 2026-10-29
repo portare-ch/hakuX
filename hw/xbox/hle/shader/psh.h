@@ -86,6 +86,9 @@ typedef struct HlePshKey {
                                            v1 (a shader without one) */
     uint8_t sblend;                     /* the NV2A's signed blend equations (ff.h
                                            HleFfPsKey.sblend) */
+    uint8_t two_side;                   /* SET_TWO_SIDE_LIGHT_EN (a vertex program's
+                                           shader: it writes the back colours): back
+                                           faces read v0 / v1 from oB0 / oB1 */
     /* Colour sign, 4 bits a stage (bit 0 r .. 3 a) as two's complement:
      * sgn_ob the channels uploaded offset binary (tex/xdk_res.h), mapped
      * back exactly; sgn_raw those read as stored (targets, formats not

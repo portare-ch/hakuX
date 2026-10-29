@@ -1,0 +1,58 @@
+# NV2A accuracy: missing and inaccurate features
+
+An audit of the HLE Vulkan renderer (`hw/xbox/hle/`) against the NV2A, made
+on 2026-10-29 at commit `532c8f9700`. Rows are ranked by visibility over GPU
+cost, best first. Cost is GPU cost on the Nova's Adreno 740 (Turnip) at the
+default 2x render scale.
+
+The visibility ratings are estimates from reading the code. No row has been
+checked in a game on the Nova unless its Status says so. Line numbers refer
+to that commit.
+
+| # | NV2A feature | Current state | Visibility | Perf cost | Status |
+|---|---|---|---|---|---|
+| 1 | **Anisotropic filtering** | Read from the register (`pb/kelvin.c:167`), but the sampler never turns it on (`vk/draw.c:1644`). `caps.aniso` is queried in `vkdev.c:587` and never used. | Med–High: floors and roads blur at angles in games that ask for it | Low, and only on stages the game sets | PR #28. Vulkan's anisotropic filtering is the driver's, so this approximates the NV2A's until compared with Xbox output, nearest filtering especially. |
+| 2 | **Two-sided lighting / back colours** | Method `0x17C4` is never read. The vertex shaders write `vBack0`/`vBack1` (`shader/vsh.c:222`), but no fragment shader reads them. Fixed-function lighting doesn't light back faces (`shader/ffhw.c:202`). | Med: lit geometry drawn with culling off (foliage, cloth, hair, flags) shows front colours on its back faces | ~0 (pick by `gl_FrontFacing`) | PR #29 |
+| 3 | **Texture formats L16, V16U16, R6G5B5 (L6V5U5), R5G5B5A1, R4G4B4A4**, and depth formats used as ordinary textures | No Vulkan mapping (`vk/draw.c:235`), so the texture is never uploaded (`vk/draw.c:975`). The draw still runs: `stage_slot()` falls back to slot 0, the white texture, so the stage samples white instead of the texture. | High when a game uses one (wrong or missing texturing on what it draws), but rare | 0 (converted at upload) | Open |
+| 4 | **Texture colour sign** (`TSS_COLORSIGN`) | Stored (`kelvin.c:174`), only logged | Med in games with signed normal maps read straight by the combiners: bump lighting comes out flat or inverted | ~0 | PR #30 |
+| 5 | **Colour key** (`COLORKEYOP`) | Stored (`kelvin.c:172`), only logged. The key-colour methods are never read. The four modes act on a texel that matches the key: 0 no change, 1 its alpha zeroed, 2 its ARGB zeroed, 3 the fragment killed. Only mode 3 may discard; modes 1 and 2 change the texel and later combiner stages can ignore or replace those channels. | Low–Med: black or magenta boxes around sprites in games that use it | ~0 (a compare per keyed stage; mode 3 discards, which turns off early depth rejection for those draws) | PR #31 |
+| 6 | **Quincunx / Gaussian blur filters** | Treated as plain bilinear (`kelvin.c:161`) | Med: games that smooth their antialiasing with Quincunx/Gaussian look sharper and more jagged than on an Xbox; blur effects come out weaker | Low (usually one full-screen pass). Make it optional, since some players prefer the sharper image. | PR #32 |
+| 7 | **Line width** (`0x0380`) | Always 1.0 (`draw.c:2100`) and not scaled by render scale. Points are scaled (`vsh.c:336`). `caps.wide_lines` is never used. | Low–Med: at the 2x default, lines (HUDs, radars, beams) are half as thick as on hardware | ~0 | PR #33 |
+| 8 | **Dithering** (`0x0310`) | Never read. 16-bit render targets stay 16-bit (`surf.c:121`) and band. | Low–Med: banded skies, fog and gradients in games that draw into 16-bit targets | ~0 (ordered dither in the shader) | PR #34 |
+| 9 | **Unsupported pixel-shader modes**: depth replace (`DOT_ZW`), `BRDF`, `DOT_RFLCT_SPEC_CONST` | Fall back to a plain 2D texture lookup (`psh.c:504`). `SPEC_CONST` uses the per-pixel eye vector, not a constant one (`psh.c:495`). | Low (wrong but not missing) | Low–Med: depth replace writes the depth in the shader, which turns off early depth rejection for those draws | Open |
+| 10 | **Logic ops** (`0x17BC` / `0x17C0`) | Never read. The device feature is enabled (`vkdev.c:686`) but unused. | Low | ~0 | Open |
+| 11 | **Window clip** | Exclusive mode is ignored, and several inclusive rectangles become one bounding box (`pbdraw.c:932`) | Low: split-screen, picture-in-picture, HUD masks | Low | Open |
+| 12 | **Wireframe / point fill modes, smooth lines and polygons** (`0x038C`, `0x0390`, `0x0320`, `0x0324`) | Always solid fill | Low | Low | Open |
+| 13 | **Antialiasing control** (`0x1D7C`: sample mask, alpha-to-coverage) | Never read | Low, though a game relying on alpha-to-coverage would show hard edges | Low–Med, because antialiased surfaces are emulated as larger images | Open |
+| 14 | **Spotlight falloff and specular curve** | Linear spotlight cone that ignores the falloff (`ffhw.c:157`); the specular exponent is reconstructed from the hardware's coefficients | Low | 0 | Open |
+| 15 | **Combiner precision** | Floats clamped to [-1, 1] per stage (`psh.c:156`); the NV2A uses roughly 9-bit fixed point | Low (subtle banding; rare effects that depend on rounding) | Low, but adds work to every combiner shader | Open |
+| 16 | **GL-style clamp** (address mode 5) | Treated as clamp-to-edge (`draw.c:1582`). The maximum-LOD clamp and the fractional part of the minimum LOD are dropped. | Very low | Low–Med | Open |
+| 17 | **Cylindrical texture wrap** | The wrap bits are masked off (`kelvin.c:156`) | Low: seams on cylinder-mapped geometry | High: needs per-triangle work, which costs a lot on a tile-based GPU like the Adreno | Open |
+
+## To verify before changing
+
+**Provoking vertex.** The Vulkan device enables "last vertex" for flat
+shading (`vkdev.c:618`), but no pipeline selects it, so flat-shaded draws take
+their colour from the first vertex. Which vertex the NV2A uses, especially
+for quads split into triangles, is unconfirmed. Test a flat-shaded draw
+before changing anything.
+
+## Already handled
+
+Register combiners, including the final combiner; most texture modes; shadow
+maps with filtered edges; W-buffering; depth clamp; float depth; fog modes;
+fixed-function transform and lighting with skinning and texture-coordinate
+generation; point sprites; occlusion queries; signed blending; framebuffer
+reads; the video overlay; palettes; texture borders; and 2x / 2x2
+antialiased surfaces.
+
+## Suggested order
+
+1. Measure before fixing. The renderer already logs unsupported formats
+   ("has no Vulkan format", "not uploaded yet") and texture modes ("sampled
+   as PROJECT2D"). A one-time log when a game sets a non-default value for
+   two-sided lighting, dithering, logic op, fill mode, antialiasing control
+   or colour key would show which rows come up in the test games.
+2. Rows 1 and 2: small changes with almost no GPU cost.
+3. Rows 4 and 5, together with the colour-sign and colour-key logging in
+   `psframe_log` (`vk/draw.c`).
