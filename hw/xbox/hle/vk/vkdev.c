@@ -198,6 +198,7 @@ static void caps_override(HleCaps *c)
         { "dynrender", offsetof(HleCaps, dyn_render) }, { "sync2", offsetof(HleCaps, sync2) },
         { "eds1", offsetof(HleCaps, eds1) },         { "eds2", offsetof(HleCaps, eds2) },
         { "aniso", offsetof(HleCaps, aniso) },
+        { "widelines", offsetof(HleCaps, wide_lines) },
     };
     for (char *save = NULL, *t = strtok_r(v, ", ", &save); t; t = strtok_r(NULL, ", ", &save)) {
         const char *name = *t == '-' ? t + 1 : t;
@@ -512,6 +513,7 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
     c->floor_ok = true;
     need(c, v->qfam != UINT32_MAX, "graphics queue");
     c->wide_lines = q.features.wideLines;
+    c->max_line_width = c->wide_lines ? v->props.limits.lineWidthRange[1] : 1.0f;
     need(c, q.features.largePoints, "largePoints");
     c->depth_clamp = q.features.depthClamp;
     need(c, ok_tl, "timelineSemaphore");
@@ -596,6 +598,7 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
     vkGetPhysicalDeviceFormatProperties(v->phys, VK_FORMAT_R16G16_SSCALED, &fp);
     c->sscaled = fp.bufferFeatures & VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT;
     caps_override(c);
+    c->max_line_width = c->wide_lines ? c->max_line_width : 1.0f;
     c->fbfetch = c->fbfetch && c->dyn_render;  /* local read is dynamic rendering's */
     c->cbc_any = c->cbc_any && c->cbc;
     if (!c->bindless) {                 /* the draw sets' arrays, by the push block's index */

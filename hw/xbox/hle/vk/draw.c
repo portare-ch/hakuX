@@ -50,7 +50,7 @@ enum {
     RS_VERTEXBLEND = 137, RS_TWOSIDEDLIGHTING = 141,
     RS_NORMALIZENORMALS = 142, RS_FOGCOLOR = 138, RS_ZENABLE = 143, RS_STENCILENABLE = 144,
     RS_STENCILFAIL = 145, RS_FRONTFACE = 146, RS_CULLMODE = 147, RS_TEXTUREFACTOR = 148,
-    RS_SHADOWFUNC = 156,
+    RS_SHADOWFUNC = 156, RS_LINEWIDTH = 157,
     /* polygon offset (ZBias writes these: slope -0.25 * bias, offset -bias) */
     RS_ZSLOPESCALE = 77, RS_ZOFFSET = 78, RS_POINTOFFSETENABLE = 79,
     RS_WIREFRAMEOFFSETENABLE = 80, RS_SOLIDOFFSETENABLE = 81,
@@ -2184,6 +2184,7 @@ static HlePbResult pipeline_build(const void *key, const uint32_t *tok, uint32_t
             VK_DYNAMIC_STATE_BLEND_CONSTANTS, VK_DYNAMIC_STATE_VERTEX_INPUT_EXT,
             VK_DYNAMIC_STATE_DEPTH_BIAS, VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE,
             VK_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE,  /* strip batches (batch.c) */
+            VK_DYNAMIC_STATE_LINE_WIDTH,                /* SET_LINE_WIDTH (core state) */
         };
         VkPipelineDynamicStateCreateInfo dy = {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
@@ -3222,6 +3223,7 @@ static struct {
     VkRect2D sc;
     HleFfPush pc;
     uint32_t cull, ff, topo, zt, zw, zop, bias_en, stn, sop[4], smask, swmask, sref;
+    float lw;                           /* line width (target pixels) */
     uint32_t sraw[4];               /* the registers sop was translated from */
     float bias[2], bc[4];
     bool bc_lost;                   /* a pipeline without colour zeroed the driver's
@@ -3369,6 +3371,17 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
     HleVkSurf *rt = hle_surf_get(rt_id), *ds = hle_surf_get(ds_id);
     if (!rt && !ds) {
         drop(DROP_TARGET, c, rt_id, ds_id);
+        return;
+    }
+    if ((c->prim == VK_PRIMITIVE_TOPOLOGY_LINE_LIST ||
+         c->prim == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP) && !(s->rs[RS_LINEWIDTH] & 0x1FF)) {
+        /* SET_LINE_WIDTH 0: the NV2A rasterizes no line fragments (the Xbox's
+         * reference images); Vulkan's lines are at least 1 wide */
+        static unsigned s_logged;
+        if (s_logged++ < 4) {
+            hle_log("hakuX-hle-back", "line draw at SET_LINE_WIDTH 0: no fragments (n=%u)",
+                    c->count);
+        }
         return;
     }
     {   /* debug: HAKUX_HLE_SKIPVSH=<hash>[/<count>[/<alphatest>]][,...], those
@@ -4074,6 +4087,27 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
     if (REC_CHANGED(zop, zopv) && eds1) {
         T.vkCmdSetDepthCompareOp(cb, (VkCompareOp)g_rec.zop);
         g_dr.emits[EM_DYN]++;
+    }
+    {
+        /* SET_LINE_WIDTH (6.3 fixed point; never written: 1, pb/kelvin.c; 0
+         * dropped above) at the target's resolution scale, as point sizes
+         * (vsh.c), where the device draws wide lines; recorded for line
+         * draws, and once for the others (the pipelines' state). A width
+         * under one host pixel draws one pixel wide, Vulkan's least: an
+         * approximation of the NV2A's subpixel lines (0.125 .. 0.875 at 1x
+         * all look alike) */
+        const uint32_t lr = s->rs[RS_LINEWIDTH] & 0x1FF;
+        const bool line = c->prim == VK_PRIMITIVE_TOPOLOGY_LINE_LIST ||
+                          c->prim == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
+        float lw = lr / 8.0f * (float)MAX(rs, 1u);
+        lw = MAX(MIN(lw, g_hvk.caps.max_line_width), 1.0f);
+        if (!line && g_rec.valid) {
+            lw = g_rec.lw;
+        }
+        if (REC_CHANGED(lw, lw)) {
+            T.vkCmdSetLineWidth(cb, lw);
+            g_dr.emits[EM_DYN]++;
+        }
     }
     if (REC_CHANGED(bias_en, bias) && eds2) {
         T.vkCmdSetDepthBiasEnable(cb, bias);
