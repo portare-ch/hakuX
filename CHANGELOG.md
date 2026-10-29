@@ -1,5 +1,21 @@
 # Changelog
 
+## linux-v0.7.2 (PortareOS)
+
+Every frame the game draws reaches RetroArch.
+
+### What's fixed
+
+- **Frames shown twice and skipped** — The core took each frame from the game at a moment it estimated from the start of RetroArch's frame, not when it actually looked. When RetroArch spent a varying time first, for example waiting on audio with audio sync on, the game's next frame sometimes arrived just after the look: one frame was shown twice and the next one never. ROCKNIX's RetroArch showed 47.5 new frames a second of the game's 59.9. The moment is now taken when the frame is read. PortareOS's own settings were not affected.
+
+### Current limitations
+
+- Rumble is not passed on to the controllers yet.
+- Save states are not yet available.
+- Upstream's LAN and XLink Kai backends are included, but this release does not add network settings to RetroArch. Networking is off by default.
+- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
+- Full disc dumps (Redump), as `.iso` or CHD, haven't been tested with a real game yet.
+
 ## linux-v0.7.1 (PortareOS)
 
 Sound after a game starts again in RetroArch.
