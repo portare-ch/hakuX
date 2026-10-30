@@ -721,6 +721,7 @@ RETRO_API void retro_run(void)
     nc_lr_video_run(g_video);
     run_stat(now, tv, now_ns());
     nc_lr_options_run();
+    nc_lr_net_run();
 
     /* A title's relaunch (XLaunchNewImage): the same game boots again, into
      * the XBE its launch data page names, in the process. */

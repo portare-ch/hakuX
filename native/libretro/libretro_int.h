@@ -2,7 +2,7 @@
  * hakuX native core — the libretro core's parts (LIBRETRO_SPEC.md):
  * core.c the ABI and the game's lifecycle, audio.c the APU's output,
  * input.c the RetroPad as the Duke, video.c the frames to RetroArch,
- * options.c the core options.
+ * options.c the core options, net.c the network option.
  */
 #ifndef NATIVE_LIBRETRO_LIBRETRO_INT_H
 #define NATIVE_LIBRETRO_LIBRETRO_INT_H
@@ -69,6 +69,13 @@ void nc_lr_video_set_crop(bool on);
 void nc_lr_options_declare(retro_environment_t env);
 void nc_lr_options_apply(void);
 void nc_lr_options_run(void);
+
+/* net.c — the Network option before the boot (options.c): off, or LAN on
+ * the local network's broadcast and with lan-peers.txt's consoles; a console
+ * heard with this one's identity said, and a new one asked for the next
+ * start (retro_run). */
+void nc_lr_net_apply(bool lan);
+void nc_lr_net_run(void);
 
 /* vulkan.c — the renderer on RetroArch's Vulkan device, the guest booted in
  * its context_reset (load: false when the frontend has none, the frames then
