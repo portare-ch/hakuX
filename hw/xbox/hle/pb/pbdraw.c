@@ -328,10 +328,25 @@ static void pd_free(void)
     hle_big_free(g_pd.inl, INL_BYTES);
 }
 
+/* The methods whose power-on value isn't 0 (xemu's): the specular and spot
+ * curves' coefficients, a power of 1 as D3D writes it (shader/ffhw.c NVC).
+ * Left 0, the curve's denominator is 0 and a title that lights without
+ * setting them gets full specular. */
+static void regs_init(void)
+{
+    static const float k_pow1[3] = { 0.0f, -0.494592f, 1.494592f };
+    memcpy(&R(0x09E0), k_pow1, sizeof(k_pow1));             /* SET_SPECULAR_PARAMS */
+    memcpy(&R(0x1E28), k_pow1, sizeof(k_pow1));             /* ... _BACK */
+    for (unsigned i = 0; i < 8; i++) {
+        memcpy(&R(0x1040 + 128 * i), k_pow1, sizeof(k_pow1));   /* SET_LIGHT_SPOT_FALLOFF */
+    }
+}
+
 bool hle_pbd_start(void)
 {
     pd_free();                              /* a start's before, if not freed (hle_pbd_reset) */
     memset(&g_pd, 0, sizeof(g_pd));
+    regs_init();
     ff_regs_init();
     vsh_forget();                           /* program memory starts empty */
     g_pd.next_id = 1;
@@ -1857,11 +1872,8 @@ static void ff_consts(float (*c)[4])
     regs_f(c[HLE_FFHW_C_AMBIENT], 0x0A10, 3);
     regs_f(&c[HLE_FFHW_C_AMBIENT][3], 0x03B4, 1);
     regs_f(c[HLE_FFHW_C_EMISSION], 0x03A8, 3);
-    float sp[6], spb[6];
-    regs_f(sp, 0x09E0, 6);
-    regs_f(spb, 0x1E28, 6);
-    c[HLE_FFHW_C_PARAMS][0] = hle_ffhw_specular_power(sp);
-    c[HLE_FFHW_C_PARAMS][1] = hle_ffhw_specular_power(spb);
+    regs_f(c[HLE_FFHW_C_SPECULAR], 0x09E0, 3);              /* SET_SPECULAR_PARAMS 0..2 */
+    regs_f(c[HLE_FFHW_C_BACK_SPECULAR], 0x1E28, 3);         /* ... _BACK */
     c[HLE_FFHW_C_PARAMS][2] = (R(0x043C) & 0x1FF) / 8.0f;
     regs_f(c[HLE_FFHW_C_POINT], 0x0A30, 8);
     for (unsigned i = 0; i < 8; i++) {
