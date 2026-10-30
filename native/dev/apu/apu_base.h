@@ -216,6 +216,7 @@ typedef struct ApuConfig {
     int resampler;          /* the voices' resampler, VP_RESAMPLE_* (vp/resample.h):
                                sinc (the default), or linear; read at
                                mcpx_apu_vp_init */
+    bool use_dsp_jit;
 } ApuConfig;
 extern ApuConfig g_apu_config;
 

@@ -15,6 +15,12 @@ target_include_directories(apu-stereo-smoke PRIVATE "${NC_REPO}")
 target_link_libraries(apu-stereo-smoke PRIVATE hakux_native m)
 add_test(NAME apu-stereo-smoke COMMAND apu-stereo-smoke)
 set_tests_properties(apu-stereo-smoke PROPERTIES TIMEOUT 30)
+if(HAKUX_DSP_JIT)
+  add_executable(apu-jit-smoke "${NC_REPO}/tests/native/linux/apu_jit.c" "${NC_APU_OUT_NULL}")
+  target_link_libraries(apu-jit-smoke PRIVATE hakux_native m)
+  add_test(NAME apu-jit-smoke COMMAND apu-jit-smoke)
+  set_tests_properties(apu-jit-smoke PROPERTIES TIMEOUT 30)
+endif()
 # The voices' resamplers, linear and sinc, through voice processing: levels,
 # loops, pitch changes, a voice's end, reuse, a starved stream, ADPCM loops;
 # `apu-resample-smoke bench` counts allocations (malloc wrapped).

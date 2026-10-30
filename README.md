@@ -111,7 +111,8 @@ varies; other games may have bugs or fail to start.
   high-frequency detail and uses ARM NEON. Try **Linear** if audio crackles
   or runs slowly, then close and reopen the game. **Audio Processing**
   defaults to **Fast**, a dry mix. **Full DSP (experimental)** adds the
-  game's Xbox reverb and other effects to stereo output and uses more CPU.
+  game's Xbox reverb and other effects to stereo output. Linux builds use
+  a DSP JIT to reduce its CPU cost; Fast still uses less CPU.
   Close and reopen the game after changing it.
 - **System link:** to play a game's LAN mode across devices, set
   **Network** to **LAN (system link)** in **Quick Menu → Core Options** on

@@ -7,8 +7,9 @@ See [TESTING.md](../TESTING.md) for installation and device testing.
 
 ## Build and check
 
-Install Clang 19, CMake, Ninja, Git, Python 3, zlib development files and
-Linux UAPI headers on an ARM64 Linux host. Dependencies are pinned in
+Install Clang 19, CMake, Ninja, Git, Python 3, Rust 1.96.0, zlib development
+files and Linux UAPI headers on an ARM64 Linux host. The supplied container
+includes these tools. Dependencies are pinned in
 [linux-deps.json](../tools/native/linux-deps.json), including FEX's required
 submodules. The fetcher rejects modified or mismatched checkouts.
 
@@ -34,6 +35,11 @@ Set `HAKUX_BUILD` to use another build directory, `HAKUX_DEPS` to select
 dependencies fetched with `linux-deps.py --dest <directory>`, and `JOBS` to
 set parallelism. Extra `linux-build.sh` arguments pass through to CMake,
 including a sysroot or toolchain file.
+
+The Linux ARM64 build enables `HAKUX_DSP_JIT` by default. It builds
+dsp56300 0.1.3 from pinned sources using Cargo's locked dependencies;
+release archives include their license notices and Rust toolchain version.
+`-DHAKUX_DSP_JIT=OFF` builds the C interpreter without requiring Rust.
 
 The build produces the core, diagnostic tools, `libretro-harness` and smoke
 tests. CTest checks CPU/memory, audio, error handling and libretro behavior
@@ -124,6 +130,11 @@ except Crop Overscan and Rumble, which update immediately:
 | `hakux_rumble` | `disabled`, `enabled` (controller vibration) | `disabled` |
 | `hakux_network` | `disabled` (no cable), `lan` (system link) | `disabled` |
 | `hakux_audio_resampler` | `sinc` (higher quality, 32-tap filter using ARM NEON), `linear` (less CPU, softer high frequencies; fallback on non-ARM64 builds) | `sinc` |
+| `hakux_audio_processing` | `fast` (dry mix), `dsp` (Xbox effects and stereo downmix; experimental) | `fast` |
+
+Full DSP uses the DSP56300 JIT when compiled in. `NC_APU_DSP=0|1`
+overrides the audio processing option; `NC_APU_DSP_JIT=0` selects the C
+interpreter for debugging. Fast mode does not create JIT instances.
 
 LAN mode (`native/net/lan.c`) sends Ethernet frames over UDP port 3075.
 Discovery broadcasts on the default-route interface, or the first

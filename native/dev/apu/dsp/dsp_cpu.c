@@ -696,7 +696,7 @@ void dsp56k_execute_instruction(dsp_core_t* dsp)
     execute_instruction(dsp);
 }
 
-void dsp_run(DSPState* dsp, int cycles)
+void dsp_run_interpreter(DSPState* dsp, int cycles)
 {
     dsp->save_cycles += cycles;
 

@@ -463,6 +463,17 @@ void mcpx_apu_ep_write(void *opaque, uint32_t addr, uint64_t val, unsigned int s
 }
 
 #define GP_FRAME_CYCLES (160000000 / 1500)
+#define DSP_FRAME_LIMIT (2 * GP_FRAME_CYCLES)
+
+static void frame_limit(DSPState *dsp)
+{
+    static bool warned;
+    if (!warned) {
+        warned = true;
+        nc_log("hakuX-apu", "%s DSP reached its frame limit without completing (%s)",
+               dsp->is_gp ? "GP" : "EP", dsp_engine_name(dsp));
+    }
+}
 
 void mcpx_apu_dsp_frame(MCPXAPUState *d, float mixbins[NUM_MIXBINS][NUM_SAMPLES_PER_FRAME])
 {
@@ -492,8 +503,6 @@ void mcpx_apu_dsp_frame(MCPXAPUState *d, float mixbins[NUM_MIXBINS][NUM_SAMPLES_
     if ((d->gp.regs[NV_PAPU_GPRST] & NV_PAPU_GPRST_GPRST) &&
         (d->gp.regs[NV_PAPU_GPRST] & NV_PAPU_GPRST_GPDSPRST)) {
         dsp_start_frame(d->gp.dsp);
-        d->gp.dsp->core.is_idle = false;
-        d->gp.dsp->core.cycle_count = 0;
         /* hakuX: while a vCPU waits (mcpx_apu_spin_wait), up to one
          * hardware frame of cycles (160 MHz / 1500 Hz) */
         bool boost = !d->gp.realtime &&
@@ -501,9 +510,12 @@ void mcpx_apu_dsp_frame(MCPXAPUState *d, float mixbins[NUM_MIXBINS][NUM_SAMPLES_
                          apu_host_us();
         do {
             dsp_run(d->gp.dsp, 1000);
-        } while (!d->gp.dsp->core.is_idle &&
+        } while (!d->gp.dsp->core.is_idle && d->gp.dsp->core.cycle_count < DSP_FRAME_LIMIT &&
                  (d->gp.realtime ||
                   (boost && d->gp.dsp->core.cycle_count < GP_FRAME_CYCLES)));
+        if (d->gp.realtime && !d->gp.dsp->core.is_idle) {
+            frame_limit(d->gp.dsp);
+        }
 
         if ((d->monitor.point == MCPX_APU_DEBUG_MON_GP) ||
             (d->monitor.point == MCPX_APU_DEBUG_MON_GP_OR_EP && !ep_enabled)) {
@@ -523,11 +535,13 @@ void mcpx_apu_dsp_frame(MCPXAPUState *d, float mixbins[NUM_MIXBINS][NUM_SAMPLES_
         (d->ep.regs[NV_PAPU_EPRST] & NV_PAPU_GPRST_GPDSPRST)) {
         if (d->ep_frame_div % 8 == 0) {
             dsp_start_frame(d->ep.dsp);
-            d->ep.dsp->core.is_idle = false;
-            d->ep.dsp->core.cycle_count = 0;
             do {
                 dsp_run(d->ep.dsp, 1000);
-            } while (!d->ep.dsp->core.is_idle && d->ep.realtime);
+            } while (!d->ep.dsp->core.is_idle && d->ep.realtime &&
+                     d->ep.dsp->core.cycle_count < 8 * DSP_FRAME_LIMIT);
+            if (d->ep.realtime && !d->ep.dsp->core.is_idle) {
+                frame_limit(d->ep.dsp);
+            }
         }
     }
     gp_probe_frame_end(d);
@@ -567,6 +581,8 @@ void mcpx_apu_dsp_init(MCPXAPUState *d)
      * use the full audio pipeline or not.
      */
     mcpx_apu_update_dsp_preference(d);
-    nc_log("hakuX-apu", "processing: %s", g_apu_config.use_dsp ? "full DSP" : "fast dry mix");
+    nc_log("hakuX-apu", "processing: %s (GP %s, EP %s)",
+           g_apu_config.use_dsp ? "full DSP" : "fast dry mix",
+           dsp_engine_name(d->gp.dsp), dsp_engine_name(d->ep.dsp));
     gp_probe_init();
 }

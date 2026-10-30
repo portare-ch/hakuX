@@ -1,7 +1,13 @@
+FROM rust:1.96.0-slim-trixie@sha256:c37af730be4fd8104cbf9aedbd6ab259e51ca2d5437817a0f8680edf66ac6c28 AS rust
 FROM debian:stable-slim@sha256:a717a33469731894e77e912ea7d714e27c2dc38ee6554fd1a3102e92999cfc66
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential clang-19 clang-tools-19 lld-19 llvm-19 cmake ninja-build git python3 \
     pkg-config ca-certificates zlib1g-dev libvulkan1 mesa-vulkan-drivers \
     && rm -rf /var/lib/apt/lists/*
+COPY --from=rust /usr/local/cargo /usr/local/cargo
+COPY --from=rust /usr/local/rustup /usr/local/rustup
+ENV CARGO_HOME=/usr/local/cargo RUSTUP_HOME=/usr/local/rustup
+ENV PATH=/usr/local/cargo/bin:$PATH
+RUN rustc --version && cargo --version
 ENV CC=clang-19 CXX=clang++-19
 WORKDIR /src

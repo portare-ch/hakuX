@@ -40,6 +40,7 @@ struct ApuField {
 #define DATA(s, m) {#m, F_DATA, offsetof(s, m), sizeof(((s *)0)->m), 1, NULL}
 #define OPT_DATA(s, m) {#m, F_DATA, offsetof(s, m), sizeof(((s *)0)->m), 1, NULL, true}
 #define STRUCT(s, m, n, t, desc) {#m, F_STRUCT, offsetof(s, m), sizeof(t), (n), &(desc)}
+#define OPT_STRUCT(s, m, n, t, desc) {#m, F_STRUCT, offsetof(s, m), sizeof(t), (n), &(desc), true}
 #define PTR(s, m, t, desc) {#m, F_PTR, offsetof(s, m), sizeof(t), 1, &(desc)}
 #define END {NULL, F_END, 0, 0, 0, NULL}
 
@@ -91,11 +92,46 @@ static const ApuField k_core_fields[] = {
 };
 static const ApuDesc k_core = {"mcpx-apu/dsp-state/core", k_core_fields};
 
+#if NC_HAVE_DSP_JIT
+static const ApuField k_jit_irq_fields[] = {
+    DATA(Dsp56300InterruptState, pending_bits),
+    DATA(Dsp56300InterruptState, pipeline_stage),
+    DATA(Dsp56300InterruptState, vector_addr),
+    DATA(Dsp56300InterruptState, saved_pc),
+    DATA(Dsp56300InterruptState, state),
+    DATA(Dsp56300InterruptState, ipl),
+    DATA(Dsp56300InterruptState, ipl_to_raise),
+    END,
+};
+static const ApuDesc k_jit_irq = {"mcpx-apu/dsp-state/jit/interrupts", k_jit_irq_fields};
+
+static const ApuField k_jit_fields[] = {
+    DATA(Dsp56300State, pc),
+    DATA(Dsp56300State, pc_advance),
+    DATA(Dsp56300State, pc_on_rep),
+    DATA(Dsp56300State, cycle_count),
+    DATA(Dsp56300State, cycle_budget),
+    STRUCT(Dsp56300State, interrupts, 1, Dsp56300InterruptState, k_jit_irq),
+    DATA(Dsp56300State, loop_rep),
+    DATA(Dsp56300State, halt_requested),
+    DATA(Dsp56300State, power_state),
+    DATA(Dsp56300State, registers),
+    DATA(Dsp56300State, stack),
+    END,
+};
+static const ApuDesc k_jit = {"mcpx-apu/dsp-state/jit", k_jit_fields};
+#endif
+
 static const ApuField k_dsp_fields[] = {
     STRUCT(DSPState, core, 1, dsp_core_t, k_core),
     STRUCT(DSPState, dma, 1, DSPDMAState, k_dma),
     DATA(DSPState, save_cycles),
     DATA(DSPState, interrupts),
+#if NC_HAVE_DSP_JIT
+    OPT_DATA(DSPState, jit_state_valid),
+    OPT_STRUCT(DSPState, jit_state, 1, Dsp56300State, k_jit),
+    OPT_DATA(DSPState, jit_dma_reads),
+#endif
     END,
 };
 static const ApuDesc k_dsp = {"mcpx-apu/dsp-state", k_dsp_fields};
@@ -253,6 +289,8 @@ bool nc_apu_state_save(NcBuf *b)
     const NcApuState st = {APU_STATE_VERSION};
     nc_rec_put(b, &nc_rec_NcApuState, &st);
     pthread_mutex_lock(&d->lock);
+    dsp_state_prepare_save(d->gp.dsp);
+    dsp_state_prepare_save(d->ep.dsp);
     put(b, &k_apu, d);
     pthread_cond_signal(&d->cond);
     pthread_mutex_unlock(&d->lock);
@@ -271,7 +309,15 @@ bool nc_apu_state_load(NcRd *r, unsigned v)
     }
     mcpx_apu_reset(d);
     pthread_mutex_lock(&d->lock);
+#if NC_HAVE_DSP_JIT
+    d->gp.dsp->jit_state_valid = d->ep.dsp->jit_state_valid = false;
+    d->gp.dsp->jit_dma_reads = d->ep.dsp->jit_dma_reads = 0;
+#endif
     const bool ok = get(r, &k_apu, d, k_apu.name);
+    if (ok) {
+        dsp_state_finish_load(d->gp.dsp);
+        dsp_state_finish_load(d->ep.dsp);
+    }
     mcpx_apu_post_load(d);
     pthread_cond_signal(&d->cond);
     pthread_mutex_unlock(&d->lock);

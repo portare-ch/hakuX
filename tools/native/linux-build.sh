@@ -14,4 +14,7 @@ cmake -S native -B "$build" -G Ninja \
     -DHAKUX_LR_END_PROCESS=ON "$@"
 cmake --build "$build" --target xboxrun hakux_libretro libretro-harness linux-smoke audio-smoke apu-stereo-smoke apu-resample-smoke apu-reinit-smoke rumble-smoke usb-smoke \
     vulkan-probe kms-grab -j "${JOBS:-4}"
+if grep -q '^HAKUX_DSP_JIT:BOOL=ON$' "$build/CMakeCache.txt"; then
+    cmake --build "$build" --target apu-jit-smoke -j "${JOBS:-4}"
+fi
 ctest --test-dir "$build" --output-on-failure
