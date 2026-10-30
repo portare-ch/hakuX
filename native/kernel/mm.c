@@ -9,6 +9,7 @@
  */
 #include "native/kernel/kernel.h"
 
+#include <pthread.h>
 #include <stdio.h>
 #include <unistd.h>
 
@@ -49,7 +50,24 @@ typedef struct Contig {
 
 static Contig g_contig[MAX_CONTIG];
 static unsigned g_ncontig;
+/* Held for each change to g_contig and g_ncontig, and by nc_mm_contig_end,
+ * which the decode thread calls: the guest's thread reads them without it. */
+static pthread_mutex_t g_contig_mu = PTHREAD_MUTEX_INITIALIZER;
 static uint32_t g_gpu_instance_end;
+
+uint32_t nc_mm_contig_end(uint32_t pa)
+{
+    uint32_t end = 0;
+    pthread_mutex_lock(&g_contig_mu);
+    for (unsigned i = 0; i < g_ncontig && !end; i++) {
+        const uint32_t cpa = g_contig[i].va & ~NC_CONTIG_WINDOW, size = g_contig[i].size;
+        if (pa >= cpa && pa - cpa < size) {
+            end = cpa + size;
+        }
+    }
+    pthread_mutex_unlock(&g_contig_mu);
+    return end;
+}
 
 void nc_mm_usage(NcKernel *k, uint32_t *contig_bytes, uint32_t *virtual_bytes, unsigned *contig_blocks)
 {
@@ -591,7 +609,9 @@ static uint32_t contig_alloc(NcKernel *k, uint32_t size, uint32_t lo, uint32_t h
         slack += NC_PAGE;
     }
     const uint32_t va = NC_CONTIG_WINDOW | pa;
+    pthread_mutex_lock(&g_contig_mu);
     g_contig[g_ncontig++] = (Contig){va, size, ra, slack, protect};
+    pthread_mutex_unlock(&g_contig_mu);
     return va;
 }
 
@@ -621,7 +641,9 @@ static void contig_free(NcKernel *k, uint32_t va, uint32_t ra)
     Contig *c = contig_at(va);
     if (c) {
         nc_vm_free_phys(k->vm, va & ~NC_CONTIG_WINDOW, c->size + c->slack);
+        pthread_mutex_lock(&g_contig_mu);
         *c = g_contig[--g_ncontig];
+        pthread_mutex_unlock(&g_contig_mu);
     } else if (va) {
         static unsigned s_logged; /* a free that matches no block keeps its memory */
         if (s_logged++ < 16) {
@@ -864,7 +886,9 @@ uint32_t nc_mm_keep_restore(NcKernel *k)
             }
             continue;
         }
+        pthread_mutex_lock(&g_contig_mu);
         g_contig[g_ncontig++] = (Contig){va, size, 0, 0, PAGE_READWRITE};
+        pthread_mutex_unlock(&g_contig_mu);
         g_kept[g_nkept].va = va;
         g_kept[g_nkept++].len = len;
         nc_log("hakuX-native-mm", "kept memory %08x+%u restored", va, len);
@@ -1043,13 +1067,15 @@ bool nc_mm_state_load(NcRd *r, unsigned v)
         return false;
     }
     memset(g_regions, 0, sizeof(g_regions));
-    memset(g_contig, 0, sizeof(g_contig));
     memset(g_kept, 0, sizeof(g_kept));
     nc_recs_get(r, &nc_rec_Region, g_regions, sizeof(g_regions[0]), st.nregions, v);
+    pthread_mutex_lock(&g_contig_mu);
+    memset(g_contig, 0, sizeof(g_contig));
     nc_recs_get(r, &nc_rec_Contig, g_contig, sizeof(g_contig[0]), st.ncontig, v);
+    g_ncontig = st.ncontig;
+    pthread_mutex_unlock(&g_contig_mu);
     nc_recs_get(r, &nc_rec_KeptRange, g_kept, sizeof(g_kept[0]), st.nkept, v);
     g_nregions = st.nregions;
-    g_ncontig = st.ncontig;
     g_nkept = st.nkept;
     g_gpu_instance_end = st.gpu_instance_end;
     return !r->fail;
@@ -1059,8 +1085,10 @@ void nc_mm_reset(void)
 {
     memset(g_regions, 0, sizeof(g_regions));
     g_nregions = 0;
+    pthread_mutex_lock(&g_contig_mu);
     memset(g_contig, 0, sizeof(g_contig));
     g_ncontig = 0;
+    pthread_mutex_unlock(&g_contig_mu);
     g_gpu_instance_end = 0;
     memset(g_kept, 0, sizeof(g_kept));      /* a relaunch's come back from kept.bin, as in a new process */
     g_nkept = 0;

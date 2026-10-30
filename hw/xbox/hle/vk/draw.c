@@ -3681,6 +3681,10 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
             k.pk.dither = rt->fmt == VK_FORMAT_R5G6B5_UNORM_PACK16 ? 1 :
                           rt->fmt == VK_FORMAT_A1R5G5B5_UNORM_PACK16 ? 2 : 0;
         }
+        /* SET_ANTI_ALIASING_CONTROL with multisampling on, into an antialiased
+         * target, colour or depth: its sample mask, alpha-to-coverage and
+         * alpha-to-one, per pixel of the larger image (shader/psh.c) */
+        hle_psh_aa_key(&k.pk, s->aactl, s->aa ? s->xs : 1, s->aa ? s->ys : 1, rt != NULL, ds != NULL);
         /* two-sided lighting: back faces take the back colours a vertex
          * program's shader passes (shader/vsh.c; not the D3D-model FF's) */
         k.pk.two_side = prog && s->rs[RS_TWOSIDEDLIGHTING] != 0;

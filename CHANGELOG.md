@@ -1,5 +1,43 @@
 # Changelog
 
+## linux-v0.11.0 (PortareOS)
+
+System link: play a game's LAN mode with other devices on your network.
+
+### What's new
+
+- **System link (LAN)** — A new core option, **Network**, connects the console to the other consoles on your network. Set it to **LAN (system link)** in **Quick Menu → Core Options** on each device, then close and reopen the game. Devices on the same Wi-Fi find each other. A device the broadcast doesn't reach, such as one on another subnet or a VPN (Tailscale, ZeroTier), can be added by address to `lan-peers.txt` in the save directory. It's off by default.
+- **Copied consoles** — Two devices with the same console identity, such as a hard disk copied from one to the other, can't see each other's games. RetroArch now says so, and the device gets an identity of its own the next time the game starts. Its saves stay valid.
+
+Tried on the Nova: Halo's system link game reached another computer on the network, and that computer's frames reached the game. A game between two devices hasn't been tried yet.
+
+### Current limitations
+
+- Save states are not yet available.
+- XLink Kai, which upstream also has, isn't offered in RetroArch yet, and neither is the Internet (NAT).
+- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
+- NBA Inside Drive 2003 saves its prestamped player textures blank: it reads back small images the GPU drew, which hakuX doesn't copy back to memory yet.
+
+## linux-v0.10.0 (PortareOS)
+
+A crash fix for NBA Inside Drive 2003, the GPU's antialiasing control, and nxdk homebrew that gets past its start-up.
+
+### What's new
+
+- **NBA Inside Drive 2003** — The game no longer crashes to the launcher after its intro. hakuX had sized its 640x480 front buffer as 640x960 and copied it back to memory at that size, over a page of the game's code. Images a game draws into now stay within the memory block the game gave them. Tried on the Nova: past the intro at full speed.
+- **Antialiasing control** — Games that antialias with alpha-to-coverage, such as for foliage, fences and hair, or that draw into only some of a pixel's samples, get those effects. Before, those edges were hard and every sample was drawn.
+- **nxdk homebrew** — Programs built with nxdk, the open-source Xbox SDK, no longer stop in their first second. nxdk_pgraph_tests now runs to the end, but what nxdk's graphics library draws doesn't show yet: the screen stays white.
+- **First start after updating** — The GPU pipelines are built again once, so a game may stutter briefly the first time.
+
+The antialiasing control follows the GPU's register as documented for its successor, and passes the build's tests and shader checks. It hasn't been tried in a game that uses it yet, and its sample order and coverage pattern haven't been compared against an Xbox.
+
+### Current limitations
+
+- Save states are not yet available.
+- Upstream's LAN and XLink Kai backends are included, but this release does not add network settings to RetroArch. Networking is off by default.
+- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
+- NBA Inside Drive 2003 saves its prestamped player textures blank: it reads back small images the GPU drew, which hakuX doesn't copy back to memory yet.
+
 ## linux-v0.9.0 (PortareOS)
 
 More of the Xbox GPU's texture and drawing features.

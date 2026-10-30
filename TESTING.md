@@ -8,10 +8,9 @@ tested by this fork.
 ## Before you start
 
 - **Games:** your own discs, as `.iso` images or as CHDs made from them with
-  `chdman createdvd -i game.iso -o game.chd`. XISO images are tested, as ISO
-  and CHD. Full disc dumps (Redump) are detected too, but haven't been tested
-  with a real game. CD CHDs (`chdman createcd`) don't work: an Xbox disc is a
-  DVD.
+  `chdman createdvd -i game.iso -o game.chd`. XISO images and full disc
+  dumps (Redump) are tested, as ISO and CHD. CD CHDs (`chdman createcd`)
+  don't work: an Xbox disc is a DVD.
 - **No BIOS** or other Xbox files are needed.
 - **Back up the console's hard disk** before trying a new version. Game saves
   are stored inside it, in the `hdd/` folder of RetroArch's save directory
@@ -125,6 +124,10 @@ the frame rate and the core's time per frame.
    demo discs): they continue without going back to the menu.
 9. **Video driver restarts:** some RetroArch video settings restart its video
    driver. The game then starts again, with a message saying so.
+10. **System link** (two devices): set **Network** to **LAN (system link)** in
+    the core options on both, start a game with system link on both, and open
+    its system link menu. Each should see the other's game. Note whether both
+    devices are on the same Wi-Fi, and if not, what `lan-peers.txt` names.
 
 ## Reporting
 

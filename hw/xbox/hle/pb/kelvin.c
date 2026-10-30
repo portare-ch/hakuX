@@ -230,6 +230,7 @@ void hle_kelvin_state(HleCmdState *st)
             rs[k_rs_map[i].rs] = R(k_rs_map[i].m);
         }
     }
+    st->aactl = W(0x1D7C) ? R(0x1D7C) : 0xFFFF0001u;   /* SET_ANTI_ALIASING_CONTROL */
     if (!W(0x0380)) {                   /* SET_LINE_WIDTH never written: 1.0 (an */
         rs[RS_LINEWIDTH] = 8;           /* explicit 0 draws no line, vk/draw.c) */
     }

@@ -293,6 +293,23 @@ static const char *blend_eq(uint32_t o)
     }
 }
 
+void hle_psh_aa_key(HlePshKey *k, uint32_t aactl, uint32_t xs, uint32_t ys, bool colour, bool depth)
+{
+    k->aa_grid = k->aa_ctl = 0;
+    xs = xs > 2 ? 2 : xs;
+    ys = ys > 2 ? 2 : ys;
+    if (!(colour || depth) || !(aactl & 1) || xs * ys < 2) {
+        return;
+    }
+    const uint32_t all = (1u << (xs * ys)) - 1, mask = (aactl >> 16) & all;
+    const uint32_t a2c = (aactl >> 4) & 1, a2one = (aactl >> 8) & 1;
+    if (mask == all && !a2c && !a2one) {
+        return;
+    }
+    k->aa_grid = (uint8_t)(xs | ys << 2);
+    k->aa_ctl = (uint8_t)(a2c | a2one << 1 | mask << 4);
+}
+
 static const char *k_cmp[8] = {
     "false", "a < r", "a == r", "a <= r", "a > r", "a != r", "a >= r", "true",
 };
@@ -713,6 +730,29 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
     }
     if (k->fbfetch & HLE_FB_ZEQ) {
         put(&b, "%s", HLE_ZEQ_TEST_GLSL(k->fbfetch));
+    }
+    if (k->aa_grid) {
+        /* antialiasing control: this pixel is sample si of its guest pixel
+         * (row-major, by guest pixel: the resolution scale divided out). A
+         * sample the mask leaves out isn't written; alpha-to-coverage writes
+         * the first alpha x N samples; alpha-to-one then makes alpha 1, for
+         * the blend too. The NV2A's sample order and coverage pattern are
+         * assumed. */
+        const unsigned xs = k->aa_grid & 3 ? k->aa_grid & 3 : 1;
+        const unsigned ys = (k->aa_grid >> 2) & 3 ? (k->aa_grid >> 2) & 3 : 1;
+        put(&b, "  { ivec2 sp = ivec2(gl_FragCoord.xy / float(max((pc.flags >> 16) & 255u, 1u))) %% "
+                "ivec2(%u, %u);\n    uint si = uint(sp.y * %u + sp.x);\n", xs, ys, xs);
+        const unsigned all = (1u << (xs * ys)) - 1, mask = (k->aa_ctl >> 4) & all;
+        if (mask != all) {
+            put(&b, "    if (((%uu >> si) & 1u) == 0u) discard;\n", mask);
+        }
+        if (k->aa_ctl & 1) {
+            put(&b, "    if (float(si) + 0.5 >= outc.a * %u.0) discard;\n", xs * ys);
+        }
+        if (k->aa_ctl & 2) {
+            put(&b, "    outc.a = 1.0;\n");
+        }
+        put(&b, "  }\n");
     }
     static const char *const k_dbg[17] = {
         "outc", "t0", "v0", "r0", "vec4(vec3(fogf), 1.0)", "v1", "t3", "vec4(vec3(r0.a), 1.0)",

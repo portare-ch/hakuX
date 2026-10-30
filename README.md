@@ -83,9 +83,8 @@ RetroArch's save directory. Choose a writable directory under
 
 ## Game formats
 
-**Start with an Xbox XISO `.iso`.** These are the images tested with real
-games. Full disc dumps (Redump) are also detected, but haven't been tested
-with a real game.
+**Use an Xbox `.iso`:** an XISO or a full disc dump (Redump). Both work
+with real games.
 
 To save space, convert an ISO to CHD with `chdman` on your computer:
 
@@ -112,8 +111,16 @@ game; other titles may have bugs or fail to start.
   power, and **1x** helps a game that runs slowly.
   Set **Screen Format: Widescreen** for games that support it, and use
   RetroArch's **Core provided** aspect ratio. Close and reopen the game
-  after changing render scale, screen format, language or video region.
-  **Crop Overscan** changes immediately.
+  after changing render scale, screen format, language, video region or
+  network. **Crop Overscan** changes immediately.
+- **System link:** to play a game's LAN mode across devices, set
+  **Network** to **LAN (system link)** in **Quick Menu → Core Options** on
+  each device, then close and reopen the game. Devices on the same Wi-Fi
+  find each other (UDP port 3075). For a device the broadcast doesn't reach,
+  such as one on another subnet or a VPN (Tailscale, ZeroTier), add its
+  address to `lan-peers.txt` in the save directory
+  (`/storage/saves/xbox/lan-peers.txt` on PortareOS): one per line, as `IP`
+  or `IP:PORT`. XLink Kai is not available in RetroArch yet.
 - **Saving:** save inside the game, as on an Xbox. On PortareOS, your saves
   live in `/storage/saves/xbox/hdd/`. Back up that folder to keep them when
   moving or reinstalling. RetroArch save states are not available.

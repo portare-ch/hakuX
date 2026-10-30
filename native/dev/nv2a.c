@@ -7,7 +7,10 @@
  *   PMC_INTR_0      0x000100  pending summary (bit 24 PCRTC), read-only
  *   PMC_INTR_EN_0   0x000140  bit 0: interrupts to the CPU
  *   PTIMER          0x009400/0x009410  free-running time (ns), low/high
+ *   PFB_CFG0        0x100200  partitions: 3, as xemu (nxdk's pbkit checks it)
  *   PFB_CSTATUS     0x10020C  installed memory size
+ *   PRAMDAC_NVPLL_COEFF 0x680500  the core clock's PLL as the Xbox sets it,
+ *                   233 MHz (nxdk's pbkit refuses another clock)
  *   PCRTC_INTR_0    0x600100  bit 0 vblank, write 1 to clear
  *   PCRTC_INTR_EN_0 0x600140
  *   PCRTC_RASTER    0x600808  current scanline
@@ -62,8 +65,10 @@
 #define NV_PVIDEO_STOP      0x008704u
 #define NV_PTIMER_TIME_0    0x009400u
 #define NV_PTIMER_TIME_1    0x009410u
+#define NV_PFB_CFG0         0x100200u
 #define NV_PFB_CSTATUS      0x10020Cu
 #define NV_PFB_WBC          0x100410u
+#define NV_PRAMDAC_NVPLL_COEFF 0x680500u
 #define NV_PCRTC_INTR_0     0x600100u
 #define NV_PCRTC_INTR_EN_0  0x600140u
 #define NV_PCRTC_START      0x600800u
@@ -693,7 +698,10 @@ void nc_dev_nv2a_init(void)
 {
     g_regs = nc_big_alloc(NV2A_SIZE); /* pages are touched only where the guest writes */
     nc_wr32(g_regs + NV_PMC_BOOT_0, 0x02A000A1u);
+    nc_wr32(g_regs + NV_PFB_CFG0, 3);
     nc_wr32(g_regs + NV_PFB_CSTATUS, 64u << 20);
+    /* 16.6667 MHz * N 28 / (M 1 << P 1), as xemu's PRAMDAC */
+    nc_wr32(g_regs + NV_PRAMDAC_NVPLL_COEFF, 0x00011C01u);
     char v[NC_PROPERTY_VALUE_MAX] = "";
     hle_prop_get("debug.hakux.nvcensus", v);
     const char *e = getenv("NC_NV2A_CENSUS");

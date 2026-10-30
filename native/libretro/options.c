@@ -5,8 +5,9 @@
  * on screen are RetroArch's (its shaders, its aspect setting).
  *
  * Each option but the overscan crop is read once, before the console boots:
- * the render scale sizes the renderer's targets, and the console's settings
- * are in the EEPROM the title reads as it starts. The core can't boot again
+ * the render scale sizes the renderer's targets, the console's settings
+ * are in the EEPROM the title reads as it starts, and the network is the
+ * NIC's from its start (net.c). The core can't boot again
  * in its process (M2), so a change to one during the game takes effect when
  * the game starts next, and RetroArch shows a message saying so. The crop
  * (video.c) and rumble (input.c) change at once.
@@ -21,7 +22,7 @@
 
 #define NEXT " Takes effect when the game starts next."
 
-enum { OPT_SCALE, OPT_CROP, OPT_FORMAT, OPT_LANGUAGE, OPT_REGION, OPT_RUMBLE, OPT_COUNT };
+enum { OPT_SCALE, OPT_CROP, OPT_FORMAT, OPT_LANGUAGE, OPT_REGION, OPT_RUMBLE, OPT_NETWORK, OPT_COUNT };
 
 /* The language values follow XC_LANGUAGE after auto: english is 1. */
 static struct retro_core_option_v2_definition g_defs[OPT_COUNT + 1] = {
@@ -71,6 +72,14 @@ static struct retro_core_option_v2_definition g_defs[OPT_COUNT + 1] = {
         "controller have them.",
         NULL, NULL,
         {{"disabled", "Off"}, {"enabled", "On"}, {NULL, NULL}},
+        "disabled"},
+    [OPT_NETWORK] = {
+        "hakux_network", "Network", NULL,
+        "The console's network cable. LAN plays system link games with the consoles on this network that have "
+        "it on too: they find each other by broadcast, on UDP port 3075. Consoles the broadcast doesn't reach "
+        "(another subnet, a VPN) can be named in lan-peers.txt in the save directory." NEXT,
+        NULL, NULL,
+        {{"disabled", "Off (no cable)"}, {"lan", "LAN (system link)"}, {NULL, NULL}},
         "disabled"},
     {NULL},
 };
@@ -182,9 +191,13 @@ void nc_lr_options_apply(void)
                             : !strcmp(region, "ntsc-j") ? NC_AV_REGION_NTSC_J
                             : !strcmp(region, "pal")    ? NC_AV_REGION_PAL_I
                                                         : 0);
+
+    const bool lan = !strcmp(g_defs[OPT_NETWORK].values[g_applied[OPT_NETWORK]].value, "lan");
+    nc_lr_net_apply(lan);
     nc_log("hakuX-libretro", "options: render scale %dx, overscan %s, screen %s, language %d (%s), video region %s, "
-           "rumble %s", scale, crop ? "cropped" : "shown", format, language,
-           g_defs[OPT_LANGUAGE].values[g_applied[OPT_LANGUAGE]].value, region, rumble ? "on" : "off");
+           "rumble %s, network %s", scale, crop ? "cropped" : "shown", format, language,
+           g_defs[OPT_LANGUAGE].values[g_applied[OPT_LANGUAGE]].value, region, rumble ? "on" : "off",
+           lan ? "lan" : "off");
 }
 
 void nc_lr_options_run(void)

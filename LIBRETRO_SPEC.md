@@ -328,6 +328,10 @@ Options (`options.c`): only what the emulator backs.
   (normal, widescreen, letterbox), language (auto: RetroArch's) and video
   region (auto: the game's; NTSC-M, NTSC-J, PAL). PAL60 is always set, as
   RetroArch runs at 59.94 Hz; 480p, 720p and 1080i stay off.
+- The network (`net.c`): off (no cable), or LAN, upstream's system link
+  backend, on the default route's interface's broadcast and with the
+  consoles `lan-peers.txt` in the save directory names. XLink Kai and NAT
+  are not offered yet.
 
 All but the crop are read before the console boots, so a change takes effect
 when the game starts next, and RetroArch shows a message saying so. The crop
