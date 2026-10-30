@@ -106,6 +106,10 @@ typedef struct {
     VoiceWorkDispatch voice_work_dispatch;
     MCPXAPUVoiceFilter filters[MCPX_HW_MAX_VOICES];
     int resample_quality;       /* the voices' resamplers', for the session (mcpx_apu_vp_init) */
+    /* Each 2D voice's route in the VP's own mix, VP_ROUTE_* (vp/stereo_route.h):
+     * chosen at its sound's first frame with an audible send, kept until its
+     * next VOICE_ON (cleared there); saved (state.c), so a load keeps it */
+    uint8_t route[MCPX_HW_MAX_VOICES];
 
     // FIXME: Where are these stored?
     int ssl_base_page;

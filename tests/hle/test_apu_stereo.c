@@ -1,8 +1,10 @@
-/* The VP's own stereo mix for ordinary 2D voices (native/dev/apu/vp/
- * stereo_route.h, which vp.c's voice_process calls): which voices it takes,
- * and each send's gain into its own speaker. The 3D, multipass and full-DSP
- * cases, and the dispatch through voice processing, are the native core's
- * apu-stereo-smoke (tests/native/linux/apu_stereo.c). */
+/* The VP's own stereo mix for 2D voices (native/dev/apu/vp/stereo_route.h,
+ * which vp.c's voice_process calls): the route a voice's sends ask for, and
+ * each send's gain into the speakers, the centre and back bins by the
+ * stereo downmix (-3 dB), the LFE and effect bins left out. The route
+ * chosen once a sound, the 3D, multipass and full-DSP cases, and the
+ * dispatch through voice processing, are the native core's apu-stereo-smoke
+ * (tests/native/linux/apu_stereo.c). */
 #include "hle_test.h"
 
 #include <math.h>
@@ -39,13 +41,22 @@ static Voice voice(unsigned channels)
     return v;
 }
 
-static bool route(const Voice *v, float g[2][2])
+static int classify(const Voice *v)
 {
     float att[VP_SENDS];
     for (int b = 0; b < VP_SENDS; b++) {
         att[b] = att_of(v->vol[b]);
     }
-    return vp_stereo_route(v->bin, att, v->headroom, v->channels, v->ea, g);
+    return vp_stereo_classify(v->bin, att);
+}
+
+static void gains(const Voice *v, float g[2][2])
+{
+    float att[VP_SENDS];
+    for (int b = 0; b < VP_SENDS; b++) {
+        att[b] = att_of(v->vol[b]);
+    }
+    vp_stereo_gains(v->bin, att, v->headroom, v->channels, v->ea, g);
 }
 
 /* a frame of the voice's samples: channel 0 a ramp, channel 1 another (a
@@ -61,7 +72,8 @@ static void source(float in[N][2], unsigned channels)
 static void mix(const Voice *v, float out[N][2])
 {
     float g[2][2], in[N][2];
-    HT_CHECK(route(v, g));
+    HT_CHECK(classify(v) == VP_ROUTE_SPEAKERS);
+    gains(v, g);
     source(in, v->channels);
     memset(out, 0, sizeof(float[N][2]));
     vp_stereo_mix(out, in, g, v->channels);
@@ -182,14 +194,13 @@ static void test_muted_sends_ignored(void)
     HT_CHECK(memcmp(oa, ob, sizeof(oa)) == 0);
 }
 
+/* every send muted: undecided (the voice silent whichever mix it gets); the
+ * amplitude envelope at 0: silence */
 static void test_silent(void)
 {
-    Voice v = voice(2);         /* every send muted */
+    Voice v = voice(2);
+    HT_CHECK(classify(&v) == VP_ROUTE_UNDECIDED);
     float out[N][2];
-    mix(&v, out);
-    for (int i = 0; i < N; i++) {
-        HT_CHECK(out[i][0] == 0.0f && out[i][1] == 0.0f);
-    }
     v.vol[0] = v.vol[1] = 0;
     v.ea = 0.0f;                /* the amplitude envelope at 0 */
     mix(&v, out);
@@ -206,8 +217,9 @@ static void test_two_voices_add(void)
     b.vol[0] = b.vol[1] = 0;
     a.ea = b.ea = 1.0f;
     float ga[2][2], gb[2][2], ia[N][2], ib[N][2], both[N][2] = {{0}}, oa[N][2] = {{0}}, ob[N][2] = {{0}};
-    HT_CHECK(route(&a, ga));
-    HT_CHECK(route(&b, gb));
+    HT_CHECK(classify(&a) == VP_ROUTE_SPEAKERS && classify(&b) == VP_ROUTE_SPEAKERS);
+    gains(&a, ga);
+    gains(&b, gb);
     source(ia, 1);
     source(ib, 2);
     for (int i = 0; i < N; i++) {     /* past full scale together */
@@ -225,19 +237,120 @@ static void test_two_voices_add(void)
     HT_CHECK(both[0][0] > 1.0f);
 }
 
-/* an audible send to any other bin: not ordinary stereo, the existing mix
- * (g untouched) */
-static void test_unsupported_routing(void)
+/* the centre to both speakers at -3 dB: a centred sound's power kept
+ * (L^2 + R^2 = in^2) */
+static void test_centre(void)
 {
-    static const int others[] = {2, 3, 4, 5, 12, 20, MULTIPASS_BIN};
+    Voice v = voice(1);
+    v.vol[2] = 0;               /* slot 2 to bin 2 (front centre), 0 dB */
+    float out[N][2], in[N][2];
+    mix(&v, out);
+    source(in, 1);
+    for (int i = 0; i < N; i++) {
+        HT_CHECK(out[i][0] == out[i][1]);
+        HT_CHECK(fabsf(out[i][0] - VP_DOWNMIX_SIDE * in[i][0]) < 1e-6f);
+        HT_CHECK(fabsf(out[i][0] * out[i][0] + out[i][1] * out[i][1] - in[i][0] * in[i][0]) < 1e-5f);
+    }
+}
+
+/* each back bin to its own side at -3 dB, the other speaker exactly 0; a
+ * stereo voice's slots 4 and 5 are its left and right source channels */
+static void test_backs(void)
+{
+    Voice v = voice(2);
+    v.vol[4] = 0;               /* slot 4 (source left) to bin 4 (back left) */
+    float out[N][2], in[N][2];
+    mix(&v, out);
+    source(in, 2);
+    for (int i = 0; i < N; i++) {
+        HT_CHECK(fabsf(out[i][0] - VP_DOWNMIX_SIDE * in[i][0]) < 1e-6f);
+        HT_CHECK(out[i][1] == 0.0f);
+    }
+    v = voice(2);
+    v.vol[5] = 0;               /* slot 5 (source right) to bin 5 (back right) */
+    mix(&v, out);
+    for (int i = 0; i < N; i++) {
+        HT_CHECK(out[i][0] == 0.0f);
+        HT_CHECK(fabsf(out[i][1] - VP_DOWNMIX_SIDE * in[i][1]) < 1e-6f);
+    }
+}
+
+/* a sound panned right through the front-right and back-right bins stays
+ * on the right; the speakers' sends add, each at its own weight and its
+ * bin's headroom */
+static void test_five_speakers(void)
+{
+    Voice v = voice(1);
+    v.vol[0] = 0x300;           /* front left, -12 dB */
+    v.vol[1] = 0;               /* front right, 0 dB */
+    v.vol[2] = 0x180;           /* centre, -6 dB */
+    v.vol[4] = 0xFFF;           /* back left muted */
+    v.vol[5] = 0x0C0;           /* back right, -3 dB */
+    v.headroom[5] = 1;          /* back right: / 2 */
+    float out[N][2], in[N][2];
+    mix(&v, out);
+    source(in, 1);
+    const float k = VP_DOWNMIX_SIDE;
+    const float l = att_of(0x300) + k * att_of(0x180);
+    const float r = 1.0f + k * att_of(0x180) + k * att_of(0x0C0) / 2;
+    for (int i = 0; i < N; i++) {
+        HT_CHECK(fabsf(out[i][0] - l * in[i][0]) < 1e-5f);
+        HT_CHECK(fabsf(out[i][1] - r * in[i][0]) < 1e-5f);
+        HT_CHECK(out[i][1] > out[i][0]);
+    }
+}
+
+/* audible LFE, effect, 3D crosstalk and multipass sends beside the speaker
+ * sends are left out: the same gains as the speaker sends alone, whatever
+ * their level */
+static void test_other_sends_left_out(void)
+{
+    static const int others[] = {VP_BIN_LFE, 6, 9, 10, 12, 20, MULTIPASS_BIN};
+    for (size_t k = 0; k < sizeof(others) / sizeof(others[0]); k++) {
+        Voice a = voice(1), b = voice(1);
+        a.vol[0] = b.vol[0] = 0x300;
+        a.vol[1] = b.vol[1] = 0;
+        b.bin[3] = others[k];
+        b.vol[3] = 0;           /* louder than the left send */
+        float ga[2][2], gb[2][2];
+        HT_CHECK(classify(&a) == VP_ROUTE_SPEAKERS && classify(&b) == VP_ROUTE_SPEAKERS);
+        gains(&a, ga);
+        gains(&b, gb);
+        HT_CHECK(memcmp(ga, gb, sizeof(ga)) == 0);
+    }
+}
+
+/* a speaker-routed voice's dry send fading to mute beside a louder effect
+ * send: its gains fall with the dry send, to exactly 0 at mute (the voice
+ * keeps its route as the volume changes, vp.c, so none of this switches to
+ * the effect send's level) */
+static void test_gains_fade_to_mute(void)
+{
+    static const uint16_t steps[] = {0x000, 0x400, 0xC00, 0xFFE, 0xFFF};
+    float last = INFINITY;
+    for (size_t k = 0; k < sizeof(steps) / sizeof(steps[0]); k++) {
+        Voice v = voice(1);
+        v.vol[0] = steps[k];    /* front left */
+        v.bin[2] = 10;          /* I3DL2, 0 dB */
+        v.vol[2] = 0;
+        float g[2][2];
+        gains(&v, g);
+        HT_CHECK(g[0][0] < last && g[1][0] == 0.0f);
+        HT_CHECK(fabsf(g[0][0] - att_of(steps[k])) < 1e-6f);
+        last = g[0][0];
+    }
+    HT_CHECK(last == 0.0f);
+}
+
+/* only LFE or non-speaker sends audible: the monitor's mix */
+static void test_no_speaker_send(void)
+{
+    static const int others[] = {VP_BIN_LFE, 6, 10, 12, 20, MULTIPASS_BIN};
     for (size_t k = 0; k < sizeof(others) / sizeof(others[0]); k++) {
         Voice v = voice(1);
-        v.vol[0] = v.vol[1] = 0;
         v.bin[4] = others[k];
         v.vol[4] = 0x200;
-        float g[2][2] = {{7.0f, 7.0f}, {7.0f, 7.0f}};
-        HT_CHECK(!route(&v, g));
-        HT_CHECK(g[0][0] == 7.0f && g[0][1] == 7.0f && g[1][0] == 7.0f && g[1][1] == 7.0f);
+        HT_CHECK(classify(&v) == VP_ROUTE_MONITOR);
     }
 }
 
@@ -253,6 +366,11 @@ int main(void)
     HT_RUN(test_muted_sends_ignored);
     HT_RUN(test_silent);
     HT_RUN(test_two_voices_add);
-    HT_RUN(test_unsupported_routing);
+    HT_RUN(test_centre);
+    HT_RUN(test_backs);
+    HT_RUN(test_five_speakers);
+    HT_RUN(test_other_sends_left_out);
+    HT_RUN(test_gains_fade_to_mute);
+    HT_RUN(test_no_speaker_send);
     HT_DONE();
 }

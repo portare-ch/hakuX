@@ -24,7 +24,7 @@ and off-centre); none has been isolated in those games.
 
 | # | Part | Xbox | Current state | Effect | Next | Status |
 |---|---|---|---|---|---|---|
-| 1 | **Default mix: panning** | The GP program mixes the VP's mix bins to the output; DirectSound's ordinary 2D sounds go to the front-left and front-right bins (0 and 1) by their sends. | Ordinary 2D stereo is mixed by its sends: a 2D voice outside the multipass groups whose audible sends all go to bin 0 or 1 adds each send's `ea x attenuation / 2^headroom` to its own speaker (`vp/stereo_route.h`). Every other voice keeps the monitor's mix: its loudest send's gain on both channels (`vp/vp.c:2029`). | Ordinary 2D sounds keep their left/right placement. 3D voices, effect sends, centre / rear / LFE and multipass groups are still unpanned. | A downmix policy for centre, rear and LFE (weights, bass management, no double counting), then 3D routing (row 3). | Partly done (first batch) |
+| 1 | **Default mix: panning** | The GP program mixes the VP's mix bins to the output; DirectSound's 2D sounds go to its speaker bins (0 to 5: front left and right, centre, LFE, back left and right) by their sends. | A 2D voice outside the multipass groups routed to the speakers is mixed by the stereo downmix of its speaker sends: front left and right to their own speaker, the centre to both at -3 dB, each back bin to its own side at -3 dB, each send at `ea x attenuation / 2^headroom` (`vp/stereo_route.h`). Its LFE and effect sends (the 3D crosstalk bins, I3DL2, the effect sends) are left out of that mix, whose effects aren't produced. The route is a sound's, chosen at its first frame with an audible send: the speakers if one goes to a speaker bin, else the monitor's mix, kept as its volumes change (a dry send fading to mute beside an effect send fades the voice out) until its next `VOICE_ON`, and saved with a state (`vp.route`; an older state's voices are chosen again). Every other voice keeps the monitor's mix, its loudest send's gain on both channels: 3D voices, multipass groups, and 2D voices whose sound began sending only to the LFE or effect bins. | 2D sounds keep their left/right placement, centre and back sends and voices with a reverb send included. 3D voices and multipass groups are still unpanned by their sends. | 3D routing (row 3). The weights are measured: Halo's DSP image (DirectSound's) downmixes the speaker bins for a stereo console in its EP by exactly these (a 5x2 table at EP Y:0000-0009, no LFE), flat from 100 Hz to 8 kHz (see "Measurements"). | 2D done (third batch, measured); 3D open |
 | 2 | **Headroom** | DirectSound gives mix bins a headroom shift (2^n down); what the guest's GP program does with it afterwards is not established for every program. | Kept: the default mix divides by each bin's 2^n (`vp/vp.c:2055`, and `vp/stereo_route.h`), with nothing restoring it. | Sounds on bins with headroom are 6, 12 or 18 dB quieter than without it; whether they are on an Xbox is the open question. | A defined DSP mix reference (an image or measurements mapping bins to final stereo gain) before compensating. Not a universal gain fix: removing it changes levels and clipping. | Open (needs evidence) |
 | 3 | **3D audio (HRTF)** | A 31-tap HRTF filter and an interaural delay per 3D voice into the HRTF submixes; the guest's GP program processes those for the speakers. | The filter is implemented (`vp/hrtf.h`, `vp/vp.c:1989`); its output goes to the monitor's unpanned mix by default. A reused voice now starts its filter from silence (`hrtf_filter_clear_history` at `VOICE_ON`; before, its previous sound's tail played into the new one). Per-ear coefficient normalization and the parameter smoothing are approximations (`vp/hrtf.h:68`, `:93`). On the mix-bin path a mono voice's right-ear output is lost (`mix_one_bin` takes channel `slot % 1`). | A headphone-style image on speakers, unpanned. Folding the ears together is not a fix (it cancels and loses the ear difference); `NC_APU_HRTF=0` is a diagnostic. | Coefficient scale, ear-to-submix mapping for mono voices, speaker processing: each needs reference coefficients or vectors. | History done (first batch); rest open |
 | 4 | **Resampling** (pitch) | The VP converts every voice to 48 kHz; its interpolation isn't documented. | By default a band-limited sinc: 32 Kaiser-windowed taps through NEON, its cutoff at the input's Nyquist, stretched to the output's for a voice pitched past 48 kHz (`vp/resample_sinc.c`; AArch64, elsewhere linear). Linear interpolation, what the core had before, as the `hakux_audio_resampler` option (`vp/resample.c`). Host measurements for 22.05 kHz input: sinc 0.00 dB at 1, 8 and 9 kHz, -0.17 dB at 10 kHz; linear -0.06, -3.94 and -6.34 dB. A 30 kHz tone from 96 kHz input: sinc -126 dB, linear unattenuated. | Sinc: none known. Its filter reads 16 input frames ahead (up to 132 for a voice pitched past 48 kHz), so a voice's guest-visible position leads what is heard by 32 frames, as with linear. A sound is heard to its last sample with either: its voice goes off, and the guest's end notification comes, once the output has passed it (a frame or so after the decoder reached the end). Linear: high frequencies dulled, downsampled voices alias. | Not a claim about the Xbox's interpolation. On the Nova a sinc voice costs 0.37 us a frame on the X3, 0.75 on an A715 and 2.3 on an A510 (linear 0.07, 0.09 and 0.51); about 4 times that for a voice pitched an octave past 48 kHz. | Done (second run) |
@@ -95,6 +95,54 @@ through `mcpx_apu_vp_reset`).
   qualities through voice processing: levels and loops, pitch changes, a
   voice's end heard whole, short sounds heard whole, reuse, a starved
   stream, ADPCM loops; `bench` for throughput and allocations).
+
+**Third batch** (row 1, the stereo downmix):
+
+- **2D voices**: a 2D voice whose sound's first audible frame has an
+  audible send to a speaker bin, not only to front left and right, is
+  routed to the speakers (`vp_stereo_classify`, the route kept until its
+  next `VOICE_ON`, so volume fades don't switch it): the centre to both
+  speakers and each back bin to its own side at -3 dB, the LFE and
+  non-speaker bins left out (`vp_stereo_gains`). Before, an audible send past front left and
+  right, a reverb send among them, gave the voice the monitor's mix: both
+  speakers alike, at its loudest send's gain, so a voice with a louder
+  reverb send also played too loud. A 2D voice whose every audible send
+  goes to the LFE or non-speaker bins keeps that mix, so none goes silent.
+  Choosing the route each frame instead (the first version of this batch)
+  switched a voice whose dry send faded to mute beside a louder effect
+  send to that send's level, centred: a 64 dB step.
+- Tests: `tests/hle/test_apu_stereo.c` (the centre and backs at -3 dB, a
+  centred sound's power kept, five speaker sends added, LFE, effect,
+  crosstalk and multipass sends left out, a voice with only those) and
+  `apu-stereo-smoke` (a centre send, a sound panned right by its front
+  and back sends, a voice with a louder reverb send, an LFE-only voice; a
+  dry send fading out and in beside a reverb send, a sound starting muted,
+  a new sound choosing again; the route across a save and load, and an
+  older state without it).
+
+## Measurements
+
+**The stereo downmix of DirectSound's DSP image** (Halo, 2026-10-30, the
+Nova, `NC_APU_DSP=1`): with Halo's own GP and EP programs running, a 1 kHz,
+100 Hz and 8 kHz tone at 0.25 of full scale was put into one mix bin at a
+time, every other bin silent, and the outputs recorded. The analog output
+(the EP's output FIFO 0, 16-bit stereo):
+
+| Bin | Left | Right |
+|---|---|---|
+| 0 front left | 0.00 dB | - |
+| 1 front right | - | 0.00 dB |
+| 2 centre | -3.01 dB | -3.01 dB |
+| 3 LFE | - | - |
+| 4 back left | -3.01 dB | - |
+| 5 back right | - | -3.01 dB |
+
+The same at all three frequencies; "-" is nothing above -80 dB. The EP does
+the downmix, by a table in its Y memory (Y:0000-0009: 1 and 0, 0.7071 and
+0.7071, 0 and 1, 0.7071 and 0, 0 and 0.7071, in AC-3's channel order L, C,
+R, Ls, Rs), read from its memory as well as measured through the core's
+DSP interpreter: the two agree. This is the program and its data, not the
+hardware's analog stage or level (row 2).
 
 ## Next
 

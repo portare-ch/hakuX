@@ -153,6 +153,7 @@ static void voice_reset_filters(MCPXAPUState *d, uint16_t v)
     memset(&d->vp.filters[v].svf, 0, sizeof(d->vp.filters[v].svf));
     d->vp.filters[v].ending = false;
     d->vp.filters[v].silence_fed = 0;
+    d->vp.route[v] = VP_ROUTE_UNDECIDED;
     if (d->vp.filters[v].resampler) {
         vp_resample_reset(d->vp.filters[v].resampler);
     } else {
@@ -2044,25 +2045,31 @@ static void voice_process(MCPXAPUState *d, uint8_t *c,
     }
 
     if (d->monitor.point == MCPX_APU_DEBUG_MON_VP) {
-        /* Ordinary 2D stereo (vp/stereo_route.h): a 2D voice outside the
-         * multipass groups whose audible sends all go to the front-left or
-         * front-right bin is mixed into its speakers by those sends. */
+        /* 2D voices (vp/stereo_route.h): one outside the multipass groups
+         * routed to the speakers is mixed into them by the stereo downmix of
+         * its speaker sends, its LFE and effect sends left out. The route is
+         * its sound's, chosen at the first frame with an audible send. */
         if (v >= MCPX_HW_MAX_3D_VOICES && !multipass &&
             voice_list != NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_MP_TOP - 1) {
-            float att[VP_SENDS], g2[2][2];
+            float att[VP_SENDS];
             for (int b = 0; b < VP_SENDS; b++) {
                 att[b] = attenuate(vol[b]);
             }
-            if (vp_stereo_route(bin, att, d->vp.submix_headroom, channels, ea_value, g2)) {
+            if (d->vp.route[v] == VP_ROUTE_UNDECIDED) {
+                d->vp.route[v] = (uint8_t)vp_stereo_classify(bin, att);
+            }
+            if (d->vp.route[v] == VP_ROUTE_SPEAKERS) {
+                float g2[2][2];
+                vp_stereo_gains(bin, att, d->vp.submix_headroom, channels, ea_value, g2);
                 vp_stereo_mix(sample_buf, samples, g2, channels);
                 return;
             }
         }
 
-        /* Every other voice (3D, multipass, a send to another bin): for VP
-         * mon, simply mix all voices together here, selecting the
-         * maximal volume used for any given mixbin as the overall volume for
-         * this voice.
+        /* Every other voice (3D, multipass, a 2D voice whose sound began
+         * sending only to the LFE or effect bins): for VP mon, simply mix
+         * all voices together here, selecting the maximal volume used for
+         * any given mixbin as the overall volume for this voice.
          *
          * If the current voice belongs to a multipass sub-voice group we must
          * skip it here to avoid mixing it in twice because the sub-voices are
@@ -2692,6 +2699,8 @@ void mcpx_apu_vp_reset(MCPXAPUState *d)
         d->vp.filters[v].ending = false;
         d->vp.filters[v].silence_fed = 0;
     }
+    /* undecided: what a state load without the routes (an older one) keeps */
+    memset(d->vp.route, VP_ROUTE_UNDECIDED, sizeof(d->vp.route));
     refresh_table(&d->vp.voice_cache, 0, 0);
     refresh_table(&d->vp.ssl_cache, 0, 0);
 }

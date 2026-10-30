@@ -2,14 +2,19 @@
  * voice processing: voices set up and started by the PIO methods
  * DirectSound sends (mcpx_apu_vp_write), their PCM read from guest RAM
  * through the scatter-gather table, a frame mixed by mcpx_apu_vp_frame and
- * read from the monitor's output. Ordinary 2D stereo voices are mixed by
- * their sends (vp/stereo_route.h); 3D voices, multipass groups and voices
- * with other sends keep the monitor's mix; the full-DSP monitor leaves the
+ * read from the monitor's output. 2D voices are mixed by the stereo
+ * downmix of their speaker sends (vp/stereo_route.h), their LFE and effect
+ * sends left out; 3D voices, multipass groups and 2D voices sending only to
+ * the LFE or effect bins keep the monitor's mix; the full-DSP monitor leaves the
  * monitor's output alone and fills the mix bins. A voice reused for a new
  * sound starts its HRTF filter from silence. One worker and several give
  * the same output. No guest executable or sound device: the frame thread
  * stays parked (SECTL off) and this test runs the frames. */
 #include "apu_fixture.h"
+#include "native/dev/apu/vp/stereo_route.h"
+#include "native/state/lock.h"
+#include "native/state/sections.h"
+#include "native/state/state.h"
 
 static bool all(int ch, int want, int tol)
 {
@@ -95,18 +100,174 @@ static void test_2d_headroom(void)
     apu_down();
 }
 
-/* a send to the centre: the monitor's mix, the loudest send's gain on both
- * channels */
-static void test_2d_centre_unsupported(void)
+/* The stereo downmix of a 2D voice's speaker sends (before, any send past
+ * front left and right gave the monitor's mix: the loudest send's gain on
+ * both channels) */
+static void test_2d_downmix(void)
 {
+    const float k = 0.70710678f;
     apu_up(false, true, 1);
     pcm_page(0, false, HALF, 0);
     Voice v = voice(103, NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_2D_TOP, false, 0);
-    v.vol[0] = 0x300;
+    v.vol[0] = 0x300;           /* front left, -12 dB */
     v.vol[2] = 0;               /* front centre, 0 dB */
     start(&v);
     frames(4);
-    check(all(0, pcm(0.5f), 1) && channels_equal(), "2D with a centre send: the monitor's mix kept");
+    check(all(0, pcm(0.5f * (attenuation(0x300) + k)), 1) && all(1, pcm(0.5f * k), 1),
+          "2D with a centre send: the centre on both speakers at -3 dB, front left on the left");
+    apu_down();
+
+    apu_up(false, true, 1);
+    pcm_page(0, false, HALF, 0);
+    v = voice(103, NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_2D_TOP, false, 0);
+    v.vol[1] = 0;               /* front right, 0 dB */
+    v.vol[5] = 0;               /* back right, 0 dB */
+    start(&v);
+    frames(4);
+    check(all(0, 0, 0) && all(1, pcm(0.5f * (1 + k)), 1),
+          "2D panned right by front and back right: right only, the back at -3 dB");
+    apu_down();
+
+    apu_up(false, true, 1);
+    pcm_page(0, false, HALF, 0);
+    v = voice(103, NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_2D_TOP, false, 0);
+    v.vol[0] = 0x300;           /* front left, -12 dB */
+    v.bin[2] = 10;              /* I3DL2 (reverb), 0 dB: louder than the dry send */
+    v.vol[2] = 0;
+    start(&v);
+    frames(4);
+    check(all(0, pcm(0.5f * attenuation(0x300)), 1) && all(1, 0, 0),
+          "2D with a reverb send: panned by its speaker send, the reverb send left out");
+    apu_down();
+
+    apu_up(false, true, 1);
+    pcm_page(0, false, HALF, 0);
+    v = voice(103, NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_2D_TOP, false, 0);
+    v.vol[3] = 0;               /* LFE only, 0 dB */
+    start(&v);
+    frames(4);
+    check(all(0, pcm(0.5f), 1) && channels_equal(), "2D with only an LFE send: the monitor's mix kept");
+    apu_down();
+}
+
+/* A 2D voice keeps its sound's route as its volumes change: a dry send
+ * fading to mute beside a reverb send fades the voice out (not to the
+ * reverb send's level, centred), a dry send fading in beside one stays in
+ * the monitor's mix (no step), a sound starting muted takes its route at
+ * its first audible frame, and a new sound (VOICE_ON) chooses again */
+static void test_2d_route_kept(void)
+{
+    apu_up(false, true, 1);
+    pcm_page(0, false, HALF, 0);
+    Voice v = voice(105, NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_2D_TOP, false, 0);
+    v.vol[0] = 0;               /* front left, 0 dB */
+    v.bin[2] = 10;              /* I3DL2 (reverb), 0 dB throughout */
+    v.vol[2] = 0;
+    start(&v);
+    frames(4);
+    bool ok = all(0, pcm(0.5f), 1) && all(1, 0, 0);
+    v.vol[0] = 0xFFE;           /* -64 dB */
+    volumes(&v);
+    frames(2);
+    ok = ok && all(0, pcm(0.5f * attenuation(0xFFE)), 1) && all(1, 0, 0);
+    v.vol[0] = 0xFFF;           /* muted */
+    volumes(&v);
+    frames(2);
+    ok = ok && all(0, 0, 0) && all(1, 0, 0);
+    check(ok, "2D dry send fading to mute beside a reverb send: the left at 0.5, 0.0003, then 0, the right 0");
+    apu_down();
+
+    apu_up(false, true, 1);
+    pcm_page(0, false, HALF, 0);
+    v.vol[0] = 0xFFF;           /* front left muted at the start, the reverb send audible */
+    start(&v);
+    frames(4);
+    ok = all(0, pcm(0.5f), 1) && all(1, pcm(0.5f), 1);
+    v.vol[0] = 0xFFE;
+    volumes(&v);
+    frames(2);
+    ok = ok && all(0, pcm(0.5f), 1) && all(1, pcm(0.5f), 1);
+    v.vol[0] = 0;
+    volumes(&v);
+    frames(2);
+    ok = ok && all(0, pcm(0.5f), 1) && all(1, pcm(0.5f), 1);
+    check(ok, "2D dry send fading in beside a reverb send: the monitor's mix throughout, 0.5 on both, no step");
+
+    d->regs[NV_PAPU_TVL2D] = 0xFFFF;    /* the list again empty: a new sound, front left audible */
+    start(&v);
+    frames(4);
+    check(all(0, pcm(0.5f), 1) && all(1, 0, 0), "2D voice's new sound (VOICE_ON): its route chosen again, panned");
+    apu_down();
+
+    apu_up(false, true, 1);
+    pcm_page(0, false, HALF, 0);
+    v = voice(106, NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_2D_TOP, false, 0);
+    v.bin[2] = 10;              /* every send muted at the start */
+    start(&v);
+    frames(2);
+    ok = all(0, 0, 0) && all(1, 0, 0);
+    v.vol[0] = 0x300;           /* front left fades in, -12 dB */
+    volumes(&v);
+    frames(2);
+    ok = ok && all(0, pcm(0.5f * attenuation(0x300)), 1) && all(1, 0, 0);
+    v.vol[2] = 0;               /* then the reverb send, 0 dB: left out */
+    volumes(&v);
+    frames(2);
+    ok = ok && all(0, pcm(0.5f * attenuation(0x300)), 1) && all(1, 0, 0);
+    check(ok, "2D sound starting muted: routed at its first audible frame, panned left, its later reverb send left out");
+    apu_down();
+}
+
+/* A 2D voice's route across a savestate (state.c's vp.route): its dry send
+ * faded to mute beside a reverb send, saved and loaded, it stays silent
+ * (chosen again it would play the reverb send's level, centred); the same
+ * state without the routes, as an older one, loads with every voice
+ * undecided */
+static void test_2d_route_saved(void)
+{
+    apu_up(false, true, 1);
+    pcm_page(0, false, HALF, 0);
+    Voice v = voice(107, NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_2D_TOP, false, 0);
+    v.vol[0] = 0;               /* front left, 0 dB, then muted */
+    v.bin[2] = 10;              /* I3DL2, 0 dB */
+    v.vol[2] = 0;
+    start(&v);
+    frames(4);
+    v.vol[0] = 0xFFF;
+    volumes(&v);
+    frames(2);
+    const bool before = all(0, 0, 0) && all(1, 0, 0);
+    NcBuf b = {0};
+    nc_apu_state_save(&b);
+    NcRd r = {b.p, b.len, 0, false};
+    const bool loaded = nc_apu_state_load(&r, NC_STATE_V_APU);
+    const bool kept = d->vp.route[107] == VP_ROUTE_SPEAKERS;
+    frames(2);
+    check(!b.fail && before && loaded && kept && all(0, 0, 0) && all(1, 0, 0),
+          "2D voice's route across a savestate: faded to mute beside a reverb send, silent before and after");
+
+    /* the state without vp.route, its last field: the field count one less
+     * (the "mcpx-apu" table's, before its first field, gp.dsp) and the
+     * field's bytes (name, kind, size, count, 256 routes) cut off */
+    const size_t field = 1 + strlen("vp.route") + 1 + 4 + 4 + sizeof(d->vp.route);
+    bool cut = false;
+    for (size_t at = 0; at + 11 <= b.len && !cut; at++) {
+        uint32_t n;
+        memcpy(&n, b.p + at, 4);
+        if (b.p[at + 4] == 6 && !memcmp(b.p + at + 5, "gp.dsp", 6) && n > 1) {
+            n--;
+            memcpy(b.p + at, &n, 4);
+            cut = !memcmp(b.p + b.len - field + 1, "vp.route", 8);
+        }
+    }
+    NcRd old = {b.p, b.len - field, 0, false};
+    const bool old_loaded = cut && nc_apu_state_load(&old, NC_STATE_V_APU);
+    bool undecided = true;
+    for (int k = 0; k < MCPX_HW_MAX_VOICES; k++) {
+        undecided &= d->vp.route[k] == VP_ROUTE_UNDECIDED;
+    }
+    check(old_loaded && undecided, "a state without the routes (an older one): loads, every voice undecided");
+    nc_buf_free(&b);
     apu_down();
 }
 
@@ -215,7 +376,7 @@ static void twelve_voices(unsigned workers, int16_t out[NUM_SAMPLES_PER_FRAME][2
         v.vol[0] = (uint16_t)(0x40 * k);
         v.vol[1] = (uint16_t)(0x300 - 0x30 * k);
         if (k % 5 == 2) {
-            v.vol[2] = 0x100;   /* a centre send: the monitor's mix */
+            v.vol[2] = 0x100;   /* a centre send: downmixed */
         }
         start(&v);
     }
@@ -286,7 +447,9 @@ int main(int argc, char **argv)
     test_2d_mono_panned();
     test_2d_stereo();
     test_2d_headroom();
-    test_2d_centre_unsupported();
+    test_2d_downmix();
+    test_2d_route_kept();
+    test_2d_route_saved();
     test_3d();
     test_multipass();
     test_full_dsp();

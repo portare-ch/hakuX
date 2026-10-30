@@ -138,6 +138,19 @@ static int16_t pitch_for(double fs)
     return (int16_t)lrint(-4096.0 * log2(48000.0 / fs));
 }
 
+/* The voice's send volumes, as it starts or while it plays (DirectSound's
+ * SetMixBinVolumes) */
+static void volumes(const Voice *v)
+{
+    pio(NV1BA0_PIO_SET_CURRENT_VOICE, v->handle);
+    const uint16_t *a = v->vol;
+    pio(NV1BA0_PIO_SET_VOICE_TAR_VOLA, (a[6] & 0xF) | (uint32_t)a[0] << 4 | (a[7] & 0xF) << 16 | (uint32_t)a[1] << 20);
+    pio(NV1BA0_PIO_SET_VOICE_TAR_VOLB,
+        (a[6] >> 4 & 0xF) | (uint32_t)a[2] << 4 | (a[7] >> 4 & 0xF) << 16 | (uint32_t)a[3] << 20);
+    pio(NV1BA0_PIO_SET_VOICE_TAR_VOLC,
+        (a[6] >> 8 & 0xF) | (uint32_t)a[4] << 4 | (a[7] >> 8 & 0xF) << 16 | (uint32_t)a[5] << 20);
+}
+
 static void start(const Voice *v)
 {
     pio(NV1BA0_PIO_SET_CURRENT_VOICE, v->handle);
@@ -149,12 +162,7 @@ static void start(const Voice *v)
         (uint32_t)v->bin[6] | v->bin[7] << 5 | v->fmt_extra |
             (v->stereo ? NV_PAVS_VOICE_CFG_FMT_STEREO | 1u << 16 : 0) | (v->loop ? NV_PAVS_VOICE_CFG_FMT_LOOP : 0) |
             NV_PAVS_VOICE_CFG_FMT_SAMPLE_SIZE_S16 << 28 | (uint32_t)v->container << 30);
-    const uint16_t *a = v->vol;
-    pio(NV1BA0_PIO_SET_VOICE_TAR_VOLA, (a[6] & 0xF) | (uint32_t)a[0] << 4 | (a[7] & 0xF) << 16 | (uint32_t)a[1] << 20);
-    pio(NV1BA0_PIO_SET_VOICE_TAR_VOLB,
-        (a[6] >> 4 & 0xF) | (uint32_t)a[2] << 4 | (a[7] >> 4 & 0xF) << 16 | (uint32_t)a[3] << 20);
-    pio(NV1BA0_PIO_SET_VOICE_TAR_VOLC,
-        (a[6] >> 8 & 0xF) | (uint32_t)a[4] << 4 | (a[7] >> 8 & 0xF) << 16 | (uint32_t)a[5] << 20);
+    volumes(v);
     pio(NV1BA0_PIO_SET_VOICE_TAR_PITCH, (uint32_t)(uint16_t)v->pitch << 16);
     pio(NV1BA0_PIO_SET_VOICE_TAR_HRTF, v->hrtf);
     pio(NV1BA0_PIO_SET_VOICE_CFG_BUF_BASE, 0x1000 * v->page);
