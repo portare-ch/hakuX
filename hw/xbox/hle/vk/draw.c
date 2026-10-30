@@ -4408,7 +4408,9 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
         pc.scr[2] = (vx + vw * 0.5f) / aax + vpc->offx;
         pc.scr[3] = (vy + vh * 0.5f) / aay + vpc->offy;
     }
-    pc.zscale = wbuf && wff ? c->wscale : c->zscale;
+    /* a DOT_ZW draw's depth replaces the W-buffer's and is in depth units
+     * (psh.c): the buffer's scale */
+    pc.zscale = wbuf && wff && !(s->psh && hle_psh_zrep(k.pk.tex_modes)) ? c->wscale : c->zscale;
     pc.tfactor = s->rs[RS_TEXTUREFACTOR];
     pc.alpha_ref = (s->rs[RS_ALPHAREF] & 0xFF) / 255.0f;
     /* the target's scale (point sizes, texel edges) and linear surfaces'

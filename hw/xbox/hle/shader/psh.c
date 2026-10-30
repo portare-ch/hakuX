@@ -525,7 +525,10 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
                       "  vec4 v1 = gl_FrontFacing ? vSpecular : vBack1;\n"
                     : "  vec4 v0 = vDiffuse, v1 = vSpecular;\n",
         k->point_sprite ? "vec4(gl_PointCoord, 1.0, 1.0)" : "vTex3i");
-    if (k->wbuf) {
+    /* DOT_ZW's stage: its z and w (zrz, zrw) make the fragment's depth,
+     * which replaces W-buffering's */
+    const unsigned zr = hle_psh_zrep(k->tex_modes);
+    if (k->wbuf && !zr) {
         put(&b, HLE_WBUF_CALC_GLSL);
     }
     /* the table modes' distance: signed, as D3D's fog modes (LTCG 5849
@@ -549,12 +552,10 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
     if (k->fog >= 2) {
         put(&b, "  fogf = isnan(fogf) ? 1.0 : clamp(fogf, 0.0, 1.0);\n");
     }
-    /* DOT_ZW's stage: the depth it replaces the fragment's with (zrep) */
-    const unsigned zr = hle_psh_zrep(k->tex_modes);
     put(&b, "  vec4 fogr = vec4(col(pc.fog_color).rgb, fogf);\n"
             "  float dot1 = 0.0, dot2 = 0.0, dot3 = 0.0;\n%s%s",
         k->debug == 17 ? "  vec4 shdbg = vec4(0.0, 0.0, 0.0, 1.0);\n" : "",
-        zr ? "  float zrep = 1.0;\n" : "");
+        zr ? "  float zrz = 0.0, zrw = 1.0;\n" : "");
     for (unsigned s = 0; s < 4; s++) {
         unsigned m = (k->tex_modes >> (5 * s)) & 0x1F;
         /* dot-product stages: the texture coordinates dotted with the
@@ -717,16 +718,14 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             break;
         case HLE_PST_DOT_ZW:
             /* depth replace (texm3x2pad / texm3x2depth): the previous stage's
-             * dot (z) over this one's (w) is the fragment's depth, in the
-             * depth range's 0..1 (NV_texture_shader's DOT_PRODUCT_DEPTH_REPLACE;
-             * D3D's 1 where w is 0). The stage's colour is 0. */
+             * dot (z) over this one's (w) is the fragment's depth, after the
+             * combiners (zrep). The stage's colour is 0. */
             if (s < 2) {
                 unsup |= 1u << m;
                 put(&b, "  vec4 t%u = samp(%uu, nvproj(vTex%u).xy);\n", s, s, s);
                 break;
             }
-            put(&b, "  vec4 t%u = vec4(0.0);\n"
-                    "  zrep = dot%u == 0.0 ? 1.0 : dot%u / dot%u;\n", s, s, s - 1, s);
+            put(&b, "  vec4 t%u = vec4(0.0);\n  zrz = dot%u;\n  zrw = dot%u;\n", s, s - 1, s);
             break;
         case HLE_PST_BRDF:
             /* isotropic BRDF (NVIDIA's US6664963): stages s-2 and s-1 hold the
@@ -775,10 +774,17 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             k_cmp[k->alpha_func]);
     }
     if (zr) {
-        /* outside the depth range the fragment is rejected
-         * (NV_texture_shader), or clamped to it with ZCLAMP_EN; NaN fails */
-        put(&b, k->zclamp ? "  zrep = clamp(zrep, 0.0, 1.0);\n"
-                          : "  if (!(zrep >= 0.0 && zrep <= 1.0)) discard;\n");
+        /* z / w is in depth-buffer units, as a program's screen z is (0 ..
+         * 2^24 - 1 for D24: nxdk_pgraph_tests' DotZW makes 10000 and more),
+         * and is normalized the same way (HLE_ZNORM_GLSL, pc.zscale: the
+         * integer formats' 1 / (2^n - 1), a float buffer's 1). w 0 is the
+         * far plane, as D3D's texm3x2depth makes it. Outside the buffer's
+         * range the fragment is rejected (NV_texture_shader), or clamped
+         * with ZCLAMP_EN; NaN fails. */
+        put(&b, "  float zq = zrw == 0.0 ? 0.0 : zrz / zrw;\n" HLE_ZNORM_GLSL("zq", "zrep")
+                "  if (zrw == 0.0) zrep = 1.0;\n%s",
+            k->zclamp ? "  zrep = clamp(zrep, 0.0, 1.0);\n"
+                      : "  if (!(zrep >= 0.0 && zrep <= 1.0)) discard;\n");
     }
     if (k->fbfetch & HLE_FB_ZEQ) {
         put(&b, "%s", zr ? HLE_ZEQ_TEST_GLSL(k->fbfetch, "zrep")

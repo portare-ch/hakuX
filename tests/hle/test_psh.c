@@ -181,8 +181,21 @@ static void test_reflect(void)
     HT_CHECK(strstr(buf, "t3 = sampc(3u, 2.0 * n * dot(n, e)") != NULL);
 }
 
-/* texm3x2pad / texm3x2depth: stage 2 DOTPRODUCT, stage 3 DOT_ZW; the depth
- * is dot2 / dot3, rejected outside 0..1 (clamped with ZCLAMP_EN) */
+/* The normalization HLE_ZNORM_GLSL emits (z * s + z * s * s for the integer
+ * formats' s = 2^-n, z * s otherwise), each product rounded on its own as
+ * "precise" keeps them on the GPU */
+static float znorm(float z, float s)
+{
+    const float a = z * s;
+    const float ss = s == 0x1p-24f || s == 0x1p-16f ? s * s : 0.0f;
+    const float b = z * ss;
+    return a + b;
+}
+
+/* texm3x2pad / texm3x2depth: stage 2 DOTPRODUCT, stage 3 DOT_ZW; dot2 /
+ * dot3 is in depth-buffer units (nxdk_pgraph_tests' DotZW: its first
+ * vertex's matrix makes 10000), normalized as a program's screen z,
+ * rejected outside the buffer's range (clamped with ZCLAMP_EN) */
 static void test_dot_zw(void)
 {
     uint32_t rs[HLE_PS_REGS] = { 0 };
@@ -199,15 +212,20 @@ static void test_dot_zw(void)
     HT_CHECK(n > 0 && n == strlen(buf));
     dump("psh_dot_zw");
     HT_EQ_U32(un, 0);
-    HT_CHECK(strstr(buf, "float zrep = 1.0;") != NULL);
     HT_CHECK(strstr(buf, "dot2 = dot(vTex2.xyz, dmap(0u, t0));") != NULL);
     HT_CHECK(strstr(buf, "dot3 = dot(vTex3.xyz, dmap(0u, t0));") != NULL);
-    HT_CHECK(strstr(buf, "vec4 t3 = vec4(0.0);\n  zrep = dot3 == 0.0 ? 1.0 : dot2 / dot3;")
-             != NULL);
+    HT_CHECK(strstr(buf, "vec4 t3 = vec4(0.0);\n  zrz = dot2;\n  zrw = dot3;") != NULL);
     HT_CHECK(strstr(buf, "t3.a == 0.0") == NULL);
-    HT_CHECK(strstr(buf, "if (!(zrep >= 0.0 && zrep <= 1.0)) discard;") != NULL);
-    HT_CHECK(strstr(buf, "gl_FragDepth = zrep;") != NULL);
-    /* replaces W-buffering's depth; the EQUAL test reads the replaced one */
+    /* units to the buffer's 0..1 by the program's normalization, not as is */
+    const char *q = strstr(buf, "float zq = zrw == 0.0 ? 0.0 : zrz / zrw;\n");
+    const char *zn = strstr(buf, "precise float zrep = zq * pc.zscale + zq * (pc.zscale == "
+                                 "uintBitsToFloat(0x33800000u) ||");
+    const char *far = strstr(buf, "if (zrw == 0.0) zrep = 1.0;");
+    const char *rej = strstr(buf, "if (!(zrep >= 0.0 && zrep <= 1.0)) discard;");
+    const char *out = strstr(buf, "gl_FragDepth = zrep;");
+    HT_CHECK(q && zn && far && rej && out && q < zn && zn < far && far < rej && rej < out);
+    /* replaces W-buffering's depth (its calculation not made); the EQUAL test
+     * reads the replaced one */
     k.wbuf = 1;
     k.zclamp = 1;
     k.fbfetch = HLE_FB_ZEQ24;
@@ -219,14 +237,14 @@ static void test_dot_zw(void)
     HT_CHECK(strstr(buf, "if (zrep < subpassLoad(uZ).r") != NULL);
     HT_CHECK(strstr(buf, "gl_FragCoord.z <") == NULL);
     HT_CHECK(strstr(buf, "gl_FragDepth = zrep;") != NULL);
-    HT_CHECK(strstr(buf, "gl_FragDepth = wDepth;") == NULL);
+    HT_CHECK(strstr(buf, "wDepth") == NULL);
     /* stage 2 (texm3x2pad on stage 1) */
     rs[HLE_PS_TEXMODES] = 1 | 0x11u << 5 | (unsigned)HLE_PST_DOT_ZW << 10;
     hle_psh_key(rs, &k);
     HT_EQ_U32(hle_psh_zrep(k.tex_modes), 2);
     HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), &un) > 0);
     HT_EQ_U32(un, 0);
-    HT_CHECK(strstr(buf, "zrep = dot2 == 0.0 ? 1.0 : dot1 / dot2;") != NULL);
+    HT_CHECK(strstr(buf, "zrz = dot1;\n  zrw = dot2;") != NULL);
     /* stage 1: no dot before it */
     rs[HLE_PS_TEXMODES] = 1 | (unsigned)HLE_PST_DOT_ZW << 5;
     hle_psh_key(rs, &k);
@@ -234,6 +252,30 @@ static void test_dot_zw(void)
     HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), &un) > 0);
     HT_EQ_U32(un, 1u << HLE_PST_DOT_ZW);
     HT_CHECK(strstr(buf, "zrep") == NULL && strstr(buf, "gl_FragDepth") == NULL);
+}
+
+/* DOT_ZW's depths by format, as the shader normalizes them (pc.zscale as
+ * pbdraw.c sets it): DotZW's 10000 (z 1000 x, w 0.1 x the texel's sum) */
+static void test_dot_zw_formats(void)
+{
+    const float z = 1000.0f * 1.9f, w = 0.1f * 1.9f, q = z / w;
+    HT_CHECK(q > 9999.0f && q < 10001.0f);
+    /* D24: 10000 of its 2^24 - 1 levels, kept (read as 0..1 it was above 1,
+     * discarded) */
+    const float d24 = znorm(q, 0x1p-24f);
+    HT_CHECK(d24 > 0.0f && d24 < 1.0f);
+    HT_CHECK((uint32_t)(d24 * 16777215.0f + 0.5f) == (uint32_t)(q + 0.5f));
+    HT_EQ_INT(znorm(16777215.0f, 0x1p-24f) == 1.0f, 1);         /* the far plane, kept */
+    HT_EQ_INT(znorm(16777220.0f, 0x1p-24f) > 1.0f, 1);          /* past it: rejected */
+    /* D16: the same depth a quarter of the way in */
+    const float d16 = znorm(q, 0x1p-16f);
+    HT_CHECK(d16 > 0.15f && d16 < 0.16f);
+    HT_CHECK((uint32_t)(d16 * 65535.0f + 0.5f) == (uint32_t)(q + 0.5f));
+    HT_EQ_INT(znorm(65535.0f, 0x1p-16f) == 1.0f, 1);
+    HT_EQ_INT(znorm(65536.0f, 0x1p-16f) > 1.0f, 1);
+    /* float buffers (zscale 1): the value as it is, as a program's z there */
+    HT_CHECK(znorm(0.25f, 1.0f) == 0.25f);
+    HT_CHECK(znorm(q, 1.0f) > 1.0f);
 }
 
 /* texbrdf: stages 0 and 1 the eye's and light's spherical coordinates, stage
@@ -673,6 +715,7 @@ int main(void)
     HT_RUN(test_dot_mux);
     HT_RUN(test_reflect);
     HT_RUN(test_dot_zw);
+    HT_RUN(test_dot_zw_formats);
     HT_RUN(test_brdf);
     HT_RUN(test_shadow_project);
     HT_RUN(test_shadow_f24);
