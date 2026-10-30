@@ -11,6 +11,7 @@
 #include "hw/xbox/hle/pb/objslot.h"
 #include "hw/xbox/hle/pb/pbmode.h"
 #include "hw/xbox/hle/pb/pbstate.h"
+#include "hw/xbox/hle/pb/wclip.h"
 #include "hw/xbox/hle/vk/back.h"
 #include "hw/xbox/hle/vk/display.h"
 #include "hw/xbox/hle/vk/guest_ram.h"
@@ -1018,35 +1019,6 @@ static void zwrite_from_colour(uint32_t ds)
     }
 }
 
-/* The window clip (Dead or Alive 3's SetScissors: its character select
- * draws the fighter clipped to the portrait's frame): 8 rectangles, corners
- * in logical pixels, both included; inclusive (draw inside them) or
- * exclusive (outside). Unused ones: D3D sets the first over the whole
- * surface (w x h) when it clips nothing, and leaves the rest at 0, one pixel
- * at the origin. The used ones' box, [x1, y1, x2, y2), clips an inclusive
- * set (their union when they're apart); an exclusive one isn't done (a
- * scissor can't). False: no clip. */
-static bool window_clip(uint32_t w, uint32_t h, int32_t r[4])
-{
-    int32_t b[4] = { INT32_MAX, INT32_MAX, INT32_MIN, INT32_MIN };
-    for (unsigned i = 0; i < 8; i++) {
-        const uint32_t x = R(NV097_SET_WINDOW_CLIP_HORIZONTAL + 4 * i), y = R(NV097_SET_WINDOW_CLIP_VERTICAL + 4 * i);
-        const int32_t x1 = x & 0xFFF, x2 = ((x >> 16) & 0xFFF) + 1, y1 = y & 0xFFF, y2 = ((y >> 16) & 0xFFF) + 1;
-        if ((!x && !y) || (x1 == 0 && y1 == 0 && x2 >= (int32_t)w && y2 >= (int32_t)h)) {
-            continue;
-        }
-        b[0] = MIN(b[0], x1);
-        b[1] = MIN(b[1], y1);
-        b[2] = MAX(b[2], x2);
-        b[3] = MAX(b[3], y2);
-    }
-    if (b[0] == INT32_MAX || (R(NV097_SET_WINDOW_CLIP_TYPE) & 1)) {
-        return false;
-    }
-    memcpy(r, b, sizeof(b));
-    return true;
-}
-
 /* A video mode set since the display last followed one: the display is its
  * size. CreateDevice binds its back buffer before it sets the mode, and the
  * back buffer needn't be the frame shown: Hunter: The Reckoning - Redeemer
@@ -1170,8 +1142,8 @@ static void sync_rt(void)
         g_pd.rt_fresh = true;
         g_pd.vp_key[0] = g_pd.vp_key[1] = ~0u;
     }
-    /* the surface clip: the draws' viewport rect and scissor; the window
-     * clip narrows the scissor */
+    /* the surface clip: the draws' viewport rect and scissor, and the
+     * window clip inside it */
     uint32_t wc[17];
     wc[0] = R(NV097_SET_WINDOW_CLIP_TYPE);
     for (unsigned i = 0; i < 16; i++) {
@@ -1182,21 +1154,27 @@ static void sync_rt(void)
         g_pd.vp_key[0] = R(NV097_SET_SURFACE_CLIP_HORIZONTAL);
         g_pd.vp_key[1] = R(NV097_SET_SURFACE_CLIP_VERTICAL);
         memcpy(g_pd.wc_key, wc, sizeof(wc));
-        HleCmdViewport *v = begin(HLE_OP_VIEWPORT, sizeof(*v));
-        v->x = swz ? 0 : cx * sx;           /* target (physical) pixels */
-        v->y = swz ? 0 : cy * sy;
-        v->w = swz ? w : cw * sx;
-        v->h = swz ? h : ch * sy;
+        /* the window clip (Dead or Alive 3's SetScissors: its character
+         * select draws the fighter clipped to the portrait's frame): the
+         * rectangles inside the surface clip it lets through, which the back
+         * end draws in one at a time (one: a scissor alone) */
+        const uint32_t vx = swz ? 0 : cx * sx, vy = swz ? 0 : cy * sy;   /* target (physical) pixels */
+        const uint32_t vw = swz ? w : cw * sx, vh = swz ? h : ch * sy;
+        const HleRect area = { (int32_t)vx, (int32_t)vy, (int32_t)(vx + vw), (int32_t)(vy + vh) };
+        HleRect pieces[HLE_CMD_MAX_CLIP];
+        const int n = hle_pb_window_clip(&R(NV097_SET_WINDOW_CLIP_HORIZONTAL), &R(NV097_SET_WINDOW_CLIP_VERTICAL),
+                                         R(NV097_SET_WINDOW_CLIP_TYPE) & 1, g_pd.aa_x, g_pd.aa_y, &area, pieces);
+        const uint32_t np = n > 0 ? (uint32_t)n : 0;
+        HleCmdViewport *v = begin(HLE_OP_VIEWPORT, offsetof(HleCmdViewport, rect) + np * sizeof(HleRect));
+        v->x = vx;
+        v->y = vy;
+        v->w = vw;
+        v->h = vh;
         v->minz = 0.0f;
         v->maxz = 1.0f;
-        int32_t r[4];
-        if (window_clip(swz ? w : cx + cw, swz ? h : cy + ch, r)) {
-            v->clip = 1;
-            v->cx1 = MAX(r[0] * (int32_t)g_pd.aa_x, (int32_t)v->x);
-            v->cy1 = MAX(r[1] * (int32_t)g_pd.aa_y, (int32_t)v->y);
-            v->cx2 = MIN(r[2] * (int32_t)g_pd.aa_x, (int32_t)(v->x + v->w));
-            v->cy2 = MIN(r[3] * (int32_t)g_pd.aa_y, (int32_t)(v->y + v->h));
-        }
+        v->clip = n >= 0;
+        v->nclip = np;
+        memcpy(v->rect, pieces, np * sizeof(HleRect));
         hle_fe_commit();
     }
 }

@@ -109,6 +109,13 @@ static inline const void *hle_cmd_payload(const HleCmdHdr *h)
 
 #define HLE_CMD_MAX_SURF  6
 #define HLE_CMD_MAX_RECTS 8
+/* A window clip's rectangles (HleCmdViewport): 8 of the NV2A's make at most
+ * 17 bands of 9 runs each */
+#define HLE_CMD_MAX_CLIP  153
+
+typedef struct HleRect {
+    int32_t x1, y1, x2, y2;
+} HleRect;
 
 typedef struct HleSurfDesc {
     uint32_t id;                /* front-end object id */
@@ -151,15 +158,13 @@ typedef struct HleCmdViewport {
     float offx, offy;           /* screen-space offset (SetScreenSpaceOffset + 0.53125),
                                    render-target pixels: the NV2A viewport offset fixed
                                    function adds (programs: in c[59]) */
-    /* SetScissors' rectangle, render-target pixels: rendering is clipped to it
-     * instead of the viewport (the NV2A surface clip); clip 0 = the viewport */
-    uint32_t clip;
-    int32_t cx1, cy1, cx2, cy2;
+    /* The window clip (pb/wclip.c): rendering in rect[0..nclip), disjoint
+     * render-target pixels inside the viewport (the NV2A surface clip), the
+     * draws recorded once in each, scissored to it; none: nothing drawn.
+     * clip 0 = the viewport. The record ends after the rectangles used. */
+    uint32_t clip, nclip;
+    HleRect rect[HLE_CMD_MAX_CLIP];
 } HleCmdViewport;
-
-typedef struct HleRect {
-    int32_t x1, y1, x2, y2;
-} HleRect;
 
 typedef struct HleCmdClear {
     uint32_t flags;             /* D3DCLEAR_* */

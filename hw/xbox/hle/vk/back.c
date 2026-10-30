@@ -2436,7 +2436,9 @@ static void dispatch(const HleCmdHdr *h)
         break;
     }
     case HLE_OP_SET_RT:   cmd_set_rt(p); break;
-    case HLE_OP_VIEWPORT: g_back.vp = *(const HleCmdViewport *)p; break;
+    case HLE_OP_VIEWPORT:               /* its window clip's rectangles end it */
+        memcpy(&g_back.vp, p, MIN(h->len, (uint32_t)sizeof(g_back.vp)));
+        break;
     case HLE_OP_CLEAR:
         cmd_clear(p);
         if (g_pix.active) {
