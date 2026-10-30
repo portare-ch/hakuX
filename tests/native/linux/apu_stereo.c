@@ -2,9 +2,9 @@
  * voice processing: voices set up and started by the PIO methods
  * DirectSound sends (mcpx_apu_vp_write), their PCM read from guest RAM
  * through the scatter-gather table, a frame mixed by mcpx_apu_vp_frame and
- * read from the monitor's output. 2D voices are mixed by the stereo
- * downmix of their speaker sends (vp/stereo_route.h), their LFE and effect
- * sends left out; 3D voices, multipass groups and 2D voices sending only to
+ * read from the monitor's output. 2D and 3D voices are mixed by the
+ * stereo downmix of their speaker and 3D sends (vp/stereo_route.h), their
+ * LFE and effect sends left out; multipass groups and voices sending only to
  * the LFE or effect bins keep the monitor's mix; the full-DSP monitor leaves the
  * monitor's output alone and fills the mix bins. A voice reused for a new
  * sound starts its HRTF filter from silence. One worker and several give
@@ -271,27 +271,54 @@ static void test_2d_route_saved(void)
     apu_down();
 }
 
-/* A 3D voice: the monitor's mix (no panning by its sends), with the HRTF
- * filter off, or on with an entry that passes its input (tap 0 both ears) */
+/* A 3D voice through DirectSound's 3D bins (its HRTF submixes 6 to 9,
+ * crosstalk front left, front right, back left, back right): its ears by
+ * its sends, the front pair at 0 dB, the back pair at -3 dB, as the guest
+ * DSP image puts them on a stereo console; the HRTF filter off, or on with
+ * an entry that passes its input (tap 0 both ears); the HRTF headroom
+ * (before, the monitor's mix: its loudest send's gain on both channels) */
 static void test_3d(void)
 {
+    const float k = 0.70710678f;
     for (int hrtf = 0; hrtf < 2; hrtf++) {
         apu_up(false, hrtf, 1);
         pcm_page(0, false, HALF, 0);
-        pio(NV1BA0_PIO_SET_HRTF_SUBMIXES, 0 | 1 << 8 | 2 << 16 | 3 << 24);
+        pio(NV1BA0_PIO_SET_HRTF_SUBMIXES, 6 | 7 << 8 | 8 << 16 | 9 << 24);
         pio(NV1BA0_PIO_SET_CURRENT_HRTF_ENTRY, 5);
         pio(NV1BA0_PIO_SET_HRIR, 127 | 127 << 8);   /* taps 0: 127/128, normalized to 1 */
         Voice v = voice(7, NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_3D_TOP, false, 0);
-        v.vol[0] = 0;               /* hrtf_submix 0 (front left), 0 dB */
-        v.vol[1] = 0x300;           /* front right, -12 dB */
+        v.vol[0] = 0;               /* left ear to 3D front left, 0 dB */
+        v.vol[1] = 0x300;           /* right ear to 3D front right, -12 dB */
         v.hrtf = 5;
         start(&v);
         frames(hrtf ? 40 : 4);
-        check(channels_equal() && (hrtf || all(0, pcm(0.5f), 1)),
-              hrtf ? "3D voice, HRTF on: the monitor's mix kept (both channels alike)"
-                   : "3D voice, HRTF off: the monitor's mix kept (0.5 on both channels)");
+        check(all(0, pcm(0.5f), 1) && all(1, pcm(0.5f * attenuation(0x300)), 1),
+              hrtf ? "3D voice, HRTF on: its ears by its front sends, left 0.5, right -12 dB"
+                   : "3D voice, HRTF off: its ears by its front sends, left 0.5, right -12 dB");
         apu_down();
     }
+
+    apu_up(false, true, 1);
+    pcm_page(0, false, HALF, 0);
+    pio(NV1BA0_PIO_SET_HRTF_SUBMIXES, 6 | 7 << 8 | 8 << 16 | 9 << 24);
+    Voice v = voice(7, NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_3D_TOP, false, 0);
+    v.vol[2] = v.vol[3] = 0;    /* behind the listener: the back pair, 0 dB */
+    start(&v);
+    frames(4);
+    check(all(0, pcm(0.5f * k), 1) && all(1, pcm(0.5f * k), 1), "3D voice behind the listener: -3 dB on both sides");
+    apu_down();
+
+    apu_up(false, true, 1);
+    pcm_page(0, false, HALF, 0);
+    pio(NV1BA0_PIO_SET_HRTF_SUBMIXES, 6 | 7 << 8 | 8 << 16 | 9 << 24);
+    pio(NV1BA0_PIO_SET_HRTF_HEADROOM, 1);
+    pio(NV1BA0_PIO_SET_SUBMIX_HEADROOM + 4 * 6, 3);  /* not the 3D sends' */
+    v = voice(7, NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_3D_TOP, false, 0);
+    v.vol[0] = v.vol[1] = 0;
+    start(&v);
+    frames(4);
+    check(all(0, pcm(0.25f), 1) && all(1, pcm(0.25f), 1), "3D voice's HRTF sends at the HRTF headroom (/ 2)");
+    apu_down();
 }
 
 /* A multipass group: a source voice into the multipass bin at -6 dB, its

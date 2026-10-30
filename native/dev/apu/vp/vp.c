@@ -2045,29 +2045,34 @@ static void voice_process(MCPXAPUState *d, uint8_t *c,
     }
 
     if (d->monitor.point == MCPX_APU_DEBUG_MON_VP) {
-        /* 2D voices (vp/stereo_route.h): one outside the multipass groups
-         * routed to the speakers is mixed into them by the stereo downmix of
-         * its speaker sends, its LFE and effect sends left out. The route is
-         * its sound's, chosen at the first frame with an audible send. */
-        if (v >= MCPX_HW_MAX_3D_VOICES && !multipass &&
-            voice_list != NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_MP_TOP - 1) {
+        /* 2D and 3D voices (vp/stereo_route.h): one outside the multipass
+         * groups routed to the speakers is mixed into them by the stereo
+         * downmix of its sends to the speaker and 3D bins, its LFE and
+         * effect sends left out; a 3D voice's sources are its HRTF filter's
+         * two ears, its first four sends' headroom the HRTF one, as the
+         * mix-bin path above. The route is its sound's, chosen at the first
+         * frame with an audible send. */
+        if (!multipass && voice_list != NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_MP_TOP - 1) {
+            const bool three_d = v < MCPX_HW_MAX_3D_VOICES;
             float att[VP_SENDS];
+            uint8_t shift[VP_SENDS];
             for (int b = 0; b < VP_SENDS; b++) {
                 att[b] = attenuate(vol[b]);
+                shift[b] = three_d && b < 4 ? d->vp.hrtf_headroom : d->vp.submix_headroom[bin[b]];
             }
             if (d->vp.route[v] == VP_ROUTE_UNDECIDED) {
                 d->vp.route[v] = (uint8_t)vp_stereo_classify(bin, att);
             }
             if (d->vp.route[v] == VP_ROUTE_SPEAKERS) {
                 float g2[2][2];
-                vp_stereo_gains(bin, att, d->vp.submix_headroom, channels, ea_value, g2);
-                vp_stereo_mix(sample_buf, samples, g2, channels);
+                vp_stereo_gains(bin, att, shift, three_d ? 2 : channels, ea_value, g2);
+                vp_stereo_mix(sample_buf, samples, g2, three_d ? 2 : channels);
                 return;
             }
         }
 
-        /* Every other voice (3D, multipass, a 2D voice whose sound began
-         * sending only to the LFE or effect bins): for VP mon, simply mix
+        /* Every other voice (multipass, a voice whose sound began sending
+         * only to the LFE or effect bins): for VP mon, simply mix
          * all voices together here, selecting the maximal volume used for
          * any given mixbin as the overall volume for this voice.
          *
