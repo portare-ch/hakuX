@@ -28,6 +28,19 @@ void hle_tl_gap_serve(void);
  * image is used. */
 extern uint32_t g_hle_rscale;
 
+/* A view's component mapping in 12 bits, 3 a component (VkComponentSwizzle),
+ * a component named as itself counted as the identity: 0 for any identity
+ * mapping (vk/draw.c sampler_index's borders) */
+static inline uint16_t hle_sw_pack(VkComponentMapping m)
+{
+    const VkComponentSwizzle c[4] = { m.r, m.g, m.b, m.a };
+    uint16_t k = 0;
+    for (unsigned i = 0; i < 4; i++) {
+        k |= (uint16_t)(c[i] == (VkComponentSwizzle)(VK_COMPONENT_SWIZZLE_R + i) ? 0 : c[i]) << (3 * i);
+    }
+    return k;
+}
+
 /* surf.c */
 typedef struct HleVkSurf {
     bool alive;
@@ -58,8 +71,10 @@ typedef struct HleVkSurf {
     uint32_t rendered_levels;   /* owners: levels 0..n-1 sampled (the highest rendered + 1) */
     uint32_t sview_levels;
     VkImageView sview, cube_view;   /* owners: sampled views */
+    uint16_t sview_sw;          /* their component mapping (hle_sw_pack) */
     VkImageView oview;          /* owners: the texels in another byte order
                                    (hle_surf_order_view: oview_ord) */
+    uint16_t oview_sw;
     uint32_t oview_ord, oview_levels;
     uint64_t oview_gen;         /* view_gen's, for oview */
     VkImage owner_img;          /* views: the owner image the view was made from */

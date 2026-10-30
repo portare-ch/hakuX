@@ -765,6 +765,7 @@ void hle_surf_sample_views(HleVkSurf *s, VkImageView *view, VkImageView *cube)
             vci.components.a = VK_COMPONENT_SWIZZLE_ONE;
         }
         T.vkCreateImageView(g_hvk.dev, &vci, NULL, &s->sview);
+        s->sview_sw = hle_sw_pack(vci.components);
         if (s->nfaces == 6) {
             vci.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
             vci.subresourceRange.layerCount = 6;
@@ -818,6 +819,7 @@ VkImageView hle_surf_order_view(HleVkSurf *s, uint32_t ord)
         return VK_NULL_HANDLE;
     }
     s->oview_ord = ord;
+    s->oview_sw = hle_sw_pack(vci.components);
     s->oview_levels = n;
     s->oview_gen = ++g_view_gen;
     return s->oview;

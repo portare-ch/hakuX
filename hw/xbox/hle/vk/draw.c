@@ -110,6 +110,7 @@ typedef struct HleVkTex {
     uint32_t gfmt;              /* the guest's format (HleCmdTex.gfmt) */
     uint8_t sgn;                /* view channels (bit 0 r .. 3 a) uploaded offset binary:
                                    colour sign (tex/xdk_res.h hle_fmt_sign_rgba) */
+    uint16_t sw;                /* its views' component mapping (hle_sw_pack) */
 } HleVkTex;
 
 /* A pipeline table entry's state: made (VK_NULL_HANDLE: it failed, not tried
@@ -155,6 +156,7 @@ static struct {
     /* caps.bindless off: the slots (write_slot_layout3), and the draws' sets,
      * made from pools per command buffer in flight (hle_draw_slot) */
     FixedImg *mirror;
+    uint16_t slot_sw[HLE_MAX_IMAGES];   /* each slot's views' component mapping (sampler_index) */
     struct {
         VkDescriptorPool pool[FX_POOLS];
         unsigned npool, cur;
@@ -334,9 +336,12 @@ static bool tex_format(uint32_t x, TexFmt *o)
  * views): a texture shows the white texture of the other kinds there, so
  * every slot a shader can index is written. */
 static void write_slot_layout3(uint32_t slot, VkImageView view, VkImageView cube,
-                               VkImageView vol, VkImageLayout layout)
+                               VkImageView vol, VkImageLayout layout, uint16_t sw)
 {
     const VkImageLayout ro = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    if (slot < HLE_MAX_IMAGES) {
+        g_dr.slot_sw[slot] = sw;
+    }
     VkDescriptorImageInfo ii[3] = {
         { .imageView = view ? view : g_dr.white.view, .imageLayout = view ? layout : ro },
         { .imageView = cube ? cube : g_dr.white_cube.cube_view,
@@ -362,29 +367,29 @@ static void write_slot_layout3(uint32_t slot, VkImageView view, VkImageView cube
 }
 
 static void write_slot_layout(uint32_t slot, VkImageView view, VkImageView cube,
-                              VkImageLayout layout)
+                              VkImageLayout layout, uint16_t sw)
 {
-    write_slot_layout3(slot, view, cube, VK_NULL_HANDLE, layout);
+    write_slot_layout3(slot, view, cube, VK_NULL_HANDLE, layout, sw);
 }
 
-static void write_slot(uint32_t slot, VkImageView view, VkImageView cube)
+static void write_slot(uint32_t slot, VkImageView view, VkImageView cube, uint16_t sw)
 {
-    write_slot_layout(slot, view, cube, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    write_slot_layout(slot, view, cube, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, sw);
 }
 
 static void write_tex_slot(const HleVkTex *t)
 {
     if (t->vol) {
         write_slot_layout3(t->slot, VK_NULL_HANDLE, VK_NULL_HANDLE, t->view,
-                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, t->sw);
     } else {
-        write_slot(t->slot, t->view, t->cube_view);
+        write_slot(t->slot, t->view, t->cube_view, t->sw);
     }
 }
 
-static void write_image(uint32_t slot, VkImageView view)
+static void write_image(uint32_t slot, VkImageView view, uint16_t sw)
 {
-    write_slot(slot, view, VK_NULL_HANDLE);
+    write_slot(slot, view, VK_NULL_HANDLE, sw);
 }
 
 static bool make_image(HleVkTex *t, const TexFmt *tf, VkImageUsageFlags usage)
@@ -418,6 +423,7 @@ static bool make_image(HleVkTex *t, const TexFmt *tf, VkImageUsageFlags usage)
         .viewType = t->vol ? VK_IMAGE_VIEW_TYPE_3D : VK_IMAGE_VIEW_TYPE_2D,
         .format = tf->fmt, .components = tf->sw,
         .subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, t->levels, 0, 1 } };
+    t->sw = hle_sw_pack(tf->sw);
     t->view = VK_NULL_HANDLE;
     t->cube_view = VK_NULL_HANDLE;
     bool view = false;
@@ -878,7 +884,7 @@ static void white_init(VkCommandBuffer cb)
         b.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         T.vkCmdPipelineBarrier2(cb, &di);
     }
-    write_image(0, g_dr.white.view);
+    write_image(0, g_dr.white.view, 0);
 }
 
 /* ---- textures ------------------------------------------------------------------ */
@@ -1104,6 +1110,7 @@ static uint32_t surf_slot(HleVkSurf *s, uint32_t ord)
 {
     VkImageView view = ord ? hle_surf_order_view(s, ord) : VK_NULL_HANDLE, cube = VK_NULL_HANDLE;
     uint64_t gen = s->oview_gen;
+    uint16_t sw = s->oview_sw;
     VkImageLayout layout = s->general ? VK_IMAGE_LAYOUT_GENERAL
                                       : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     if (!view) {
@@ -1115,6 +1122,9 @@ static uint32_t surf_slot(HleVkSurf *s, uint32_t ord)
             /* depth: the depth aspect alone; B8, L16: the luminance swizzle; G8B8 (b, g, b, g);
              * X8R8G8B8 and X1R5G5B5: alpha 1 */
             hle_surf_sample_views(s, &view, &cube);
+            sw = s->sview_sw;
+        } else {
+            sw = 0;
         }
         gen = s->view_gen;
     }
@@ -1125,7 +1135,7 @@ static uint32_t surf_slot(HleVkSurf *s, uint32_t ord)
                 g_dr.sslot[i].view = view;
                 g_dr.sslot[i].cube = cube;
                 g_dr.sslot[i].gen = gen;
-                write_slot_layout(g_dr.sslot[i].slot, view, cube, layout);
+                write_slot_layout(g_dr.sslot[i].slot, view, cube, layout, sw);
             }
             return g_dr.sslot[i].slot;
         }
@@ -1141,7 +1151,7 @@ static uint32_t surf_slot(HleVkSurf *s, uint32_t ord)
     g_dr.sslot[i].cube = cube;
     g_dr.sslot[i].gen = gen;
     g_dr.sslot[i].slot = slot;
-    write_slot_layout(slot, view, cube, layout);
+    write_slot_layout(slot, view, cube, layout, sw);
     return slot;
 }
 
@@ -1576,6 +1586,7 @@ static struct {
     VkImageView view;
     VkImageLayout layout;
     uint32_t slot;
+    uint16_t sw;                        /* view's component mapping (hle_sw_pack) */
 } g_snap[SNAP_MAX];
 static unsigned g_nsnap;
 static int g_snap_cur = -1;             /* the copy of target g_snap_rt the next draw samples */
@@ -1661,7 +1672,8 @@ static int snap_get(const HleVkSurf *rt)
         g_free_slot[g_nfree_slot++] = slot;
         return -1;
     }
-    write_image(slot, s->view);
+    s->sw = hle_sw_pack(vci.components);
+    write_image(slot, s->view, s->sw);
     hle_log("hakuX-hle-back", "target copy %u: %ux%u fmt %d (slot %u)", g_nsnap, rt->w, rt->h,
             (int)rt->fmt, slot);
     return (int)g_nsnap++;
@@ -1721,11 +1733,42 @@ static VkSamplerAddressMode addr_mode(uint32_t a)
  * hash, before the scan */
 static uint16_t g_smp_hot[64];
 
+/* Colour c (r, g, b, a) as a texel through component mapping sw (hle_sw_pack) */
+static void sw_apply(uint16_t sw, const float *c, float *o)
+{
+    for (unsigned i = 0; i < 4; i++) {
+        const unsigned k = sw >> (3 * i) & 7;
+        o[i] = k == VK_COMPONENT_SWIZZLE_ZERO ? 0.0f : k == VK_COMPONENT_SWIZZLE_ONE ? 1.0f :
+               c[k >= VK_COMPONENT_SWIZZLE_R ? k - VK_COMPONENT_SWIZZLE_R : i];
+    }
+}
+
+/* Of the two borders a view's mapping leaves defined, the one whose texel
+ * through it is nearest colour c's */
+static VkBorderColor sw_border(uint16_t sw, const float *c)
+{
+    static const float k_none[4] = { 0, 0, 0, 0 }, k_all[4] = { 1, 1, 1, 1 };
+    float want[4], t[4], w[4], dt = 0, dw = 0;
+    sw_apply(sw, c, want);
+    sw_apply(sw, k_none, t);
+    sw_apply(sw, k_all, w);
+    for (unsigned i = 0; i < 4; i++) {
+        dt += fabsf(want[i] - t[i]);
+        dw += fabsf(want[i] - w[i]);
+    }
+    return dw < dt ? VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE : VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
+}
+
+static uint16_t slot_sw(uint32_t slot)
+{
+    return slot < HLE_MAX_IMAGES ? g_dr.slot_sw[slot] : 0;
+}
+
 /* sampler_index's lod_down: how many levels finer the stage must sample (the
  * source surface's resolution scale over the target's, as log2 in 1/16ths).
  * The index fits 8 bits (HleFfPush.tex). */
 HLE_BUILD_BUG_ON(HLE_MAX_SAMPLERS > 256);
-static uint32_t sampler_index(const uint32_t *tss, uint32_t lod_down)
+static uint32_t sampler_index(const uint32_t *tss, uint32_t lod_down, uint16_t sw)
 {
     uint32_t base = MIN(tss[TSS_MAXMIPLEVEL], 15u);
     /* CONTROL0's MAX_ANISOTROPY (pb/kelvin.c): the degree the title set,
@@ -1740,7 +1783,15 @@ static uint32_t sampler_index(const uint32_t *tss, uint32_t lod_down)
                    (uint64_t)(tss[TSS_MIPFILTER] & 7) << 12 |
                    (uint64_t)(tss[TSS_ADDRESSW] & 7) << 15 | (uint64_t)base << 18 |
                    (uint64_t)aniso << 22 | (uint64_t)tss[TSS_BORDERCOLOR] << 32;
-    uint64_t key2 = tss[TSS_MIPMAPLODBIAS] | (uint64_t)lod_down << 32;
+    /* sw, the stage's view's component mapping (hle_sw_pack): a sampler of its
+     * own where a border can meet it and the device doesn't take the mapping
+     * from the view (below) */
+    const bool clamp_border = (tss[TSS_ADDRESSU] & 7) == 4 || (tss[TSS_ADDRESSV] & 7) == 4 ||
+                              (tss[TSS_ADDRESSW] & 7) == 4;
+    if (g_hvk.caps.bcs_image || !clamp_border) {
+        sw = 0;
+    }
+    uint64_t key2 = tss[TSS_MIPMAPLODBIAS] | (uint64_t)lod_down << 32 | (uint64_t)sw << 48;
     unsigned h = (unsigned)(((key ^ key2 * 0x9E3779B97F4A7C15ull) * 0xFF51AFD7ED558CCDull) >> 58);
     uint32_t i = g_smp_hot[h];
     if (i < g_dr.nsmp && g_dr.smp[i].key == key && g_dr.smp[i].key2 == key2) {
@@ -1782,9 +1833,33 @@ static uint32_t sampler_index(const uint32_t *tss, uint32_t lod_down)
                  f[0] + f[1] + f[2] < 1.5f ? VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK :
                                              VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
     }
+    /* A view whose component mapping isn't the identity (L8's (l, l, l, 1),
+     * L16's (1, h, l, 1), X8R8G8B8's alpha 1, the two-channel formats'
+     * repeats): an opaque black or custom border is replaced before the
+     * mapping, as a texel is (Vulkan's order, and xemu's; the NV2A's is
+     * unconfirmed), and Vulkan defines that only with border colour swizzle:
+     * the mapping taken from the view (bcs_image: sw is 0 here), else a
+     * sampler told it, for views of that mapping alone (the key's sw).
+     * Without it, not an undefined texel: whichever of transparent black and
+     * opaque white is nearest through the mapping, exact for the usual
+     * colours (opaque black through an alpha-1 mapping is transparent
+     * black's texel). Sampling the mapping in the shader, or converting
+     * those formats at upload, would cost every draw or texture of them. */
+    const void *next = border == VK_BORDER_COLOR_FLOAT_CUSTOM_EXT ? &cbc : NULL;
+    VkSamplerBorderColorComponentMappingCreateInfoEXT bcm = {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_BORDER_COLOR_COMPONENT_MAPPING_CREATE_INFO_EXT,
+        .pNext = next,
+        .components = { (VkComponentSwizzle)(sw & 7), (VkComponentSwizzle)(sw >> 3 & 7),
+                        (VkComponentSwizzle)(sw >> 6 & 7), (VkComponentSwizzle)(sw >> 9 & 7) } };
+    if (sw && g_hvk.caps.bcs) {
+        next = &bcm;
+    } else if (sw) {
+        border = sw_border(sw, cbc.customBorderColor.float32);
+        next = NULL;
+    }
     VkSamplerCreateInfo sci = {
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-        .pNext = g_hvk.caps.cbc_any ? &cbc : NULL,
+        .pNext = next,
         .magFilter = lin_mag ? VK_FILTER_LINEAR : VK_FILTER_NEAREST,
         .minFilter = lin_min ? VK_FILTER_LINEAR : VK_FILTER_NEAREST,
         .mipmapMode = mip >= 2 ? VK_SAMPLER_MIPMAP_MODE_LINEAR : VK_SAMPLER_MIPMAP_MODE_NEAREST,
@@ -1826,14 +1901,14 @@ static uint32_t sampler_index(const uint32_t *tss, uint32_t lod_down)
 /* A convolving stage's taps (psh.c sampk): level 0, bilinear, whatever the
  * stage's MAXMIPLEVEL (its sampler's minLod), LOD bias and anisotropy
  * (CONVOLUTION_2D_LOD0); its addressing and border colour */
-static uint32_t sampler_lod0(const uint32_t *tss)
+static uint32_t sampler_lod0(const uint32_t *tss, uint16_t sw)
 {
     uint32_t t[HLE_TSS_COUNT];
     memcpy(t, tss, sizeof(t));
     t[TSS_MAGFILTER] = t[TSS_MINFILTER] = 2;
     t[TSS_MIPFILTER] = t[TSS_MAXMIPLEVEL] = t[TSS_MIPMAPLODBIAS] = 0;
     t[TSS_MAXANISOTROPY] = 1;
-    return sampler_index(t, 0);
+    return sampler_index(t, 0, sw);
 }
 
 /* ---- pipelines ----------------------------------------------------------------- */
@@ -3642,7 +3717,7 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
         fs->texture = c->tex[st] != 0;
         fs->unset = c->tex_unset >> st & 1;
         fs->alpha_kill = fs->texture && t[TSS_ALPHAKILL] != 0;
-        pc.tex[ki] = slot | sampler_index(t, stage_lod_down(c, st, rt_id)) << 16;
+        pc.tex[ki] = slot | sampler_index(t, stage_lod_down(c, st, rt_id), slot_sw(slot)) << 16;
         k.vs.texcoord[ki] = t[TSS_TEXCOORDINDEX] & 7;
         k.ps.nstages = ki + 1;
         k.vs.ntex = ki + 1;
@@ -3656,10 +3731,10 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
         for (unsigned st = 0; st < HLE_FF_STAGES; st++) {
             uint32_t tt[HLE_TSS_COUNT];
             const uint32_t *ts = stage_tss(s, c, st, tt);   /* sampk's border too */
-            pc.tex[st] = stage_slot(c, st, rt_id, &pc.flags) |
-                         sampler_index(ts, stage_lod_down(c, st, rt_id)) << 16;
+            const uint32_t slot = stage_slot(c, st, rt_id, &pc.flags);
+            pc.tex[st] = slot | sampler_index(ts, stage_lod_down(c, st, rt_id), slot_sw(slot)) << 16;
             if (conv_kernel(s, c, st)) {
-                pc.tex[st] |= sampler_lod0(ts) << 24;   /* sampk's taps */
+                pc.tex[st] |= sampler_lod0(ts, slot_sw(slot)) << 24;   /* sampk's taps */
             }
             k.vs.texcoord[st] = s->tss[st][TSS_TEXCOORDINDEX] & 7;
         }

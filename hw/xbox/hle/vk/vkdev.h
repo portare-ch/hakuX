@@ -53,6 +53,12 @@ typedef struct HleCaps {
                                    cbc_any is off too */
     bool cbc_any;               /* custom border colours without a format, for every
                                    sampler, else the nearest standard colour */
+    bool bcs;                   /* VK_EXT_border_color_swizzle: opaque black and custom
+                                   borders defined through a view's component mapping, the
+                                   sampler made for that mapping (vk/draw.c sampler_index),
+                                   else such views get transparent black or opaque white */
+    bool bcs_image;             /* borderColorSwizzleFromImage: any sampler meets any view,
+                                   else a sampler per mapping (bcs) */
     bool x4444;                 /* A4R4G4B4 sampled (VK_EXT_4444_formats, core in 1.3; not
                                    on Mali's r26), else 4444 textures expand to A8R8G8B8
                                    on the way into the arena (pb/pbres.c) */
