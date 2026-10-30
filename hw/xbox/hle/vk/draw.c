@@ -267,13 +267,12 @@ static bool tex_format(uint32_t x, TexFmt *o)
         return true;
     case HLE_XFMT_A4R4G4B4: case HLE_XFMT_LIN_A4R4G4B4:
         /* else the front end sends them as A8R8G8B8 (pb/pbres.c tex_native), as
-         * R5G5B5A1, V16U16 and D16 without theirs */
+         * R4G4B4A4, R5G5B5A1, V16U16 and D16 without theirs */
         o->fmt = VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT; return g_hvk.caps.x4444;
-    case HLE_XFMT_R4G4B4A4: case HLE_XFMT_LIN_R4G4B4A4: {
-        /* B4G4R4A4, a format every GPU has, holds R where blue is */
-        VkComponentMapping m = SW(B, G, R, A);
-        o->fmt = VK_FORMAT_B4G4R4A4_UNORM_PACK16; o->sw = m; return true;
-    }
+    case HLE_XFMT_R4G4B4A4: case HLE_XFMT_LIN_R4G4B4A4:
+        /* its own layout, no swizzle: not B4G4R4A4 swizzled, which a sampler's
+         * format-less custom border colour leaves undefined (cbc_any) */
+        o->fmt = VK_FORMAT_R4G4B4A4_UNORM_PACK16; return g_hvk.caps.r4444;
     case HLE_XFMT_R5G5B5A1: case HLE_XFMT_LIN_R5G5B5A1:
         o->fmt = VK_FORMAT_R5G5B5A1_UNORM_PACK16; return g_hvk.caps.r5551;
     case HLE_XFMT_L16: case HLE_XFMT_LIN_L16: {

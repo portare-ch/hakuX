@@ -193,6 +193,7 @@ static void caps_override(HleCaps *c)
         { "cbc", offsetof(HleCaps, cbc) },           { "d24s8", offsetof(HleCaps, d24s8) },
         { "4444", offsetof(HleCaps, x4444) },        { "bindless", offsetof(HleCaps, bindless) },
         { "r16", offsetof(HleCaps, r16) },           { "5551", offsetof(HleCaps, r5551) },
+        { "r4444", offsetof(HleCaps, r4444) },
         { "dclamp", offsetof(HleCaps, depth_clamp) },
         { "bda", offsetof(HleCaps, bda) },           { "ahb", offsetof(HleCaps, ahb) },
         { "fbfetch", offsetof(HleCaps, fbfetch) },   { "vk13", offsetof(HleCaps, vk13) },
@@ -550,16 +551,18 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
         const VkFormatFeatureFlags want = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
                                           VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
                                           VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
-        static const VkFormat k_f[3] = { VK_FORMAT_R16_UNORM, VK_FORMAT_R16G16_UNORM,
-                                         VK_FORMAT_R5G5B5A1_UNORM_PACK16 };
-        bool ok[3];
-        for (unsigned i = 0; i < 3; i++) {
+        static const VkFormat k_f[4] = { VK_FORMAT_R16_UNORM, VK_FORMAT_R16G16_UNORM,
+                                         VK_FORMAT_R5G5B5A1_UNORM_PACK16,
+                                         VK_FORMAT_R4G4B4A4_UNORM_PACK16 };
+        bool ok[4];
+        for (unsigned i = 0; i < 4; i++) {
             VkFormatProperties fp;
             vkGetPhysicalDeviceFormatProperties(v->phys, k_f[i], &fp);
             ok[i] = (fp.optimalTilingFeatures & want) == want;
         }
         c->r16 = ok[0] && ok[1];
         c->r5551 = ok[2];
+        c->r4444 = ok[3];
     }
     c->bc = q.features.textureCompressionBC;
     if (!c->bc) {
@@ -835,10 +838,10 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
             c->gpl, c->eds3, c->descriptor_buffer, c->maint5, c->sscaled,
             c->local_read, c->fbfetch, c->raster_order, c->cache_control, c->swapchain);
     hle_log("hakuX-hle-back", "vk: bc=%d vids=%d push=%d push_desc=%d cbc=%d cbc_any=%d "
-            "x4444=%d r16=%d r5551=%d d24s8=%d bda=%d ahb=%d vk13=%d dyn_render=%d sync2=%d "
-            "eds1=%d eds2=%d bindless=%d depth_clamp=%d (0: the substitute runs)", c->bc,
+            "x4444=%d r16=%d r5551=%d r4444=%d d24s8=%d bda=%d ahb=%d vk13=%d dyn_render=%d "
+            "sync2=%d eds1=%d eds2=%d bindless=%d depth_clamp=%d (0: the substitute runs)", c->bc,
             c->vids, c->push, c->push_desc, c->cbc, c->cbc_any, c->x4444, c->r16, c->r5551,
-            c->d24s8, c->bda, c->ahb, c->vk13, c->dyn_render, c->sync2, c->eds1, c->eds2,
+            c->r4444, c->d24s8, c->bda, c->ahb, c->vk13, c->dyn_render, c->sync2, c->eds1, c->eds2,
             c->bindless, c->depth_clamp);
     hle_quirks_init(v->phys);           /* what this driver needs worked around */
     return 0;

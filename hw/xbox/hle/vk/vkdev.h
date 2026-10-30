@@ -60,6 +60,7 @@ typedef struct HleCaps {
                                    textures are converted too: V16U16 to A8R8G8B8, D16
                                    to a float */
     bool r5551;                 /* R5G5B5A1 sampled, else it becomes A8R8G8B8 as well */
+    bool r4444;                 /* R4G4B4A4 sampled, else it becomes A8R8G8B8 as well */
     bool bindless;              /* descriptor indexing (the bindless set, its limits), else
                                    each draw's textures in a set of their own at fixed
                                    places (vk/draw.c fixed_bind: Mali's Bifrost, PowerVR's

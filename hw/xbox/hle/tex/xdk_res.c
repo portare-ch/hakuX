@@ -141,6 +141,13 @@ bool hle_tex_convert(uint32_t code, const void *src, uint32_t n, void *dst)
                         bits8(v >> 4 & 15, 4) << 8 | bits8(v & 15, 4));
         }
         return true;
+    case HLE_XFMT_R4G4B4A4: case HLE_XFMT_LIN_R4G4B4A4:
+        for (uint32_t i = 0; i < n; i++) {
+            uint32_t v = ld16(s + 2 * i);
+            put32(o, i, bits8(v & 15, 4) << 24 | bits8(v >> 12, 4) << 16 |
+                        bits8(v >> 8 & 15, 4) << 8 | bits8(v >> 4 & 15, 4));
+        }
+        return true;
     case HLE_XFMT_R5G5B5A1: case HLE_XFMT_LIN_R5G5B5A1:
         for (uint32_t i = 0; i < n; i++) {
             uint32_t v = ld16(s + 2 * i);

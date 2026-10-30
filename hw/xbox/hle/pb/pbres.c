@@ -173,7 +173,7 @@ static void dxt_volume(uint32_t xfmt, const uint8_t *s, uint32_t w, uint32_t h, 
  * (vk/draw.c tex_format), else they're converted on the way into the arena
  * (hle_tex_convert): R6G5B5, which Vulkan has no format for, and depth, read
  * as a float; and the formats a GPU lacks (HleCaps x4444: Mali's r26; r16,
- * r5551). */
+ * r5551, r4444). */
 static bool tex_native(uint32_t fmt)
 {
     switch (fmt) {
@@ -181,6 +181,8 @@ static bool tex_native(uint32_t fmt)
         return g_hvk.caps.x4444;
     case HLE_XFMT_R5G5B5A1: case HLE_XFMT_LIN_R5G5B5A1:
         return g_hvk.caps.r5551;
+    case HLE_XFMT_R4G4B4A4: case HLE_XFMT_LIN_R4G4B4A4:
+        return g_hvk.caps.r4444;
     case HLE_XFMT_V16U16: case HLE_XFMT_LIN_V16U16:
     case HLE_XFMT_D16: case HLE_XFMT_LIN_D16:
         return g_hvk.caps.r16;
