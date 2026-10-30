@@ -213,6 +213,9 @@ typedef struct ApuConfig {
     bool hrtf;              /* the 3D voices' HRTF filters */
     float volume_limit;     /* output scale, 1: none */
     int num_workers;        /* VP voice workers, 0: by the CPU count */
+    int resampler;          /* the voices' resampler, VP_RESAMPLE_* (vp/resample.h):
+                               sinc (the default), or linear; read at
+                               mcpx_apu_vp_init */
 } ApuConfig;
 extern ApuConfig g_apu_config;
 

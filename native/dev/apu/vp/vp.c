@@ -145,12 +145,22 @@ static void set_notify_status(MCPXAPUState *d, uint32_t v, int notifier,
     apu_st(&d->set_irq, true);
 }
 
+static long voice_resample_callback(void *cb_data, float **data);
+
 static void voice_reset_filters(MCPXAPUState *d, uint16_t v)
 {
     assert(v < MCPX_HW_MAX_VOICES);
     memset(&d->vp.filters[v].svf, 0, sizeof(d->vp.filters[v].svf));
     if (d->vp.filters[v].resampler) {
-        src_reset(d->vp.filters[v].resampler);
+        vp_resample_reset(d->vp.filters[v].resampler);
+    } else {
+        /* the voice's first sound: its resampler made now, at the guest's
+         * VOICE_ON, not in a frame (the sinc converter allocates ~280 KB,
+         * its buffer sized for libsamplerate's widest ratio; made for the
+         * voices a title uses, not all 256), kept for its later sounds */
+        d->vp.filters[v].voice = v;
+        d->vp.filters[v].resampler =
+            vp_resample_new(&voice_resample_callback, d->vp.resample_quality, 2, &d->vp.filters[v]);
     }
     /* the voice slot's previous sound out of the HRTF filter too (its
      * coefficients and delays, the voice's HRTF entry, stay) */
@@ -1633,29 +1643,22 @@ static int voice_resample(MCPXAPUState *d, uint8_t *c, uint16_t v,
     MCPXAPUVoiceFilter *filter = &d->vp.filters[v];
 
     if (filter->resampler == NULL) {
+        /* made at its VOICE_ON (voice_reset_filters); here only for a voice
+         * a state load left playing, or if that ran out of memory */
         filter->voice = v;
-        int err;
-
-        /* Note: Using a sinc based resampler for quality. Unsure about
-         * hardware's actual interpolation method; it could just be linear, in
-         * which case using this resampler is overkill, but quality is good
-         * so use it for now.
-         */
         // FIXME: Don't do 2ch resampling if this is a mono voice
-        filter->resampler = src_callback_new(&voice_resample_callback,
-                                           SRC_SINC_FASTEST, 2, &err, filter);
+        filter->resampler = vp_resample_new(&voice_resample_callback, d->vp.resample_quality, 2, filter);
         if (filter->resampler == NULL) {
-            fprintf(stderr, "src error: %s\n", src_strerror(err));
-            assert(0);
+            return -1;
         }
     }
 
-    /* The voice table through to the libsamplerate callback (whose
+    /* The voice table through to the resampler's callback (whose
      * signature we cannot extend), for the synchronous duration of
-     * src_callback_read. */
+     * vp_resample_read. */
     filter->cb_voice_cache = c;
-    int count = src_callback_read(filter->resampler, rate, requested_num,
-                                  (float *)samples);
+    int count = vp_resample_read(filter->resampler, rate, requested_num,
+                                 (float *)samples);
     filter->cb_voice_cache = NULL;
     if (count == -1) {
         DPRINTF("resample error\n");
@@ -1783,7 +1786,7 @@ static void voice_process(MCPXAPUState *d, uint8_t *c,
 #if !defined(HAKUX_AUDIO_NO_PROCESS) || !HAKUX_AUDIO_NO_PROCESS
 #if HAKUX_AUDIO_SKIP_MUTED
     /* Thread the per-voice skip decision into voice_get_samples (reached via
-     * voice_resample -> src_callback_read -> voice_resample_callback). Valid
+     * voice_resample -> vp_resample_read -> voice_resample_callback). Valid
      * only for the synchronous duration of the resample loop below, same
      * lifetime contract as cb_voice_cache. Multipass voices have no decode
      * loop, so this is consumed only on the non-multipass path. */
@@ -2609,7 +2612,7 @@ void mcpx_apu_vp_frame(MCPXAPUState *d, float mixbins[NUM_MIXBINS][NUM_SAMPLES_P
     if (d->monitor.point == MCPX_APU_DEBUG_MON_VP) {
         /* Mix all voices together to hear any audible voice */
         int16_t isamp[NUM_SAMPLES_PER_FRAME * 2];
-        src_float_to_short_array((float *)d->vp.sample_buf, isamp,
+        vp_float_to_short_array((float *)d->vp.sample_buf, isamp,
                                  NUM_SAMPLES_PER_FRAME * 2);
         int off = (d->ep_frame_div % 8) * NUM_SAMPLES_PER_FRAME;
         for (int i = 0; i < NUM_SAMPLES_PER_FRAME; i++) {
@@ -2633,14 +2636,25 @@ void mcpx_apu_vp_init(MCPXAPUState *d)
     d->vp.voice_cache = NULL;
     d->vp.ssl_cache = NULL;
 
+    /* The voices' resampler quality: the content's (g_apu_config.resampler),
+     * for the session; each voice's is made at its first VOICE_ON
+     * (voice_reset_filters) */
+    const int quality = vp_resample_sinc_available() ? g_apu_config.resampler : VP_RESAMPLE_LINEAR;
+    if (quality != g_apu_config.resampler) {
+        nc_log("hakuX-apu", "resampler: %s not in this build, %s", vp_resample_name(g_apu_config.resampler),
+               vp_resample_name(quality));
+    }
+    d->vp.resample_quality = quality;
+    nc_log("hakuX-apu", "resampler: %s", vp_resample_name(quality));
+
     voice_work_init(d);
 }
 
 void mcpx_apu_vp_finalize(MCPXAPUState *d)
 {
     voice_work_finalize(d);
-    for (int v = 0; v < ARRAY_SIZE(d->vp.filters); v++) {  /* made at a voice's first frame */
-        d->vp.filters[v].resampler = src_delete(d->vp.filters[v].resampler);
+    for (int v = 0; v < ARRAY_SIZE(d->vp.filters); v++) {  /* made at a voice's first VOICE_ON */
+        d->vp.filters[v].resampler = vp_resample_delete(d->vp.filters[v].resampler);
     }
 
     d->vp.voice_cache = NULL;

@@ -1,0 +1,411 @@
+/* The voices' resamplers (native/dev/apu/vp/resample.h) measured: linear,
+ * and band-limited sinc (libsamplerate's SRC_SINC_MEDIUM_QUALITY) where the
+ * test is built with libsamplerate. Their input comes from a callback 32
+ * stereo frames at a time, as the VP feeds them. Levels are least-squares
+ * sine fits over a window after the start (no FFT leakage, no startup
+ * transient); the sinc converter is held to the stereo audio spec's
+ * criteria (with 10 kHz of a 22.05 kHz voice at SRC_SINC_MEDIUM_QUALITY's
+ * -3.25 dB, the converter chosen over FASTEST and BEST), the linear one
+ * reported beside it. */
+#include "hle_test.h"
+
+#include <math.h>
+#include <stdbool.h>
+#include <stdlib.h>
+
+#include "native/dev/apu/vp/resample.h"
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+/* ---- a test signal, 32 stereo frames a callback */
+enum { TONE, IMPULSE, STEP };
+
+typedef struct {
+    int kind;
+    double fs;                  /* its rate */
+    double f[2], amp[2];        /* each channel's tone (f 0: DC) */
+    long at;                    /* the impulse's or step's frame */
+    long len;                   /* frames, then silence (-1: endless) */
+    long n;                     /* frames given */
+    float buf[64];
+} Signal;
+
+static long feed(void *p, float **data)
+{
+    Signal *s = p;
+    for (int i = 0; i < 32; i++) {
+        const long n = s->n + i;
+        for (int ch = 0; ch < 2; ch++) {
+            float v = 0.0f;
+            if (s->len < 0 || n < s->len) {
+                switch (s->kind) {
+                case TONE:
+                    v = s->f[ch] ? (float)(s->amp[ch] * sin(2 * M_PI * s->f[ch] * n / s->fs)) : (float)s->amp[ch];
+                    break;
+                case IMPULSE:
+                    v = n == s->at ? (float)s->amp[ch] : 0.0f;
+                    break;
+                default:
+                    v = n >= s->at ? (float)s->amp[ch] : 0.0f;
+                    break;
+                }
+            }
+            s->buf[2 * i + ch] = v;
+        }
+    }
+    s->n += 32;
+    *data = s->buf;
+    return 32;          /* always 32, padded with silence, as the VP's callback */
+}
+
+static Signal tone(double fs, double fl, double al, double fr, double ar)
+{
+    return (Signal){.kind = TONE, .fs = fs, .f = {fl, fr}, .amp = {al, ar}, .len = -1};
+}
+
+/* n output frames of s at ratio, read 32 at a time */
+static float *convert(int quality, Signal *s, double ratio, long n)
+{
+    float *out = calloc((size_t)n * 2, sizeof(float));
+    VpResampler *r = vp_resample_new(feed, quality, 2, s);
+    for (long done = 0; done < n;) {
+        const long want = n - done < 32 ? n - done : 32;
+        const long got = vp_resample_read(r, ratio, want, out + 2 * done);
+        HT_CHECK(got == want);
+        if (got <= 0) {
+            break;
+        }
+        done += got;
+    }
+    vp_resample_delete(r);
+    return out;
+}
+
+/* the amplitude of the sine at f in channel ch of y[start, start + n) */
+static double fit(const float *y, int ch, long start, long n, double f, double fs)
+{
+    double m[3][4] = {{0}};
+    for (long i = 0; i < n; i++) {
+        const double a = sin(2 * M_PI * f * i / fs), b = cos(2 * M_PI * f * i / fs), v = y[2 * (start + i) + ch];
+        const double row[4] = {a, b, 1.0, v};
+        for (int r = 0; r < 3; r++) {
+            for (int c = 0; c < 4; c++) {
+                m[r][c] += row[r] * row[c];
+            }
+        }
+    }
+    for (int c = 0; c < 3; c++) {
+        for (int r = c + 1; r < 3; r++) {
+            const double k = m[r][c] / m[c][c];
+            for (int j = c; j < 4; j++) {
+                m[r][j] -= k * m[c][j];
+            }
+        }
+    }
+    double x[3];
+    for (int r = 2; r >= 0; r--) {
+        double v = m[r][3];
+        for (int j = r + 1; j < 3; j++) {
+            v -= m[r][j] * x[j];
+        }
+        x[r] = v / m[r][r];
+    }
+    return sqrt(x[0] * x[0] + x[1] * x[1]);
+}
+
+static double db(double x)
+{
+    return 20.0 * log10(x);
+}
+
+static const char *const k_name[2] = {"linear", "sinc"};
+static int g_qualities;         /* 1: linear only, 2: and sinc */
+
+/* ---- the criteria */
+
+/* 22.05 kHz to 48 kHz: 1, 8 and 9 kHz within 1 dB; 10 kHz at the
+ * converter's transition band (-3.25 dB) */
+static void test_passband_22k(void)
+{
+    static const double tones[] = {1000, 8000, 9000, 9500, 10000};
+    for (int q = 0; q < g_qualities; q++) {
+        fprintf(stderr, "  %-6s 22.05 -> 48 kHz:", k_name[q]);
+        for (size_t k = 0; k < sizeof(tones) / sizeof(tones[0]); k++) {
+            Signal s = tone(22050, tones[k], 0.5, tones[k], 0.5);
+            float *y = convert(q, &s, 48000.0 / 22050, 12000);
+            const double l = db(fit(y, 0, 4000, 7200, tones[k], 48000) / 0.5);
+            const double r = db(fit(y, 1, 4000, 7200, tones[k], 48000) / 0.5);
+            fprintf(stderr, " %5.0f Hz %+6.2f dB", tones[k], l);
+            HT_CHECK(fabs(l - r) < 0.01);
+            if (q == VP_RESAMPLE_SINC) {
+                if (tones[k] <= 9000) {
+                    HT_CHECK(fabs(l) < 1.0);
+                } else if (tones[k] == 10000) {
+                    HT_CHECK(l > -4.0 && l < -2.5);
+                }
+            }
+            free(y);
+        }
+        fprintf(stderr, "\n");
+    }
+}
+
+/* 96 kHz to 48 kHz: a 30 kHz tone's 18 kHz alias 40 dB under the input */
+static void test_alias_96k(void)
+{
+    for (int q = 0; q < g_qualities; q++) {
+        Signal s = tone(96000, 30000, 0.5, 30000, 0.5);
+        float *y = convert(q, &s, 0.5, 12000);
+        const double a = db(fit(y, 0, 4000, 7200, 18000, 48000) / 0.5);
+        fprintf(stderr, "  %-6s 96 -> 48 kHz, 30 kHz in: 18 kHz alias %+7.1f dB\n", k_name[q], a);
+        if (q == VP_RESAMPLE_SINC) {
+            HT_CHECK(a < -40.0);
+        }
+        free(y);
+    }
+}
+
+/* 48 kHz to 24 kHz (a voice pitched up an octave): 5 kHz kept */
+static void test_downsample_passband(void)
+{
+    for (int q = 0; q < g_qualities; q++) {
+        Signal s = tone(48000, 5000, 0.5, 5000, 0.5);
+        float *y = convert(q, &s, 0.5, 12000);
+        const double l = db(fit(y, 0, 4000, 7200, 5000, 24000) / 0.5);
+        fprintf(stderr, "  %-6s 48 -> 24 kHz: 5 kHz %+6.2f dB\n", k_name[q], l);
+        if (q == VP_RESAMPLE_SINC) {
+            HT_CHECK(fabs(l) < 1.0);
+        }
+        free(y);
+    }
+}
+
+/* unity: 1 kHz as it was */
+static void test_unity(void)
+{
+    for (int q = 0; q < g_qualities; q++) {
+        Signal s = tone(48000, 1000, 0.5, 3000, 0.25);
+        float *y = convert(q, &s, 1.0, 12000);
+        const double l = db(fit(y, 0, 4000, 7200, 1000, 48000) / 0.5), r = db(fit(y, 1, 4000, 7200, 3000, 48000) / 0.25);
+        fprintf(stderr, "  %-6s unity: 1 kHz %+6.3f dB, 3 kHz %+6.3f dB\n", k_name[q], l, r);
+        HT_CHECK(fabs(l) < 0.1 && fabs(r) < 0.1);
+        free(y);
+    }
+}
+
+/* a silent channel stays silent beside a loud one; silence stays silence */
+static void test_channels_and_silence(void)
+{
+    for (int q = 0; q < g_qualities; q++) {
+        Signal s = tone(22050, 1000, 0.9, 0, 0.0);
+        float *y = convert(q, &s, 48000.0 / 22050, 6000);
+        unsigned leaked = 0;
+        for (long i = 0; i < 6000; i++) {
+            leaked += y[2 * i + 1] != 0.0f;
+        }
+        free(y);
+        Signal z = tone(22050, 0, 0.0, 0, 0.0);
+        y = convert(q, &z, 48000.0 / 22050, 6000);
+        unsigned noise = 0;
+        for (long i = 0; i < 12000; i++) {
+            noise += y[i] != 0.0f;
+        }
+        free(y);
+        fprintf(stderr, "  %-6s channel leakage: %u samples; silence: %u non-zero\n", k_name[q], leaked, noise);
+        HT_EQ_INT(leaked, 0);
+        HT_EQ_INT(noise, 0);
+    }
+}
+
+/* DC gain, an impulse's delay, a step's overshoot, and how long a sound's
+ * tail rings after its input stops */
+static void test_dc_impulse_step_tail(void)
+{
+    for (int q = 0; q < g_qualities; q++) {
+        const double ratio = 48000.0 / 22050;
+        Signal dc = tone(22050, 0, 0.5, 0, 0.5);
+        float *y = convert(q, &dc, ratio, 6000);
+        double mean = 0;
+        for (long i = 3000; i < 6000; i++) {
+            mean += y[2 * i];
+        }
+        mean /= 3000;
+        free(y);
+        Signal imp = {.kind = IMPULSE, .fs = 22050, .amp = {1.0, 1.0}, .at = 1000, .len = -1};
+        y = convert(q, &imp, ratio, 4000);
+        long peak = 0;
+        for (long i = 1; i < 4000; i++) {
+            peak = fabsf(y[2 * i]) > fabsf(y[2 * peak]) ? i : peak;
+        }
+        free(y);
+        Signal step = {.kind = STEP, .fs = 22050, .amp = {0.5, 0.5}, .at = 1000, .len = -1};
+        y = convert(q, &step, ratio, 4000);
+        double top = 0;
+        for (long i = 0; i < 4000; i++) {
+            top = fmax(top, y[2 * i]);
+        }
+        free(y);
+        Signal fin = tone(22050, 1000, 0.5, 1000, 0.5);
+        fin.len = 2000;                     /* then silence, as a voice that ended */
+        y = convert(q, &fin, ratio, 8000);
+        const long end = (long)ceil(2000 * ratio);
+        long rings = 0;
+        for (long i = end; i < 8000; i++) {
+            if (fabsf(y[2 * i]) > 1e-4f) {
+                rings = i - end + 1;
+            }
+        }
+        free(y);
+        const double delay = peak - 1000 * ratio;
+        fprintf(stderr, "  %-6s DC gain %+7.4f dB, impulse delay %+.1f output frames, step overshoot %.1f %%, "
+                        "tail after the input ends %ld output frames\n",
+                k_name[q], db(mean / 0.5), delay, (top / 0.5 - 1) * 100, rings);
+        HT_CHECK(fabs(db(mean / 0.5)) < 0.1);
+        HT_CHECK(rings < 200);
+        HT_CHECK(top < 0.5 * 1.2);
+    }
+}
+
+/* How far ahead of its output a converter has taken its input: the frames
+ * the callback gave past what the output covers (the decoder, and the
+ * voice's guest-visible position, run that far ahead of what is heard),
+ * the callback's 32-frame granularity included */
+static void test_lookahead(void)
+{
+    static const double ratios[] = {48000.0 / 22050, 1.0, 0.5};
+    for (int q = 0; q < g_qualities; q++) {
+        fprintf(stderr, "  %-6s input taken ahead of the output:", k_name[q]);
+        for (size_t k = 0; k < sizeof(ratios) / sizeof(ratios[0]); k++) {
+            Signal s = tone(22050, 500, 0.5, 500, 0.5);
+            long worst = 0;
+            VpResampler *r = vp_resample_new(feed, q, 2, &s);
+            float y[64];
+            for (long out = 32; out <= 32 * 300; out += 32) {
+                vp_resample_read(r, ratios[k], 32, y);
+                const long ahead = s.n - (long)floor(out / ratios[k]);
+                worst = ahead > worst ? ahead : worst;
+            }
+            vp_resample_delete(r);
+            fprintf(stderr, "  ratio %.3f: up to %ld frames", ratios[k], worst);
+            HT_CHECK(worst <= (q == VP_RESAMPLE_SINC ? 200 : 64));
+        }
+        fprintf(stderr, "\n");
+    }
+}
+
+/* the same output whatever the reads' sizes (1, 31, 32, 33, 256 frames)
+ * as one continuous conversion at the same rate */
+static void test_chunking(void)
+{
+    static const long sizes[] = {1, 31, 32, 33, 256};
+    const long n = 9000;
+    const double ratio = 48000.0 / 22050;
+    for (int q = 0; q < g_qualities; q++) {
+        Signal s0 = tone(22050, 1234, 0.5, 4321, 0.3);
+        float *ref = convert(q, &s0, ratio, n);
+        double worst = 0;
+        for (size_t k = 0; k < sizeof(sizes) / sizeof(sizes[0]); k++) {
+            Signal s = tone(22050, 1234, 0.5, 4321, 0.3);
+            float *y = calloc((size_t)n * 2, sizeof(float));
+            VpResampler *r = vp_resample_new(feed, q, 2, &s);
+            for (long done = 0; done < n;) {
+                const long want = n - done < sizes[k] ? n - done : sizes[k];
+                const long got = vp_resample_read(r, ratio, want, y + 2 * done);
+                HT_CHECK(got == want);
+                done += got > 0 ? got : n;
+            }
+            vp_resample_delete(r);
+            for (long i = 0; i < 2 * n; i++) {
+                worst = fmax(worst, fabs((double)y[i] - ref[i]));
+            }
+            free(y);
+        }
+        free(ref);
+        fprintf(stderr, "  %-6s chunks of 1, 31, 32, 33, 256 vs continuous: largest difference %.3g\n", k_name[q],
+                worst);
+        HT_CHECK(worst <= 1e-6);
+    }
+}
+
+/* the pitch changing every read (1.6 and 2.6 in turn): no NaN, no jump
+ * larger than the tone's own steepest step (with room for the ratio's) */
+static void test_rapid_pitch(void)
+{
+    for (int q = 0; q < g_qualities; q++) {
+        Signal s = tone(22050, 300, 0.5, 300, 0.5);
+        VpResampler *r = vp_resample_new(feed, q, 2, &s);
+        float y[64];
+        float last = 0.0f;
+        double worst = 0;
+        bool finite = true;
+        for (int i = 0; i < 4000; i++) {
+            const double ratio = i % 2 ? 2.6 : 1.6;
+            HT_CHECK(vp_resample_read(r, ratio, 32, y) == 32);
+            for (int k = 0; k < 32; k++) {
+                finite &= isfinite(y[2 * k]) != 0;
+                if (i > 50) {
+                    worst = fmax(worst, fabs((double)y[2 * k] - last));
+                }
+                last = y[2 * k];
+            }
+        }
+        vp_resample_delete(r);
+        const double bound = 0.5 * 2 * M_PI * 300 / 22050 / 1.6;   /* the steepest step at the slower ratio */
+        fprintf(stderr, "  %-6s pitch 1.6 / 2.6 each read: largest step %.4f (the tone's steepest %.4f)\n", k_name[q],
+                worst, bound);
+        HT_CHECK(finite);
+        HT_CHECK(worst < 1.5 * bound);
+    }
+}
+
+/* a voice reused (reset) converts its new sound as a new converter does */
+static void test_reuse(void)
+{
+    for (int q = 0; q < g_qualities; q++) {
+        /* one converter and one callback object, as the VP's voice filter:
+         * a sound, then the voice's next sound in the same object */
+        Signal s = tone(22050, 700, 0.8, 900, 0.8);
+        VpResampler *r = vp_resample_new(feed, q, 2, &s);
+        float junk[64];
+        for (int i = 0; i < 100; i++) {
+            vp_resample_read(r, 1.3, 32, junk);
+        }
+        const Signal next = tone(32000, 2000, 0.4, 2500, 0.2);
+        s = next;
+        vp_resample_reset(r);
+        float y[64 * 50], fresh[64 * 50];
+        for (int i = 0; i < 50; i++) {
+            vp_resample_read(r, 48000.0 / 32000, 32, y + 64 * i);
+        }
+        vp_resample_delete(r);
+        Signal c = next;
+        VpResampler *f = vp_resample_new(feed, q, 2, &c);
+        for (int i = 0; i < 50; i++) {
+            vp_resample_read(f, 48000.0 / 32000, 32, fresh + 64 * i);
+        }
+        vp_resample_delete(f);
+        fprintf(stderr, "  %-6s reset: %s\n", k_name[q], memcmp(y, fresh, sizeof(y)) ? "differs" : "as new");
+        HT_CHECK(memcmp(y, fresh, sizeof(y)) == 0);
+    }
+}
+
+int main(void)
+{
+    g_qualities = vp_resample_sinc_available() ? 2 : 1;
+    if (g_qualities == 1) {
+        fprintf(stderr, "  sinc not in this build (no libsamplerate): linear only\n");
+    }
+    HT_RUN(test_passband_22k);
+    HT_RUN(test_alias_96k);
+    HT_RUN(test_downsample_passband);
+    HT_RUN(test_unity);
+    HT_RUN(test_channels_and_silence);
+    HT_RUN(test_dc_impulse_step_tail);
+    HT_RUN(test_lookahead);
+    HT_RUN(test_chunking);
+    HT_RUN(test_rapid_pitch);
+    HT_RUN(test_reuse);
+    HT_DONE();
+}

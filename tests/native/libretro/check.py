@@ -141,7 +141,8 @@ def main():
                                        'option: hakux_screen_format (Screen Format), default normal',
                                        'option: hakux_language (Language), default auto',
                                        'option: hakux_video_region (Video Region), default auto',
-                                       'option: hakux_rumble (Rumble), default disabled'))
+                                       'option: hakux_rumble (Rumble), default disabled',
+                                       'option: hakux_audio_resampler (Audio Resampler), default sinc'))
     with tempfile.TemporaryDirectory(prefix='hakux-libretro-') as folder:
         root = Path(folder)
         (root / 'saves').mkdir()
@@ -267,6 +268,13 @@ def main():
              '3 peers named', 'lan: started', 'ran 30 frames'),
             dict(os.environ, HARNESS_OPTIONS='hakux_network=lan'))
         peers.unlink()
+        # The audio resampler option reaches the APU before it starts: sinc by
+        # default, linear when chosen
+        run([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'], 0,
+            ('resampler sinc', 'resampler: sinc (libsamplerate SRC_SINC_MEDIUM_QUALITY)', 'ran 30 frames'))
+        run([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'], 0,
+            ('resampler linear', 'resampler: linear', 'ran 30 frames'),
+            dict(os.environ, HARNESS_OPTIONS='hakux_audio_resampler=linear'))
         run([args.harness, args.core, root / 'spin.iso', 60, root / 'saves'], 0,
             ('reset at frame 20', 'reset: the core stopped in', 'ran 60 frames',
              'RetroArch destroyed the context: the core stopped in', 'stop: the front end stopped the console',

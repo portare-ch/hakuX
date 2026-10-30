@@ -15,6 +15,7 @@
 #include "native/libretro/libretro_int.h"
 #include "native/hle/hle_native.h"
 #include "native/kernel/kernel.h"
+#include "native/dev/dev.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,7 +23,7 @@
 
 #define NEXT " Takes effect when the game starts next."
 
-enum { OPT_SCALE, OPT_CROP, OPT_FORMAT, OPT_LANGUAGE, OPT_REGION, OPT_RUMBLE, OPT_NETWORK, OPT_COUNT };
+enum { OPT_SCALE, OPT_CROP, OPT_FORMAT, OPT_LANGUAGE, OPT_REGION, OPT_RUMBLE, OPT_NETWORK, OPT_RESAMPLER, OPT_COUNT };
 
 /* The language values follow XC_LANGUAGE after auto: english is 1. */
 static struct retro_core_option_v2_definition g_defs[OPT_COUNT + 1] = {
@@ -81,6 +82,14 @@ static struct retro_core_option_v2_definition g_defs[OPT_COUNT + 1] = {
         NULL, NULL,
         {{"disabled", "Off (no cable)"}, {"lan", "LAN (system link)"}, {NULL, NULL}},
         "disabled"},
+    [OPT_RESAMPLER] = {
+        "hakux_audio_resampler", "Audio Resampler", NULL,
+        "How the game's sounds are converted to the output's 48 kHz. Sinc, the default, keeps their high "
+        "frequencies and avoids aliasing; Linear, what hakuX used before, is lighter on the sound thread and duller. "
+        "Neither is known to be the Xbox's own." NEXT,
+        NULL, NULL,
+        {{"sinc", "Sinc (higher quality)"}, {"linear", "Linear"}, {NULL, NULL}},
+        "sinc"},
     {NULL},
 };
 
@@ -194,10 +203,12 @@ void nc_lr_options_apply(void)
 
     const bool lan = !strcmp(g_defs[OPT_NETWORK].values[g_applied[OPT_NETWORK]].value, "lan");
     nc_lr_net_apply(lan);
+    const bool sinc = !strcmp(g_defs[OPT_RESAMPLER].values[g_applied[OPT_RESAMPLER]].value, "sinc");
+    nc_dev_apu_set_resampler(sinc);
     nc_log("hakuX-libretro", "options: render scale %dx, overscan %s, screen %s, language %d (%s), video region %s, "
-           "rumble %s, network %s", scale, crop ? "cropped" : "shown", format, language,
+           "rumble %s, network %s, resampler %s", scale, crop ? "cropped" : "shown", format, language,
            g_defs[OPT_LANGUAGE].values[g_applied[OPT_LANGUAGE]].value, region, rumble ? "on" : "off",
-           lan ? "lan" : "off");
+           lan ? "lan" : "off", sinc ? "sinc" : "linear");
 }
 
 void nc_lr_options_run(void)
