@@ -1325,6 +1325,25 @@ static void cpuid(NcFrame *f)
     nc_frame_set_gpr(f, NC_EDX, d);
 }
 
+/* RDMSR / WRMSR (ECX the register, EDX:EAX the value). nxdk's runtime reads
+ * the MTRRs to make its framebuffer write-combined (CPUID reports them).
+ * Nothing here caches, so a write does nothing; a read is a Pentium III's
+ * MTRRCAP (8 variable ranges, fixed ones, write-combining), else 0. */
+static void msr(NcFrame *f, bool wr)
+{
+    const uint32_t m = nc_frame_gpr(f, NC_ECX);
+    static unsigned s_logged;
+    if (s_logged < 16) {
+        s_logged++;
+        nc_log("hakuX-native", "cpu: %s %08x (%08x:%08x)%s", wr ? "wrmsr" : "rdmsr", m,
+               nc_frame_gpr(f, NC_EDX), nc_frame_gpr(f, NC_EAX), s_logged == 16 ? " (first 16 logged)" : "");
+    }
+    if (!wr) {
+        nc_frame_set_gpr(f, NC_EAX, m == 0xFE ? 0x508u : 0);
+        nc_frame_set_gpr(f, NC_EDX, 0);
+    }
+}
+
 /* IN/OUT: E4/E5/E6/E7 imm8, EC/ED/EE/EF DX; a 66 prefix makes the
  * doubleword forms 16-bit. */
 static void port_io(NcFrame *f, const uint8_t *insn, unsigned size, bool out)
@@ -1633,6 +1652,11 @@ static bool sysop(void *opaque, NcFrame *f, enum NcSysOp op, unsigned size)
     case NC_SYSOP_IN:
     case NC_SYSOP_OUT:
         port_io(f, insn, size, op == NC_SYSOP_OUT);
+        nc_frame_set_eip(f, eip + size);
+        break;
+    case NC_SYSOP_RDMSR:
+    case NC_SYSOP_WRMSR:
+        msr(f, op == NC_SYSOP_WRMSR);
         nc_frame_set_eip(f, eip + size);
         break;
     case NC_SYSOP_WBINVD:
