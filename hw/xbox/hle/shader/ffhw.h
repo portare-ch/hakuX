@@ -66,21 +66,23 @@ enum {
     HLE_FFHW_C_EYE = 70,                /* SET_EYE_POSITION */
     HLE_FFHW_C_AMBIENT = 71,            /* SET_SCENE_AMBIENT_COLOR, SET_MATERIAL_ALPHA */
     HLE_FFHW_C_EMISSION = 72,           /* SET_MATERIAL_EMISSION */
-    HLE_FFHW_C_PARAMS = 73,             /* specular power (front, back), point size */
+    HLE_FFHW_C_PARAMS = 73,             /* (z) point size */
     HLE_FFHW_C_POINT = 74,              /* SET_POINT_PARAMS (8) */
     HLE_FFHW_C_LIGHTS = 76,             /* per light HLE_FFHW_LIGHT_VEC4: */
     HLE_FFHW_C_BACK_AMBIENT = 156,      /* SET_BACK_SCENE_AMBIENT_COLOR, SET_BACK_MATERIAL_ALPHA */
     HLE_FFHW_C_BACK_EMISSION = 157,     /* SET_BACK_MATERIAL_EMISSION */
     HLE_FFHW_C_BACK_LIGHTS = 158,       /* per light three: SET_BACK_LIGHT_AMBIENT_COLOR,
                                            _DIFFUSE_COLOR, _SPECULAR_COLOR */
-    HLE_FFHW_COUNT = 182,
+    HLE_FFHW_C_SPECULAR = 182,          /* SET_SPECULAR_PARAMS 0..2: the curve's L, M, N */
+    HLE_FFHW_C_BACK_SPECULAR = 183,     /* SET_SPECULAR_PARAMS_BACK 0..2 */
+    HLE_FFHW_COUNT = 184,
 };
 enum {
     HLE_FFHW_L_AMBIENT, HLE_FFHW_L_DIFFUSE, HLE_FFHW_L_SPECULAR,
     HLE_FFHW_L_RANGE,                   /* SET_LIGHT_LOCAL_RANGE (x) */
     HLE_FFHW_L_HALF,                    /* SET_LIGHT_INFINITE_HALF_VECTOR */
     HLE_FFHW_L_DIRECTION,               /* SET_LIGHT_INFINITE_DIRECTION */
-    HLE_FFHW_L_FALLOFF,                 /* SET_LIGHT_SPOT_FALLOFF */
+    HLE_FFHW_L_FALLOFF,                 /* SET_LIGHT_SPOT_FALLOFF: the curve's L, M, N */
     HLE_FFHW_L_SPOT,                    /* SET_LIGHT_SPOT_DIRECTION */
     HLE_FFHW_L_POSITION,                /* SET_LIGHT_LOCAL_POSITION */
     HLE_FFHW_L_ATTENUATION,             /* SET_LIGHT_LOCAL_ATTENUATION */
@@ -97,9 +99,5 @@ static inline int hle_ffhw_is(const uint32_t *tokens, unsigned nslots)
 {
     return tokens && nslots >= HLE_FFHW_SLOTS && tokens[0] == HLE_FFHW_MAGIC;
 }
-
-/* The specular exponent SET_SPECULAR_PARAMS's six coefficients stand for
- * (D3D derives them from the material's power). */
-float hle_ffhw_specular_power(const float p[6]);
 
 #endif

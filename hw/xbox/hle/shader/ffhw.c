@@ -11,7 +11,9 @@
  *   scene ambient (with the emission) and material emission registers
  *   reused for the vertex-colour sources;
  * - the composite matrix includes the viewport scale: x, y, z / w plus the
- *   viewport offset is the screen-space position a program leaves.
+ *   viewport offset is the screen-space position a program leaves;
+ * - the specular and spot terms are the lighting unit's curve, not powers
+ *   (NVC below).
  */
 #include <stdarg.h>
 #include <stdbool.h>
@@ -45,6 +47,20 @@ static const char *src_rgb(unsigned s)
 {
     return s == 1 ? "v3.rgb" : s == 2 ? "v4.rgb" : "vec3(1.0)";
 }
+
+/* The lighting unit's curve (NVIDIA's patent US6417851: "(x+L)/(M*x+N)",
+ * approximating the specular term's (N.H)^power and the spot's s^falloff):
+ * k holds the methods' L, M, N as D3D derives them from the material's power
+ * or the light's falloff (a table over log2 of it, reverse-engineered in
+ * xgu's xgux.h; N = 1 + L - M, so 1 at x = 1). 0 for x <= -L, where the
+ * fraction would go negative; capped at top. xemu evaluates it so, compared
+ * with the hardware's nxdk_pgraph_tests results (its PRs 3076 and 3078:
+ * Specular, Lighting spotlight); what a denominator of 0 or below gives (top,
+ * 0) is its guess. The specular term takes the first three of
+ * SET_SPECULAR_PARAMS's six; the other three (the half power's) have no
+ * known use. */
+#define NVC_DEFINE "#define NVC(d, k, top) ((d) <= -(k).x ? 0.0 : (k).y * (d) + (k).z == 0.0 ? (top) : " \
+                   "(k).y * (d) + (k).z < 0.0 ? 0.0 : min(((d) + (k).x) / ((k).y * (d) + (k).z), (top)))\n"
 
 static void skinning(Buf *b, const HleFfhwKey *k)
 {
@@ -182,28 +198,28 @@ static void lighting(Buf *b, const HleFfhwKey *k)
                    "      nh = max(dot(tN, normalize(VP + eyeV)), 0.0);\n",
                 L + HLE_FFHW_L_POSITION, L + HLE_FFHW_L_RANGE, L + HLE_FFHW_L_ATTENUATION);
             if (t == 3) {
-                /* D3D's spot: the direction scaled by 1 / (cos(theta/2) -
-                 * cos(phi/2)), w = -cos(phi/2) times that: rho past the
-                 * outer cone 0, inside the inner one 1, between linear */
-                put(b, "      vec4 sd = c[%u];\n"
-                       "      float inv = 1.0 / length(sd.xyz), cphi = -inv * sd.w;\n"
-                       "      float sdv = dot(sd.xyz, VP), rho = inv * sdv;\n"
-                       "      if (rho <= cphi) att = 0.0;\n"
-                       "      else if (rho <= inv + cphi) att *= sdv + sd.w;\n",
-                    L + HLE_FFHW_L_SPOT);
+                /* the spot factor s: D3D's direction scaled by 1 / (cos(theta/2)
+                 * - cos(phi/2)), w -cos(phi/2) times that, makes s 0 at the
+                 * outer cone and 1 at the inner one; between them the falloff
+                 * curve, not s itself (falloff 1, D3D's default, is 0.4 at s =
+                 * 0.5) */
+                put(b, "      float s = dot(c[%u].xyz, VP) + c[%u].w;\n"
+                       "      if (s <= 0.0) att = 0.0;\n"
+                       "      else if (s < 1.0) att *= NVC(s, c[%u], 1.0);\n",
+                    L + HLE_FFHW_L_SPOT, L + HLE_FFHW_L_SPOT, L + HLE_FFHW_L_FALLOFF);
             }
         }
         put(b, "      if (lit) {\n"
-               "        float pf = nl == 0.0 || nh == 0.0 ? 0.0 : pow(nh, c[%u].x);\n"
+               "        float pf = nl > 0.0 ? NVC(nh, c[%u], 10000.0) : 0.0;\n"
                "        oD0.rgb += c[%u].rgb * att;\n"
                "        oD0.rgb += %s * c[%u].rgb * (att * nl);\n"
                "        oD1.rgb += %s * c[%u].rgb * (att * pf);\n"
                "      }\n",
-            HLE_FFHW_C_PARAMS, L + HLE_FFHW_L_AMBIENT, src_rgb(k->src[2]), L + HLE_FFHW_L_DIFFUSE,
+            HLE_FFHW_C_SPECULAR, L + HLE_FFHW_L_AMBIENT, src_rgb(k->src[2]), L + HLE_FFHW_L_DIFFUSE,
             src_rgb(k->src[3]), L + HLE_FFHW_L_SPECULAR);
         if (k->two_side) {
             /* the back faces: the same light along -N, the back light colours
-             * and the back specular power */
+             * and the back specular curve */
             const unsigned BL = HLE_FFHW_C_BACK_LIGHTS + 3 * i;
             char h[48];
             if (t != 1 || k->local_eye) {
@@ -213,12 +229,12 @@ static void lighting(Buf *b, const HleFfhwKey *k)
             }
             put(b, "      if (lit) {\n"
                    "        float bl = max(dot(-tN, %s), 0.0), bh = max(dot(-tN, %s), 0.0);\n"
-                   "        float bf = bl == 0.0 || bh == 0.0 ? 0.0 : pow(bh, c[%u].y);\n"
+                   "        float bf = bl > 0.0 ? NVC(bh, c[%u], 10000.0) : 0.0;\n"
                    "        oB0.rgb += c[%u].rgb * att;\n"
                    "        oB0.rgb += %s * c[%u].rgb * (att * bl);\n"
                    "        oB1.rgb += %s * c[%u].rgb * (att * bf);\n"
                    "      }\n",
-                t == 1 ? "Ld" : "VP", h, HLE_FFHW_C_PARAMS, BL, src_rgb(k->bsrc[2]), BL + 1,
+                t == 1 ? "Ld" : "VP", h, HLE_FFHW_C_BACK_SPECULAR, BL, src_rgb(k->bsrc[2]), BL + 1,
                 src_rgb(k->bsrc[3]), BL + 2);
         }
         put(b, "    }\n");
@@ -237,6 +253,7 @@ size_t hle_ffhw_glsl(const uint32_t *tokens, unsigned nslots, const HleVshKey *v
     Buf b = { body, sizeof(body), 0, false };
     put(&b, "#define XF(v, b) vec4(dot((v), c[(b)]), dot((v), c[(b) + 1]), "
             "dot((v), c[(b) + 2]), dot((v), c[(b) + 3]))\n"
+            NVC_DEFINE
             "  {\n"
             "    vec4 pos = v0, n4 = vec4(v2.xyz, 0.0), tPos;\n"
             "    vec3 tN;\n");
@@ -305,68 +322,11 @@ size_t hle_ffhw_glsl(const uint32_t *tokens, unsigned nslots, const HleVshKey *v
             "    float sw = sp.w < 0.0 ? -aw : aw;\n"
             "    oPos = vec4(sp.xyz / sw + c[%u].xyz, sw);\n"
             "  }\n"
-            "#undef XF\n",
+            "#undef XF\n"
+            "#undef NVC\n",
         k.skin ? "tPos" : "pos", HLE_FFHW_C_COMPOSITE, HLE_FFHW_C_VPOFF);
     if (b.overflow) {
         return 0;
     }
     return hle_vsh_glsl_wrap(vk, body, k.fog != 0, buf, cap);
-}
-
-/* ---- the specular exponent ---- */
-
-/* D3D turns the material's power into six coefficients of the hardware's
- * specular curve; the exponent comes back from the first (and the fourth,
- * the half power's) by piecewise fits over the powers D3D produces (the
- * curve fit of the hardware tests, LLE's pgraph_kelvin_map.c, read as
- * reference). */
-static float fit(float c0, unsigned i)
-{
-    static const struct { double a, b, c; uint8_t ratio; } k_fit[9] = {
-        { 1.000108475163, -9.838607076280, 54.829089549713, 0 },
-        { 1.199164441703, -3.292603784852, 7.799987995214, 0 },
-        { 8.653441252033, 29.189473787191, 43.586027561823, 0 },
-        { -531.307758450301, 117.398468683934, 113.155490738338, 1 },
-        { -4.662713151292, 1.221108944572, 1.217360986939, 1 },
-        { -124.435242105211, 35.401219563514, 35.408114377045, 1 },
-        { 10672560.259502287954, 21565843.555823743343, 10894794.336297152564, 0 },
-        { -51973801.463933646679, -104199997.554352939129, -52225454.356278456748, 0 },
-        { 972270.324080004124, 2025882.096547174733, 1054898.052467488218, 0 },
-    };
-    const double x = c0;
-    return (float)(k_fit[i].ratio ? k_fit[i].a * x / (k_fit[i].b + k_fit[i].c * x)
-                                  : k_fit[i].a + k_fit[i].b * x + k_fit[i].c * x * x);
-}
-
-static float power_of(float c0)
-{
-    /* where each fit starts: the coefficient at powers 1.25, 4, 9, 20, 90,
-     * 375, 650, 1000, 1250 */
-    static const float k_step[9] = {
-        -0.022553957999f, -0.421539008617f, -0.678715527058f, -0.838916420937f,
-        -0.961754500866f, -0.990773200989f, -0.994858562946f, -0.996561050415f,
-        -0.999547004700f,
-    };
-    for (unsigned i = 0; i < 9; i++) {
-        if (c0 > k_step[i]) {
-            return fit(c0, i);
-        }
-    }
-    return 0.0f;
-}
-
-float hle_ffhw_specular_power(const float p[6])
-{
-    if (p[1] > 0.0f && p[2] < 1.0f) {
-        return p[2] - 2.0f * p[0];      /* powers below 1 */
-    }
-    if (p[0] > 0.0f || p[3] > 0.0f) {
-        return 0.0001f;                 /* not D3D's */
-    }
-    const float pw = power_of(p[0]), half = power_of(p[3]);
-    /* past 1250 the half power's coefficients carry it */
-    if (pw == 0.0f || (half > pw && p[0] < -0.1f)) {
-        return 2.0f * half;
-    }
-    return pw;
 }
