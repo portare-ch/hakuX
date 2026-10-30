@@ -137,6 +137,7 @@ before the console boots, so a change takes effect when the game starts next:
 | `hakux_video_region` | `auto` (the game's region), `ntsc-m`, `ntsc-j`, `pal` | `auto` |
 | `hakux_rumble` | `disabled`, `enabled` (the game's vibration to the controllers' motors); changes at once | `disabled` |
 | `hakux_network` | `disabled` (no cable), `lan` (system link with the consoles on the local network) | `disabled` |
+| `hakux_audio_resampler` | `sinc` (band-limited, a 32-tap windowed sinc through NEON: keeps high frequencies, no aliasing; a core that isn't 64-bit ARM uses `linear`), `linear` (lighter, duller: what hakuX used before) | `sinc` |
 
 With `lan` (upstream's LAN backend, `native/net/lan.c`) the console's
 Ethernet frames travel as UDP datagrams on port 3075, broadcast on the

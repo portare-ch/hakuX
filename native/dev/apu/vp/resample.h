@@ -1,24 +1,49 @@
 /*
- * hakuX native core — the voices' resampler (resample.c, linear with NEON):
- * libsamplerate's callback API, the subset the VP uses.
+ * hakuX native core — the voices' resamplers: libsamplerate's callback API
+ * shape under the core's own names, in two qualities:
+ * - band-limited sinc, the default: a 32-tap Kaiser-windowed sinc through
+ *   NEON (resample_sinc.c), on AArch64; elsewhere linear. A quality
+ *   setting, not a claim about the Xbox's undocumented interpolation;
+ * - linear (resample.c, NEON): what the core had before, lighter.
+ * A resampler pulls its input from the callback, 32 frames at a time, and
+ * keeps its phase, history and rate across reads; vp_resample_reset clears
+ * them (a voice's new sound). The sinc converter reads its filter's half
+ * length ahead of what it emits (16 frames, up to 129 for a voice pitched
+ * past 48 kHz).
  */
 #ifndef NATIVE_DEV_APU_VP_RESAMPLE_H
 #define NATIVE_DEV_APU_VP_RESAMPLE_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
-typedef struct SRC_STATE SRC_STATE;
-typedef long (*src_callback_t)(void *cb_data, float **data);
+typedef struct VpResampler VpResampler;
+typedef long (*vp_resample_cb)(void *cb_data, float **data);
 
-enum {
-    SRC_SINC_FASTEST = 0,
-};
+enum { VP_RESAMPLE_LINEAR = 0, VP_RESAMPLE_SINC = 1 };
 
-SRC_STATE *src_callback_new(src_callback_t cb, int converter_type, int channels, int *error, void *cb_data);
-long src_callback_read(SRC_STATE *state, double ratio, long frames, float *data);
-int src_reset(SRC_STATE *state);
-SRC_STATE *src_delete(SRC_STATE *state);    /* NULL */
-const char *src_strerror(int error);
-void src_float_to_short_array(const float *in, short *out, int len);
+/* The sinc converter is in this build (AArch64) */
+bool vp_resample_sinc_available(void);
+const char *vp_resample_name(int quality);
+
+/* A resampler of the quality (linear where sinc isn't built in) for
+ * channels channels, its input from cb; NULL when out of memory */
+VpResampler *vp_resample_new(vp_resample_cb cb, int quality, int channels, void *cb_data);
+/* Up to frames output frames at ratio (output rate / input rate) into
+ * data; fewer only when the input has ended. Any positive ratio: the VP's
+ * pitch with its envelope spans 1/512 .. 512 (NaN, 0 or less: 1) */
+long vp_resample_read(VpResampler *r, double ratio, long frames, float *data);
+/* The input frames the callback gave that the output hasn't reached yet,
+ * and how far before its position an output still reads the input: a
+ * sound whose input ended is fully played once its silence after the end
+ * exceeds ahead + reach (vp.c voice_process) */
+double vp_resample_ahead(const VpResampler *r);
+double vp_resample_reach(const VpResampler *r);
+void vp_resample_reset(VpResampler *r);
+VpResampler *vp_resample_delete(VpResampler *r);    /* NULL */
+int vp_resample_quality(const VpResampler *r);
+
+/* float samples to 16-bit, clipped to [-1, 1], truncated (the monitor's) */
+void vp_float_to_short_array(const float *in, short *out, int len);
 
 #endif

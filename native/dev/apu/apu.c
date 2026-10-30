@@ -44,6 +44,7 @@ ApuConfig g_apu_config = {
     .hrtf = true,
     .volume_limit = 1.0f,
     .num_workers = 0,
+    .resampler = VP_RESAMPLE_SINC,      /* linear where the build isn't AArch64 (vp/resample_sinc.h) */
 };
 
 /* ------------------------------------------------------------ platform */
@@ -656,9 +657,14 @@ static void *mcpx_apu_frame_thread(void *arg)
  * EP frames to completion, NC_APU_HRTF=0 turns the 3D voices' filters off,
  * NC_APU_WORKERS=n sets the voice workers (0: by the CPU count),
  * NC_APU_TRAP_PARK=1 stops the frames while the FE is trapped, as they did
- * before (an A/B switch). */
+ * before (an A/B switch), NC_APU_RESAMPLER=linear|sinc overrides the
+ * resampler the core option chose (nc_dev_apu_set_resampler). */
 static void config_init(void)
 {
+    const char *rs = getenv("NC_APU_RESAMPLER");
+    if (rs && (!strcmp(rs, "sinc") || !strcmp(rs, "linear"))) {
+        g_apu_config.resampler = !strcmp(rs, "sinc") ? VP_RESAMPLE_SINC : VP_RESAMPLE_LINEAR;
+    }
     g_apu_config.use_dsp = getenv_int_clamped("NC_APU_DSP", 0, 1, g_apu_config.use_dsp);
     g_apu_config.hrtf = getenv_int_clamped("NC_APU_HRTF", 0, 1, g_apu_config.hrtf);
     g_apu_config.num_workers = getenv_int_clamped("NC_APU_WORKERS", 0, 64, g_apu_config.num_workers);
@@ -711,6 +717,11 @@ static void *apu_trace_thread(void *arg)
         }
     }
     return NULL;
+}
+
+void nc_dev_apu_set_resampler(bool sinc)
+{
+    g_apu_config.resampler = sinc ? VP_RESAMPLE_SINC : VP_RESAMPLE_LINEAR;
 }
 
 void nc_dev_apu_init(NcVm *vm)

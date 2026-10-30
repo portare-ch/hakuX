@@ -7,6 +7,7 @@
 #endif
 
 #include "resample.h"
+#include "resample_sinc.h"
 
 /*
  * Linear-interpolation resampler stub used in place of libsamplerate.
@@ -27,8 +28,10 @@
 #define STUB_MAX_CHANNELS 2
 #define STUB_BUFFER_FRAMES 128
 
-struct SRC_STATE {
-    src_callback_t cb;
+struct VpResampler {
+    int quality;       /* VP_RESAMPLE_*: the linear fields below, or sinc */
+    void *sinc;        /* resample_sinc.c's converter, a VpSinc (sinc) */
+    vp_resample_cb cb;
     void *cb_data;
     int channels;
 
@@ -40,24 +43,13 @@ struct SRC_STATE {
     float input_pos;   /* fractional read cursor in frames; >=0, < input_len */
 };
 
-SRC_STATE *src_callback_new(src_callback_t cb, int converter_type, int channels,
-                            int *error, void *cb_data)
+static VpResampler *linear_new(vp_resample_cb cb, int channels, void *cb_data)
 {
-    (void)converter_type;
-    if (error) {
-        *error = 0;
-    }
     if (channels < 1 || channels > STUB_MAX_CHANNELS) {
-        if (error) {
-            *error = -1;
-        }
         return NULL;
     }
-    SRC_STATE *state = (SRC_STATE *)calloc(1, sizeof(*state));
+    VpResampler *state = (VpResampler *)calloc(1, sizeof(*state));
     if (!state) {
-        if (error) {
-            *error = -1;
-        }
         return NULL;
     }
     state->cb = cb;
@@ -75,7 +67,7 @@ SRC_STATE *src_callback_new(src_callback_t cb, int converter_type, int channels,
  * Returns 1 if the buffer now has at least 2 frames (the minimum
  * needed to produce a single interpolated output), 0 otherwise.
  */
-static int src_refill_input(SRC_STATE *state)
+static int src_refill_input(VpResampler *state)
 {
     int ch = state->channels;
 
@@ -134,16 +126,8 @@ static int src_refill_input(SRC_STATE *state)
     return state->input_len >= 2;
 }
 
-long src_callback_read(SRC_STATE *state, double ratio, long frames, float *data)
+static long linear_read(VpResampler *state, double ratio, long frames, float *data)
 {
-    if (!state || !state->cb || !data || frames <= 0) {
-        return 0;
-    }
-
-    if (ratio <= 0.0) {
-        ratio = 1.0;
-    }
-
     int ch = state->channels;
     float step = (float)(1.0 / ratio);
     long out_frames = 0;
@@ -247,28 +231,108 @@ long src_callback_read(SRC_STATE *state, double ratio, long frames, float *data)
     return out_frames;
 }
 
-int src_reset(SRC_STATE *state)
+/* ---- the qualities (resample.h) */
+
+bool vp_resample_sinc_available(void)
 {
-    if (state) {
-        state->input_len = 0;
-        state->input_pos = 0.0f;
-    }
-    return 0;
+#ifdef VP_HAVE_SINC
+    return true;
+#else
+    return false;
+#endif
 }
 
-SRC_STATE *src_delete(SRC_STATE *state)
+const char *vp_resample_name(int quality)
 {
-    free(state);
+    return quality == VP_RESAMPLE_SINC ? "sinc (32-tap Kaiser-windowed, NEON)" : "linear";
+}
+
+VpResampler *vp_resample_new(vp_resample_cb cb, int quality, int channels, void *cb_data)
+{
+    VpResampler *r = linear_new(cb, channels, cb_data);
+#ifdef VP_HAVE_SINC
+    if (r && quality == VP_RESAMPLE_SINC) {
+        r->sinc = vp_sinc_new(channels);
+        if (!r->sinc) {
+            free(r);
+            return NULL;
+        }
+        r->quality = VP_RESAMPLE_SINC;
+    }
+#else
+    (void)quality;
+#endif
+    return r;
+}
+
+long vp_resample_read(VpResampler *r, double ratio, long frames, float *data)
+{
+    if (!r || !r->cb || !data || frames <= 0) {
+        return 0;
+    }
+    if (!(ratio > 0.0) || !isfinite(ratio)) {
+        ratio = 1.0;
+    }
+#ifdef VP_HAVE_SINC
+    if (r->sinc) {
+        return vp_sinc_read(r->sinc, r->cb, r->cb_data, ratio, frames, data);
+    }
+#endif
+    return linear_read(r, ratio, frames, data);
+}
+
+double vp_resample_ahead(const VpResampler *r)
+{
+#ifdef VP_HAVE_SINC
+    if (r->sinc) {
+        return vp_sinc_ahead(r->sinc);
+    }
+#endif
+    return r->input_len - r->input_pos;
+}
+
+/* linear reads the frame at its position and the next */
+double vp_resample_reach(const VpResampler *r)
+{
+#ifdef VP_HAVE_SINC
+    if (r->sinc) {
+        return vp_sinc_reach(r->sinc);
+    }
+#endif
+    return 0.0;
+}
+
+void vp_resample_reset(VpResampler *r)
+{
+    if (!r) {
+        return;
+    }
+#ifdef VP_HAVE_SINC
+    if (r->sinc) {
+        vp_sinc_reset(r->sinc);
+    }
+#endif
+    r->input_len = 0;
+    r->input_pos = 0.0f;
+}
+
+VpResampler *vp_resample_delete(VpResampler *r)
+{
+#ifdef VP_HAVE_SINC
+    if (r && r->sinc) {
+        vp_sinc_delete(r->sinc);
+    }
+#endif
+    free(r);
     return NULL;
 }
 
-const char *src_strerror(int error)
+int vp_resample_quality(const VpResampler *r)
 {
-    (void)error;
-    return "libsamplerate stub";
+    return r ? r->quality : VP_RESAMPLE_LINEAR;
 }
 
-void src_float_to_short_array(const float *in, short *out, int len)
+void vp_float_to_short_array(const float *in, short *out, int len)
 {
     if (!in || !out || len <= 0) {
         return;

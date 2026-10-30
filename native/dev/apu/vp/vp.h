@@ -39,17 +39,23 @@ typedef struct MCPXAPUVPSSLData {
 typedef struct MCPXAPUVoiceFilter {
     uint16_t voice;
     float resample_buf[NUM_SAMPLES_PER_FRAME * 2];
-    SRC_STATE *resampler;
+    VpResampler *resampler;     /* made at its first VOICE_ON, the APU's resample_quality */
+    /* Its sound's data at an end (a buffer that doesn't loop, a stream's
+     * last segment): the voice plays on, the callback giving the resampler
+     * silence (silence_fed frames since), until the output has passed the
+     * last sample; voice_process turns it off then. Cleared at VOICE_ON. */
+    bool ending;
+    uint32_t silence_fed;
     sv_filter svf[2];
     HrtfFilter hrtf;
-    /* The voice table for voice_resample_callback (libsamplerate's callback
+    /* The voice table for voice_resample_callback (the resampler's callback
      * signature cannot be extended). Set by voice_resample before
-     * src_callback_read; valid only for the duration of that synchronous
+     * vp_resample_read; valid only for the duration of that synchronous
      * call. */
     uint8_t *cb_voice_cache;
     /* HAKUX_AUDIO_SKIP_MUTED plumbing. Declared unconditionally to avoid ABI
      * churn (2 bytes/voice); only read/written when the flag is enabled.
-     * cb_skip_decode: set by voice_resample before src_callback_read, consumed
+     * cb_skip_decode: set by voice_resample before vp_resample_read, consumed
      *   inside voice_resample_callback -> voice_get_samples to null the per-
      *   sample decode for a muted voice. Same synchronous-call lifetime
      *   contract as cb_voice_cache above (a refactor caching it across calls
@@ -99,6 +105,7 @@ typedef struct VoiceWorkDispatch {
 typedef struct {
     VoiceWorkDispatch voice_work_dispatch;
     MCPXAPUVoiceFilter filters[MCPX_HW_MAX_VOICES];
+    int resample_quality;       /* the voices' resamplers', for the session (mcpx_apu_vp_init) */
 
     // FIXME: Where are these stored?
     int ssl_base_page;

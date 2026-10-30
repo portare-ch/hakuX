@@ -43,6 +43,9 @@ void nc_dev_misc_init(void);
 /* The MCPX APU (0xFE800000, IRQ 5) over guest RAM (native/dev/apu). */
 struct NcVm;
 void nc_dev_apu_init(struct NcVm *vm);
+/* The voices' resampler for the next init: band-limited sinc, else linear
+ * (vp/resample.h; NC_APU_RESAMPLER overrides it) */
+void nc_dev_apu_set_resampler(bool sinc);
 /* The frame thread, the voice workers and the output stopped and joined;
  * then the APU's state and DSPs freed, for another init. */
 void nc_dev_apu_stop(void);

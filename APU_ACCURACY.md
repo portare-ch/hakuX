@@ -3,7 +3,7 @@
 A source audit of the audio emulation (`native/dev/apu/`, the MCPX APU, and
 `native/dev/aci.c`, its AC'97 controller), made on 2026-10-30 at commit
 `be0ff4cd64` and updated with the first stereo batch (branch
-`apu-stereo-first-run`). It reads the code against what is known of the
+`apu-stereo-first-run`) and the resampler (branch `apu-resample-sinc`). It reads the code against what is known of the
 Xbox's audio; no row has been compared with an Xbox recording, so "Xbox"
 below is the documented or inferred behaviour, not a measurement. Line
 numbers refer to `be0ff4cd64`; paths are under `native/dev/apu/` unless
@@ -27,7 +27,7 @@ and off-centre); none has been isolated in those games.
 | 1 | **Default mix: panning** | The GP program mixes the VP's mix bins to the output; DirectSound's ordinary 2D sounds go to the front-left and front-right bins (0 and 1) by their sends. | Ordinary 2D stereo is mixed by its sends: a 2D voice outside the multipass groups whose audible sends all go to bin 0 or 1 adds each send's `ea x attenuation / 2^headroom` to its own speaker (`vp/stereo_route.h`). Every other voice keeps the monitor's mix: its loudest send's gain on both channels (`vp/vp.c:2029`). | Ordinary 2D sounds keep their left/right placement. 3D voices, effect sends, centre / rear / LFE and multipass groups are still unpanned. | A downmix policy for centre, rear and LFE (weights, bass management, no double counting), then 3D routing (row 3). | Partly done (first batch) |
 | 2 | **Headroom** | DirectSound gives mix bins a headroom shift (2^n down); what the guest's GP program does with it afterwards is not established for every program. | Kept: the default mix divides by each bin's 2^n (`vp/vp.c:2055`, and `vp/stereo_route.h`), with nothing restoring it. | Sounds on bins with headroom are 6, 12 or 18 dB quieter than without it; whether they are on an Xbox is the open question. | A defined DSP mix reference (an image or measurements mapping bins to final stereo gain) before compensating. Not a universal gain fix: removing it changes levels and clipping. | Open (needs evidence) |
 | 3 | **3D audio (HRTF)** | A 31-tap HRTF filter and an interaural delay per 3D voice into the HRTF submixes; the guest's GP program processes those for the speakers. | The filter is implemented (`vp/hrtf.h`, `vp/vp.c:1989`); its output goes to the monitor's unpanned mix by default. A reused voice now starts its filter from silence (`hrtf_filter_clear_history` at `VOICE_ON`; before, its previous sound's tail played into the new one). Per-ear coefficient normalization and the parameter smoothing are approximations (`vp/hrtf.h:68`, `:93`). On the mix-bin path a mono voice's right-ear output is lost (`mix_one_bin` takes channel `slot % 1`). | A headphone-style image on speakers, unpanned. Folding the ears together is not a fix (it cancels and loses the ear difference); `NC_APU_HRTF=0` is a diagnostic. | Coefficient scale, ear-to-submix mapping for mono voices, speaker processing: each needs reference coefficients or vectors. | History done (first batch); rest open |
-| 4 | **Resampling** (pitch) | The VP converts every voice to 48 kHz; its interpolation isn't documented. | Linear interpolation, a fast replacement for xemu's libsamplerate (`vp/resample.c:12`). A host probe of it gave -0.06 dB at 1 kHz, -3.9 dB at 8 kHz and -6.3 dB at 10 kHz for 22.05 kHz input; it doesn't antialias when downsampling. | High frequencies dulled; aliasing on downsampled voices. | A band-limited (sinc) converter as a quality option (libsamplerate's `SRC_SINC_FASTEST`), linear kept as the default at first, with quantitative tests. Not a claim about the Xbox's interpolation; cubic alone doesn't antialias. | Planned (second run) |
+| 4 | **Resampling** (pitch) | The VP converts every voice to 48 kHz; its interpolation isn't documented. | By default a band-limited sinc: 32 Kaiser-windowed taps through NEON, its cutoff at the input's Nyquist, stretched to the output's for a voice pitched past 48 kHz (`vp/resample_sinc.c`; AArch64, elsewhere linear). Linear interpolation, what the core had before, as the `hakux_audio_resampler` option (`vp/resample.c`). Host measurements for 22.05 kHz input: sinc 0.00 dB at 1, 8 and 9 kHz, -0.17 dB at 10 kHz; linear -0.06, -3.94 and -6.34 dB. A 30 kHz tone from 96 kHz input: sinc -126 dB, linear unattenuated. | Sinc: none known. Its filter reads 16 input frames ahead (up to 132 for a voice pitched past 48 kHz), so a voice's guest-visible position leads what is heard by 32 frames, as with linear. A sound is heard to its last sample with either: its voice goes off, and the guest's end notification comes, once the output has passed it (a frame or so after the decoder reached the end). Linear: high frequencies dulled, downsampled voices alias. | Not a claim about the Xbox's interpolation. On the Nova a sinc voice costs 0.37 us a frame on the X3, 0.75 on an A715 and 2.3 on an A510 (linear 0.07, 0.09 and 0.51); about 4 times that for a voice pitched an octave past 48 kHz. | Done (second run) |
 | 5 | **GP DSP** (effects, mixing) | A 160 MHz DSP56300 runs DirectSound's image: I3DL2 reverb, crosstalk, the mix. | Execution: xemu's interpreter, 1000 cycles a frame by default (`dsp/gp_ep.c:499`), up to a hardware frame's worth while a CPU thread waits on it (`GP_FRAME_CYCLES`, `dsp/gp_ep.c:462`), to completion with `NC_APU_DSP=1`. Output: its result is used only with `NC_APU_DSP=1` (and no EP). DMA details are unknown (FIXMEs in `dsp/dsp_dma.c`). | No reverb or environment effects in the default output. The full-DSP path is an experimental reference candidate, not a correctness oracle: it has its own interpreter, DMA, routing and timing uncertainties. | Bounded execution and fault handling, guest-program fixtures, and Nova performance data before any default change. | Open |
 | 6 | **EP DSP** (outputs) | Encodes Dolby Digital for S/PDIF and feeds the analog output. | Execution: an enabled EP runs 1000 cycles every 8th frame by default, to completion with `NC_APU_DSP=1`; it is not exclusive to that switch. Output: its FIFO 0 is the output only with `NC_APU_DSP=1`. | None in the default output. | With row 5. | Open |
 | 7 | **Libretro output** | - | The consumer now removes from its ring only the frames RetroArch's batch callback accepted; the rest are offered again first, in order, and a refusing frontend backs the ring up (the producer waits at its high watermark) instead of losing them (`native/libretro/audio.c`). Before, a call whose frames the frontend took only part of, or none of, dropped the rest (800 frames of a refused period). | No frames lost when the frontend's buffer is full. Not a cause of steady muffling or a channel shift. | - | Done (first batch) |
@@ -63,11 +63,42 @@ positions and notifications, the EEPROM, the frontend frame rate, the worker
 count, and the savestate layout (a state load still resets the filters
 through `mcpx_apu_vp_reset`).
 
+**Second run** (row 4):
+
+- **Sinc resampler** (`vp/resample_sinc.c`): a 32-tap Kaiser-windowed sinc
+  (beta 6) in float, from a table of 128 phases interpolated between, its
+  taps through NEON; the filter stretched up to 8 times for voices pitched
+  past 48 kHz. The default on AArch64; `linear` stays as the
+  `hakux_audio_resampler` core option and `NC_APU_RESAMPLER`, and is what a
+  core for any other CPU uses.
+- It meets the spec's criteria, 10 kHz included, where libsamplerate's
+  `SRC_SINC_MEDIUM_QUALITY` (tried first) left 10 kHz at -3.25 dB and
+  `SRC_SINC_FASTEST` at -22.8 dB. libsamplerate's double-precision filter
+  cost 3.3 us a voice-frame on the Nova's X3 and 37 on an A510, 14 to 23
+  times linear; this one is 2 to 4 times linear.
+- A voice's converter is made at its first `VOICE_ON` (5 KB for sinc, 1 KB
+  for linear) and kept for its later sounds: none in a frame.
+- **A sound's end** (both qualities): the decoder reaching the end of a
+  buffer that doesn't loop, or of a stream that doesn't persist, no longer
+  turns the voice off. The voice plays on with silence after the end until
+  the resampler's output has passed its last sample and the filter no
+  longer reads it; that frame is mixed, then the voice goes off. Before,
+  the frame the decoder reached the end in was dropped with what the
+  resampler held: short sounds lost most of themselves (a 128-frame sound
+  pitched to 96 kHz was silent with sinc), and every one-shot voice its
+  last 2 to 3 ms. Ratios are taken across the pitch's whole range with
+  its envelope, 1/512 to 512 (clamped to 1/256 .. 256 before).
+- Tests: `tests/hle/test_apu_resample.c` (host: response, aliasing, unity,
+  chunking, pitch changes, the pitch's whole range and each ratio's rate,
+  reset, lookahead, step and tail; `bench` a voice-frame's cost by rate)
+  and `tests/native/linux/apu_resample.c` (`apu-resample-smoke`, both
+  qualities through voice processing: levels and loops, pitch changes, a
+  voice's end heard whole, short sounds heard whole, reuse, a starved
+  stream, ADPCM loops; `bench` for throughput and allocations).
+
 ## Next
 
-1. **Second run:** the band-limited resampler option (row 4), with
-   synthetic-signal, chunking, stream and voice-lifecycle tests and host
-   benchmarks; linear stays the default until a policy decision.
+1. **Listening:** the sinc resampler in the #44 titles on the Nova.
 2. **Evidence-driven:** rows 2, 3 (rest), 5, 8-12 and 13, each after its
    semantics are established by a reference, executable vectors or
    recordings. Issue #44 stays open until its cause is isolated in the

@@ -15,6 +15,15 @@ target_include_directories(apu-stereo-smoke PRIVATE "${NC_REPO}")
 target_link_libraries(apu-stereo-smoke PRIVATE hakux_native m)
 add_test(NAME apu-stereo-smoke COMMAND apu-stereo-smoke)
 set_tests_properties(apu-stereo-smoke PROPERTIES TIMEOUT 30)
+# The voices' resamplers, linear and sinc, through voice processing: levels,
+# loops, pitch changes, a voice's end, reuse, a starved stream, ADPCM loops;
+# `apu-resample-smoke bench` counts allocations (malloc wrapped).
+add_executable(apu-resample-smoke "${NC_REPO}/tests/native/linux/apu_resample.c" "${NC_APU_OUT_NULL}")
+target_include_directories(apu-resample-smoke PRIVATE "${NC_REPO}")
+target_link_libraries(apu-resample-smoke PRIVATE hakux_native m)
+target_link_options(apu-resample-smoke PRIVATE -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc)
+add_test(NAME apu-resample-smoke COMMAND apu-resample-smoke)
+set_tests_properties(apu-resample-smoke PROPERTIES TIMEOUT 60)
 # The USB stack driven as the guest's would: enumeration, input, rumble, and
 # controllers plugged in and pulled out.
 add_executable(usb-smoke "${NC_REPO}/tests/native/usb/usb_test.c" "${NC_REPO}/native/dev/usb.c"
