@@ -1,5 +1,21 @@
 # Changelog
 
+## linux-v0.12.2 (PortareOS)
+
+Corrects misplaced specular highlights from point and spot lights, including
+character lighting during Dead or Alive 3's electrical-fence effect in X-Octagon.
+
+Verified against original Xbox lighting-test captures and in DOA3 on the Retroid
+Pocket Nova. [Matched before/after screenshots and test results](https://github.com/portare-ch/hakuX-lr/pull/51).
+
+### Current limitations
+
+- Save states are not yet available.
+- Reverb and other Xbox DSP effects are missing from the default audio mix.
+- XLink Kai and Internet (NAT) networking are unavailable in RetroArch.
+- CD CHDs and CHDs that require a parent image are unsupported. Use `chdman createdvd`.
+- NBA Inside Drive 2003 has blank saved player textures because GPU readback is incomplete.
+
 ## linux-v0.12.1 (PortareOS)
 
 Clearer core options and documentation. The emulator is unchanged from 0.12.0.
