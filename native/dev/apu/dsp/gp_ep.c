@@ -20,6 +20,7 @@
  */
 
 #include "native/dev/apu/apu_int.h"
+#include "native/dev/apu/dsp/gp_probe.h"
 
 static const int16_t ep_silence[256][2] = { 0 };
 
@@ -159,6 +160,7 @@ static void gp_fifo_rw(void *opaque, uint8_t *ptr, unsigned int index,
     uint32_t end;
     uint64_t cur_reg;
     if (dir) {
+        gp_probe_fifo('G', index, ptr, len);
         assert(index < GP_OUTPUT_FIFO_COUNT);
         base = GET_MASK(d->regs[NV_PAPU_GPOFBASE0 + 0x10 * index],
                         NV_PAPU_GPOFBASE0_VALUE);
@@ -216,6 +218,7 @@ static void ep_fifo_rw(void *opaque, uint8_t *ptr, unsigned int index,
     uint32_t end;
     uint64_t cur_reg;
     if (dir) {
+        gp_probe_fifo('E', index, ptr, len);
         assert(index < EP_OUTPUT_FIFO_COUNT);
         base = GET_MASK(d->regs[NV_PAPU_EPOFBASE0 + 0x10 * index],
                         NV_PAPU_GPOFBASE0_VALUE);
@@ -480,6 +483,7 @@ void mcpx_apu_dsp_frame(MCPXAPUState *d, float mixbins[NUM_MIXBINS][NUM_SAMPLES_
             }
         }
     }
+    gp_probe_frame_begin(d, mixbuf);        /* NC_APU_GP_PROBE: its tone instead */
 
     bool ep_enabled = (d->ep.regs[NV_PAPU_EPRST] & NV_PAPU_GPRST_GPRST) &&
                       (d->ep.regs[NV_PAPU_EPRST] & NV_PAPU_GPRST_GPDSPRST);
@@ -526,6 +530,7 @@ void mcpx_apu_dsp_frame(MCPXAPUState *d, float mixbins[NUM_MIXBINS][NUM_SAMPLES_
             } while (!d->ep.dsp->core.is_idle && d->ep.realtime);
         }
     }
+    gp_probe_frame_end(d);
 }
 
 void mcpx_apu_dsp_init(MCPXAPUState *d)
@@ -562,4 +567,5 @@ void mcpx_apu_dsp_init(MCPXAPUState *d)
      * use the full audio pipeline or not.
      */
     mcpx_apu_update_dsp_preference(d);
+    gp_probe_init();
 }
