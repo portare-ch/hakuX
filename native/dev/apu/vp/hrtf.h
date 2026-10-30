@@ -64,6 +64,18 @@ static inline void hrtf_filter_init(HrtfFilter *f)
     memset(f, 0, sizeof(*f));
 }
 
+/* A new sound on the voice (VOICE_ON): both ears' past samples, the
+ * mirrored copies and their padding, and the ring position, so the sound
+ * starts from silence, not from the voice's previous one. The current and
+ * target coefficients and delays stay (hrtf_filter_init clears those too). */
+static inline void hrtf_filter_clear_history(HrtfFilter *f)
+{
+    f->buf_pos = 0;
+    for (int ch = 0; ch < 2; ch++) {
+        memset(f->ch[ch].buf, 0, sizeof(f->ch[ch].buf));
+    }
+}
+
 static inline void
 hrtf_filter_set_target_params(HrtfFilter *f, float hrir_coeff[2][HRTF_NUM_TAPS],
                               float itd)

@@ -22,6 +22,7 @@
 #include "native/dev/apu/apu_int.h"
 #include "adpcm.h"
 #include "mix_inline.h"
+#include "stereo_route.h"
 #include "native/core/mmio.h"   /* nc_mmio_retry */
 
 /* -------------------------------------------------------------------------
@@ -151,6 +152,9 @@ static void voice_reset_filters(MCPXAPUState *d, uint16_t v)
     if (d->vp.filters[v].resampler) {
         src_reset(d->vp.filters[v].resampler);
     }
+    /* the voice slot's previous sound out of the HRTF filter too (its
+     * coefficients and delays, the voice's HRTF entry, stay) */
+    hrtf_filter_clear_history(&d->vp.filters[v].hrtf);
 }
 
 static float clampf(float v, float min, float max)
@@ -1941,10 +1945,7 @@ static void voice_process(MCPXAPUState *d, uint8_t *c,
      * muted-frame input -- exactly the decode we skipped.) */
     if (d->vp.filters[v].muted_prev) {
         memset(&d->vp.filters[v].svf, 0, sizeof(d->vp.filters[v].svf));
-        for (int ch = 0; ch < 2; ch++) {
-            memset(d->vp.filters[v].hrtf.ch[ch].buf, 0,
-                   sizeof(d->vp.filters[v].hrtf.ch[ch].buf));
-        }
+        hrtf_filter_clear_history(&d->vp.filters[v].hrtf);
         d->vp.filters[v].muted_prev = false;
     }
 #endif
@@ -2026,7 +2027,23 @@ static void voice_process(MCPXAPUState *d, uint8_t *c,
     }
 
     if (d->monitor.point == MCPX_APU_DEBUG_MON_VP) {
-        /* For VP mon, simply mix all voices together here, selecting the
+        /* Ordinary 2D stereo (vp/stereo_route.h): a 2D voice outside the
+         * multipass groups whose audible sends all go to the front-left or
+         * front-right bin is mixed into its speakers by those sends. */
+        if (v >= MCPX_HW_MAX_3D_VOICES && !multipass &&
+            voice_list != NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_MP_TOP - 1) {
+            float att[VP_SENDS], g2[2][2];
+            for (int b = 0; b < VP_SENDS; b++) {
+                att[b] = attenuate(vol[b]);
+            }
+            if (vp_stereo_route(bin, att, d->vp.submix_headroom, channels, ea_value, g2)) {
+                vp_stereo_mix(sample_buf, samples, g2, channels);
+                return;
+            }
+        }
+
+        /* Every other voice (3D, multipass, a send to another bin): for VP
+         * mon, simply mix all voices together here, selecting the
          * maximal volume used for any given mixbin as the overall volume for
          * this voice.
          *

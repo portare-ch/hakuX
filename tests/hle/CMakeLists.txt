@@ -58,7 +58,6 @@ hle_test(test_ffgen)
 hle_test(test_vsh)
 hle_test(test_ffhw)
 hle_test(test_psh)
-hle_test(test_apu_hrtf)
 hle_test(test_cheats)
 hle_test(test_vkcompat)
 hle_test(test_batch_wrap)
@@ -71,6 +70,22 @@ target_compile_definitions(test_batch_wrap PRIVATE
 # vk/compat_map.h: the Khronos headers alone (SDL3's copy)
 target_include_directories(test_vkcompat PRIVATE ${NC_DEPS}/SDL3/src/video/khronos)
 target_compile_definitions(test_vkcompat PRIVATE VK_NO_PROTOTYPES)
+
+# The audio's pure parts, each with only its own sources (no hle_pure): the
+# HRTF filter, the VP's stereo routing (header-only), and the libretro
+# output's ring (native/libretro/audio.c, its frontend and log stood in).
+find_package(Threads REQUIRED)
+function(audio_test name)
+  add_executable(${name} ${name}.c ${ARGN})
+  target_link_libraries(${name} Threads::Threads)
+  if(UNIX)
+    target_link_libraries(${name} m)
+  endif()
+  add_test(NAME ${name} COMMAND ${name})
+endfunction()
+audio_test(test_apu_hrtf)
+audio_test(test_apu_stereo)
+audio_test(test_lr_audio ${REPO_ROOT}/native/libretro/audio.c)
 
 # The shader generators live in the local tools/ (not versioned).
 if(EXISTS ${REPO_ROOT}/tools/hle/scan/hle_vshgen.c)

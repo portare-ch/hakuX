@@ -7,6 +7,14 @@ target_include_directories(audio-smoke PRIVATE "${NC_REPO}")
 target_link_libraries(audio-smoke PRIVATE hakux_native)
 add_test(NAME audio-smoke COMMAND audio-smoke)
 set_tests_properties(audio-smoke PROPERTIES TIMEOUT 10)
+# The VP's own mix through voice processing: ordinary 2D stereo by its sends,
+# 3D, multipass and other sends as the monitor mixed them, the full-DSP
+# monitor's mix bins, a reused voice's HRTF history, one worker and four.
+add_executable(apu-stereo-smoke "${NC_REPO}/tests/native/linux/apu_stereo.c" "${NC_APU_OUT_NULL}")
+target_include_directories(apu-stereo-smoke PRIVATE "${NC_REPO}")
+target_link_libraries(apu-stereo-smoke PRIVATE hakux_native m)
+add_test(NAME apu-stereo-smoke COMMAND apu-stereo-smoke)
+set_tests_properties(apu-stereo-smoke PROPERTIES TIMEOUT 30)
 # The USB stack driven as the guest's would: enumeration, input, rumble, and
 # controllers plugged in and pulled out.
 add_executable(usb-smoke "${NC_REPO}/tests/native/usb/usb_test.c" "${NC_REPO}/native/dev/usb.c"
