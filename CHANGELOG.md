@@ -18,7 +18,6 @@ The antialiasing control follows the GPU's register as documented for its succes
 - Save states are not yet available.
 - Upstream's LAN and XLink Kai backends are included, but this release does not add network settings to RetroArch. Networking is off by default.
 - CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
-- Full disc dumps (Redump), as `.iso` or CHD, haven't been tested with a real game yet.
 - NBA Inside Drive 2003 saves its prestamped player textures blank: it reads back small images the GPU drew, which hakuX doesn't copy back to memory yet.
 
 ## linux-v0.9.0 (PortareOS)

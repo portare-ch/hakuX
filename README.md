@@ -83,9 +83,8 @@ RetroArch's save directory. Choose a writable directory under
 
 ## Game formats
 
-**Start with an Xbox XISO `.iso`.** These are the images tested with real
-games. Full disc dumps (Redump) are also detected, but haven't been tested
-with a real game.
+**Use an Xbox `.iso`:** an XISO or a full disc dump (Redump). Both work
+with real games.
 
 To save space, convert an ISO to CHD with `chdman` on your computer:
 
