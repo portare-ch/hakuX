@@ -2044,9 +2044,10 @@ static void voice_process(MCPXAPUState *d, uint8_t *c,
     }
 
     if (d->monitor.point == MCPX_APU_DEBUG_MON_VP) {
-        /* Ordinary 2D stereo (vp/stereo_route.h): a 2D voice outside the
-         * multipass groups whose audible sends all go to the front-left or
-         * front-right bin is mixed into its speakers by those sends. */
+        /* 2D voices (vp/stereo_route.h): one outside the multipass groups
+         * with an audible send to a speaker bin is mixed into the speakers
+         * by the stereo downmix of its speaker sends; its LFE and effect
+         * sends are left out. */
         if (v >= MCPX_HW_MAX_3D_VOICES && !multipass &&
             voice_list != NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_MP_TOP - 1) {
             float att[VP_SENDS], g2[2][2];
@@ -2059,10 +2060,10 @@ static void voice_process(MCPXAPUState *d, uint8_t *c,
             }
         }
 
-        /* Every other voice (3D, multipass, a send to another bin): for VP
-         * mon, simply mix all voices together here, selecting the
-         * maximal volume used for any given mixbin as the overall volume for
-         * this voice.
+        /* Every other voice (3D, multipass, a 2D voice sending only to the
+         * LFE or effect bins): for VP mon, simply mix all voices together
+         * here, selecting the maximal volume used for any given mixbin as
+         * the overall volume for this voice.
          *
          * If the current voice belongs to a multipass sub-voice group we must
          * skip it here to avoid mixing it in twice because the sub-voices are

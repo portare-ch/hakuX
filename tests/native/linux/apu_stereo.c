@@ -2,9 +2,10 @@
  * voice processing: voices set up and started by the PIO methods
  * DirectSound sends (mcpx_apu_vp_write), their PCM read from guest RAM
  * through the scatter-gather table, a frame mixed by mcpx_apu_vp_frame and
- * read from the monitor's output. Ordinary 2D stereo voices are mixed by
- * their sends (vp/stereo_route.h); 3D voices, multipass groups and voices
- * with other sends keep the monitor's mix; the full-DSP monitor leaves the
+ * read from the monitor's output. 2D voices are mixed by the stereo
+ * downmix of their speaker sends (vp/stereo_route.h), their LFE and effect
+ * sends left out; 3D voices, multipass groups and 2D voices sending only to
+ * the LFE or effect bins keep the monitor's mix; the full-DSP monitor leaves the
  * monitor's output alone and fills the mix bins. A voice reused for a new
  * sound starts its HRTF filter from silence. One worker and several give
  * the same output. No guest executable or sound device: the frame thread
@@ -95,18 +96,53 @@ static void test_2d_headroom(void)
     apu_down();
 }
 
-/* a send to the centre: the monitor's mix, the loudest send's gain on both
- * channels */
-static void test_2d_centre_unsupported(void)
+/* The stereo downmix of a 2D voice's speaker sends (before, any send past
+ * front left and right gave the monitor's mix: the loudest send's gain on
+ * both channels) */
+static void test_2d_downmix(void)
 {
+    const float k = 0.70710678f;
     apu_up(false, true, 1);
     pcm_page(0, false, HALF, 0);
     Voice v = voice(103, NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_2D_TOP, false, 0);
-    v.vol[0] = 0x300;
+    v.vol[0] = 0x300;           /* front left, -12 dB */
     v.vol[2] = 0;               /* front centre, 0 dB */
     start(&v);
     frames(4);
-    check(all(0, pcm(0.5f), 1) && channels_equal(), "2D with a centre send: the monitor's mix kept");
+    check(all(0, pcm(0.5f * (attenuation(0x300) + k)), 1) && all(1, pcm(0.5f * k), 1),
+          "2D with a centre send: the centre on both speakers at -3 dB, front left on the left");
+    apu_down();
+
+    apu_up(false, true, 1);
+    pcm_page(0, false, HALF, 0);
+    v = voice(103, NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_2D_TOP, false, 0);
+    v.vol[1] = 0;               /* front right, 0 dB */
+    v.vol[5] = 0;               /* back right, 0 dB */
+    start(&v);
+    frames(4);
+    check(all(0, 0, 0) && all(1, pcm(0.5f * (1 + k)), 1),
+          "2D panned right by front and back right: right only, the back at -3 dB");
+    apu_down();
+
+    apu_up(false, true, 1);
+    pcm_page(0, false, HALF, 0);
+    v = voice(103, NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_2D_TOP, false, 0);
+    v.vol[0] = 0x300;           /* front left, -12 dB */
+    v.bin[2] = 10;              /* I3DL2 (reverb), 0 dB: louder than the dry send */
+    v.vol[2] = 0;
+    start(&v);
+    frames(4);
+    check(all(0, pcm(0.5f * attenuation(0x300)), 1) && all(1, 0, 0),
+          "2D with a reverb send: panned by its speaker send, the reverb send left out");
+    apu_down();
+
+    apu_up(false, true, 1);
+    pcm_page(0, false, HALF, 0);
+    v = voice(103, NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_2D_TOP, false, 0);
+    v.vol[3] = 0;               /* LFE only, 0 dB */
+    start(&v);
+    frames(4);
+    check(all(0, pcm(0.5f), 1) && channels_equal(), "2D with only an LFE send: the monitor's mix kept");
     apu_down();
 }
 
@@ -215,7 +251,7 @@ static void twelve_voices(unsigned workers, int16_t out[NUM_SAMPLES_PER_FRAME][2
         v.vol[0] = (uint16_t)(0x40 * k);
         v.vol[1] = (uint16_t)(0x300 - 0x30 * k);
         if (k % 5 == 2) {
-            v.vol[2] = 0x100;   /* a centre send: the monitor's mix */
+            v.vol[2] = 0x100;   /* a centre send: downmixed */
         }
         start(&v);
     }
@@ -286,7 +322,7 @@ int main(int argc, char **argv)
     test_2d_mono_panned();
     test_2d_stereo();
     test_2d_headroom();
-    test_2d_centre_unsupported();
+    test_2d_downmix();
     test_3d();
     test_multipass();
     test_full_dsp();
