@@ -2,7 +2,7 @@
 
 ## linux-v0.12.0-exp.1 (PortareOS, experimental)
 
-An experimental build with more of the Xbox GPU's graphics features. None of them had been tried in a game, so it's a pre-release; 0.11.0 stays the latest stable release. PortareOS ships it for broad testing.
+An experimental build with more of the Xbox GPU's graphics features. It's a pre-release; 0.11.0 stays the latest stable release. PortareOS ships it for broad testing.
 
 ### What's new
 
@@ -13,7 +13,7 @@ An experimental build with more of the Xbox GPU's graphics features. None of the
 
 ### Experimental
 
-These follow NVIDIA's documentation, xemu, and the Xbox captures of nxdk_pgraph_tests where they exist. A game that looked right in 0.11.0 can look wrong in this build; if one does, report the game and the scene.
+These follow NVIDIA's documentation, xemu, and the Xbox captures of nxdk_pgraph_tests where they exist. Burnout 3 and Halo showed no glitches in a quick play session on the Nova; other games haven't been tried. A game that looked right in 0.11.0 can look wrong in this build; if one does, report the game and the scene.
 
 ### Current limitations
 
