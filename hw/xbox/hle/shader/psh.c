@@ -299,10 +299,13 @@ static const char *k_cmp[8] = {
 
 /* Shadow buffer at stage s: the stored depth compared with the r coordinate
  * (depth FUNC r, both in the format's range; PROJECT2D compares with 0),
- * the four results bilinearly weighted (percentage-closer filtering). */
+ * the four results bilinearly weighted (percentage-closer filtering). The
+ * stored depth is scaled to 0..1 but for an uploaded F24 texture's (format
+ * 0), its float as it is: F24 reaches far past F16's 511.9375. */
 static void shadow_sample(Buf *b, const HlePshKey *k, unsigned s, bool project3d)
 {
-    static const char *const k_max[4] = { "1.0", "16777215.0", "65535.0", "511.9375" };
+    static const char *const k_max[4] = { "3.402823466e38", "16777215.0", "65535.0", "511.9375" };
+    static const char *const k_scale[4] = { "1.0", "16777215.0", "65535.0", "511.9375" };
     static const char *const k_op[8] = { "", "lessThan", "equal", "lessThanEqual", "greaterThan",
                                          "notEqual", "greaterThanEqual", "" };
     unsigned func = (k->shadow >> 4) & 7, fmt = (k->shadow_fmt >> (2 * s)) & 3;
@@ -310,7 +313,10 @@ static void shadow_sample(Buf *b, const HlePshKey *k, unsigned s, bool project3d
         put(b, "  vec4 t%u = vec4(%s);\n", s, func ? "1.0" : "0.0");
         return;
     }
-    const char *r = project3d ? "clamp(pq.z, 0.0, m)" : "0.0";
+    /* F24 compares at its precision: r's mantissa cut to 16 bits, as the
+     * depth stored (nxdk_pgraph_tests' 0.5e30 matches its texel) */
+    const char *r = !project3d ? "0.0" : fmt ? "clamp(pq.z, 0.0, m)" :
+                    "uintBitsToFloat(floatBitsToUint(clamp(pq.z, 0.0, m)) & 0xFFFFFF80u)";
     put(b, "  vec4 t%u;\n  { uint ti = pc.tex[%u] & 0xFFFFu, si = (pc.tex[%u] >> 16) & 0xFFu;\n"
            "    vec3 pq = nvproj(vTex%u);\n"
            "    vec2 uv = pq.xy;\n"
@@ -320,11 +326,11 @@ static void shadow_sample(Buf *b, const HlePshKey *k, unsigned s, bool project3d
            "      uv /= sz / ((pc.flags & (256u << %uu)) != 0u ? float(pc.flags >> 24) : 1.0);\n"
            "    float m = %s, r = %s;\n"
            "    vec4 d = textureGather(sampler2D(uTex2D[nonuniformEXT(ti)], "
-           "uSmp[nonuniformEXT(si)]), uv) * m;\n"
+           "uSmp[nonuniformEXT(si)]), uv) * %s;\n"
            "    vec4 p = vec4(%s(d, vec4(r)));\n"
            "    vec2 f = fract(uv * sz - 0.5);\n"
            "    t%u = vec4(mix(mix(p.w, p.z, f.x), mix(p.x, p.y, f.x), f.y));\n",
-        s, s, s, s, s, s, k_max[fmt], r, k_op[func], s);
+        s, s, s, s, s, s, k_max[fmt], r, k_scale[fmt], k_op[func], s);
     if (k->debug == 17) {               /* debug view 17: stored depth, r, result */
         put(b, "    shdbg = vec4(d.x / m, r / m, t%u.x, 1.0);\n", s);
     }

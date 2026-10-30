@@ -56,6 +56,10 @@ typedef struct HleCaps {
     bool x4444;                 /* A4R4G4B4 sampled (VK_EXT_4444_formats, core in 1.3; not
                                    on Mali's r26), else 4444 textures expand to A8R8G8B8
                                    on the way into the arena (pb/pbres.c) */
+    bool r16;                   /* R16 and R16G16 sampled (V16U16, D16), else those
+                                   textures are converted too: V16U16 to A8R8G8B8, D16
+                                   to a float */
+    bool r5551;                 /* R5G5B5A1 sampled, else it becomes A8R8G8B8 as well */
     bool bindless;              /* descriptor indexing (the bindless set, its limits), else
                                    each draw's textures in a set of their own at fixed
                                    places (vk/draw.c fixed_bind: Mali's Bifrost, PowerVR's

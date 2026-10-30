@@ -266,8 +266,34 @@ static bool tex_format(uint32_t x, TexFmt *o)
         o->fmt = VK_FORMAT_A1R5G5B5_UNORM_PACK16; o->sw.a = VK_COMPONENT_SWIZZLE_ONE;
         return true;
     case HLE_XFMT_A4R4G4B4: case HLE_XFMT_LIN_A4R4G4B4:
-        /* else the front end sends them as A8R8G8B8 (pb/pbres.c) */
+        /* else the front end sends them as A8R8G8B8 (pb/pbres.c tex_native), as
+         * R5G5B5A1, V16U16 and D16 without theirs */
         o->fmt = VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT; return g_hvk.caps.x4444;
+    case HLE_XFMT_R4G4B4A4: case HLE_XFMT_LIN_R4G4B4A4: {
+        /* B4G4R4A4, a format every GPU has, holds R where blue is */
+        VkComponentMapping m = SW(B, G, R, A);
+        o->fmt = VK_FORMAT_B4G4R4A4_UNORM_PACK16; o->sw = m; return true;
+    }
+    case HLE_XFMT_R5G5B5A1: case HLE_XFMT_LIN_R5G5B5A1:
+        o->fmt = VK_FORMAT_R5G5B5A1_UNORM_PACK16; return g_hvk.caps.r5551;
+    case HLE_XFMT_L16: case HLE_XFMT_LIN_L16: {
+        /* not luminance: the NV2A reads Y16 as (1, high byte, low byte, 1)
+         * (nxdk_pgraph_tests' Xbox capture, xemu) */
+        VkComponentMapping m = SW(ONE, G, R, ONE);
+        o->fmt = VK_FORMAT_R8G8_UNORM; o->sw = m; return true;
+    }
+    case HLE_XFMT_V16U16: case HLE_XFMT_LIN_V16U16: {
+        /* as G8B8 (V8U8): U the low half, du; V the high, dv */
+        VkComponentMapping m = SW(R, G, R, G);
+        o->fmt = VK_FORMAT_R16G16_UNORM; o->sw = m; return g_hvk.caps.r16;
+    }
+    /* Depth: compared with r as a shadow buffer (shadow_fmt), the depth in
+     * the format's range; D24S8 and the floats come as F24S8, a float depth
+     * scaled to 0..1 (tex/xdk_res.h hle_tex_convert) */
+    case HLE_XFMT_D16: case HLE_XFMT_LIN_D16:
+        o->fmt = VK_FORMAT_R16_UNORM; return g_hvk.caps.r16;
+    case HLE_XFMT_F24S8: case HLE_XFMT_LIN_F24S8:
+        o->fmt = VK_FORMAT_R32_SFLOAT; return true;
     case HLE_XFMT_L8: case HLE_XFMT_LIN_L8: {
         VkComponentMapping m = SW(R, R, R, ONE);
         o->fmt = VK_FORMAT_R8_UNORM; o->sw = m; return true;
@@ -1154,11 +1180,23 @@ static HleVkSurf *tex_surface(uint32_t id, uint32_t rt_id)
     return s;
 }
 
-/* Shadow-buffer depth range of the stage's texture (HlePshKey.shadow_fmt):
- * 0 not a depth surface. */
+/* Shadow-buffer depth range of the stage's texture (HlePshKey.shadow_fmt;
+ * 4, an uploaded F24 texture, is the key's 0): 0 not a depth surface or an
+ * uploaded depth texture. The NV2A compares every depth format it samples,
+ * as xemu does. */
 static unsigned shadow_fmt(uint32_t id)
 {
-    HleVkSurf *s = id && !tex_find(id) ? hle_surf_get(id) : NULL;
+    HleVkTex *t = id ? tex_find(id) : NULL;
+    if (t) {
+        switch (t->gfmt) {
+        case HLE_XFMT_D24S8: case HLE_XFMT_LIN_D24S8:   return 1;
+        case HLE_XFMT_D16: case HLE_XFMT_LIN_D16:       return 2;
+        case HLE_XFMT_F16: case HLE_XFMT_LIN_F16:       return 3;
+        case HLE_XFMT_F24S8: case HLE_XFMT_LIN_F24S8:   return 4;
+        default:                                        return 0;
+        }
+    }
+    HleVkSurf *s = id ? hle_surf_get(id) : NULL;
     if (!s || !s->img || (s->aspect & VK_IMAGE_ASPECT_COLOR_BIT)) {
         return 0;
     }
@@ -1197,6 +1235,7 @@ static bool ckey_has_alpha(uint32_t xfmt)
     case HLE_XFMT_L16: case HLE_XFMT_LIN_L16:
     case HLE_XFMT_G8B8: case HLE_XFMT_LIN_G8B8:
     case HLE_XFMT_R8B8: case HLE_XFMT_LIN_R8B8:
+    case HLE_XFMT_V16U16: case HLE_XFMT_LIN_V16U16:
     case HLE_XFMT_YUY2: case HLE_XFMT_UYVY:     /* 0 (no texture) is L8's */
         return false;
     default:
@@ -1213,8 +1252,10 @@ static uint32_t ckey_bits(uint32_t xfmt)
         return 1;
     case HLE_XFMT_A1R5G5B5: case HLE_XFMT_LIN_A1R5G5B5:
     case HLE_XFMT_X1R5G5B5: case HLE_XFMT_LIN_X1R5G5B5:
+    case HLE_XFMT_R5G5B5A1: case HLE_XFMT_LIN_R5G5B5A1:
         return 2;
     case HLE_XFMT_A4R4G4B4: case HLE_XFMT_LIN_A4R4G4B4:
+    case HLE_XFMT_R4G4B4A4: case HLE_XFMT_LIN_R4G4B4A4:
         return 3;
     default:
         return 0;
@@ -3720,7 +3761,7 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
             unsigned sf = shadow_fmt(c->tex[st]);
             if (sf) {
                 k.pk.shadow |= 1u << st;
-                k.pk.shadow_fmt |= sf << (2 * st);
+                k.pk.shadow_fmt |= (sf & 3) << (2 * st);
             }
         }
         for (unsigned st = 0; st < 4; st++) {

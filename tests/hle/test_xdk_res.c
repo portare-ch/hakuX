@@ -219,6 +219,74 @@ static void test_sign(void)
     HT_EQ_U32(hle_fmt_sign_rgba(HLE_XFMT_R5G6B5, 0xF), 0);
 }
 
+static uint32_t conv1(uint32_t code, uint32_t texel)
+{
+    uint8_t in[4] = { texel & 0xFF, texel >> 8 & 0xFF, texel >> 16 & 0xFF, texel >> 24 };
+    uint32_t out = 0xDEADBEEF;
+    HT_CHECK(hle_tex_convert(code, in, 1, &out));
+    return out;
+}
+
+static float depth1(uint32_t code, uint32_t texel)
+{
+    uint32_t bits = conv1(code, texel);
+    float f;
+    memcpy(&f, &bits, 4);
+    return f;
+}
+
+/* texels the back end can't sample as stored: A8R8G8B8 (bytes B, G, R, A)
+ * or depth as a float scaled to 0..1 */
+static void test_convert(void)
+{
+    HT_EQ_U32(conv1(HLE_XFMT_A4R4G4B4, 0xF8A1), 0xFF88AA11u);       /* n * 17 */
+    HT_EQ_U32(conv1(HLE_XFMT_LIN_A4R4G4B4, 0x0000), 0);
+    /* R5G5B5A1: R 15-11, G 10-6, B 5-1, A 0 */
+    HT_EQ_U32(conv1(HLE_XFMT_R5G5B5A1, 0xFFFF), 0xFFFFFFFFu);
+    HT_EQ_U32(conv1(HLE_XFMT_R5G5B5A1, 0xF800), 0x00FF0000u);
+    HT_EQ_U32(conv1(HLE_XFMT_LIN_R5G5B5A1, 0x07C1), 0xFF00FF00u);
+    HT_EQ_U32(conv1(HLE_XFMT_R5G5B5A1, 0x0020), 0x00000084u);       /* B 16: 0x84 */
+    /* R6G5B5 (L6V5U5): R 15-10, G 9-5, B 4-0, alpha 1 */
+    HT_EQ_U32(conv1(HLE_XFMT_R6G5B5, 0xFFFF), 0xFFFFFFFFu);
+    HT_EQ_U32(conv1(HLE_XFMT_R6G5B5, 0x8000), 0xFF820000u);         /* L 32: 0x82 */
+    HT_EQ_U32(conv1(HLE_XFMT_LIN_R6G5B5, 0x03E0), 0xFF00FF00u);
+    HT_EQ_U32(conv1(HLE_XFMT_R6G5B5, 0x0010), 0xFF000084u);         /* U -16: 0x84 */
+    /* V16U16 (u, v, u, v) from their high bytes; L16 is never converted */
+    HT_CHECK(!hle_tex_convert(HLE_XFMT_L16, "\0\0", 1, &(uint32_t){ 0 }));
+    HT_EQ_U32(conv1(HLE_XFMT_V16U16, 0x80FF7F00u), 0x807F807Fu);
+    HT_EQ_U32(conv1(HLE_XFMT_LIN_V16U16, 0x0001FFFFu), 0x00FF00FFu);
+    /* depth over the shadow compare's range: 2^24 - 1, 65535, 511.9375;
+     * F24 as its float (nxdk_pgraph_tests compares one at 0.5e30) */
+    HT_CHECK(depth1(HLE_XFMT_D24S8, 0xFFFFFF12u) == 1.0f);
+    HT_CHECK(depth1(HLE_XFMT_LIN_D24S8, 0x000000FFu) == 0.0f);         /* stencil only */
+    HT_CHECK(depth1(HLE_XFMT_D24S8, 0x00010012u) == 256 / 16777215.0f);
+    HT_CHECK(depth1(HLE_XFMT_D16, 0xFFFF) == 1.0f);
+    HT_CHECK(depth1(HLE_XFMT_LIN_D16, 0x8000) == 32768 / 65535.0f);
+    HT_CHECK(depth1(HLE_XFMT_F16, 0xFFFF) == 1.0f);                   /* 511.9375 */
+    HT_CHECK(depth1(HLE_XFMT_F16, 0x0000) == 0.0f);
+    HT_CHECK(depth1(HLE_XFMT_LIN_F16, 0x7000) == 1.0f / 511.9375f);    /* e 7, m 0 */
+    HT_CHECK(depth1(HLE_XFMT_F16, 0x8800) == 3.0f / 511.9375f);        /* 2 * 1.5 */
+    HT_CHECK(depth1(HLE_XFMT_F24S8, 0x7F000055u) == 1.0f);             /* 1.0f's bits >> 7 */
+    HT_EQ_U32(conv1(HLE_XFMT_LIN_F24S8, 0xE193E512u), 0x70C9F280u);    /* the test's 0.5e30 */
+    HT_EQ_U32(conv1(HLE_XFMT_F24S8, 0xFF000000u), 0x7F800000u);        /* infinity */
+    /* several texels, unaligned */
+    uint8_t in[7] = { 0, 0x00, 0xFC, 0xFF, 0xFF, 0x1F, 0x00 };
+    uint32_t out[3];
+    HT_CHECK(hle_tex_convert(HLE_XFMT_R6G5B5, in + 1, 3, out));
+    HT_EQ_U32(out[0], 0xFFFF0000u);
+    HT_EQ_U32(out[1], 0xFFFFFFFFu);
+    HT_EQ_U32(out[2], 0xFF0000FFu);
+    HT_CHECK(!hle_tex_convert(HLE_XFMT_A8R8G8B8, in, 1, out));
+    HT_CHECK(!hle_tex_convert(HLE_XFMT_DXT1, in, 1, out));
+    /* the code they are sent as keeps a linear texture linear */
+    HT_EQ_U32(hle_tex_conv_xfmt(HLE_XFMT_R6G5B5), HLE_XFMT_A8R8G8B8);
+    HT_EQ_U32(hle_tex_conv_xfmt(HLE_XFMT_LIN_R6G5B5), HLE_XFMT_LIN_A8R8G8B8);
+    HT_EQ_U32(hle_tex_conv_xfmt(HLE_XFMT_LIN_A4R4G4B4), HLE_XFMT_LIN_A8R8G8B8);
+    HT_EQ_U32(hle_tex_conv_xfmt(HLE_XFMT_D24S8), HLE_XFMT_F24S8);
+    HT_EQ_U32(hle_tex_conv_xfmt(HLE_XFMT_LIN_D16), HLE_XFMT_LIN_F24S8);
+    HT_EQ_U32(hle_tex_conv_xfmt(HLE_XFMT_F16), HLE_XFMT_F24S8);
+}
+
 int main(void)
 {
     HT_RUN(test_texture_full_chain);
@@ -230,5 +298,6 @@ int main(void)
     HT_RUN(test_buffers_and_rejects);
     HT_RUN(test_format_helpers);
     HT_RUN(test_sign);
+    HT_RUN(test_convert);
     HT_DONE();
 }
