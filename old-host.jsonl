@@ -1,0 +1,7 @@
+{"case":"silence","bin":0,"frames":48128,"seconds":1.002666667,"thread_cpu_seconds":0.272471665,"warmup_cpu_seconds":0.275407124,"pcm_fnv64":"5af38e072fccfb25"}
+{"case":"impulse","bin":0,"frames":48128,"seconds":1.002666667,"thread_cpu_seconds":0.285003958,"warmup_cpu_seconds":0.277054124,"pcm_fnv64":"3e0dc5c8d9d9d285"}
+{"case":"impulse","bin":1,"frames":48128,"seconds":1.002666667,"thread_cpu_seconds":0.281367873,"warmup_cpu_seconds":0.291709791,"pcm_fnv64":"802e3bb06b4de505"}
+{"case":"impulse","bin":10,"frames":48128,"seconds":1.002666667,"thread_cpu_seconds":0.274996374,"warmup_cpu_seconds":0.278407958,"pcm_fnv64":"89e24aa640dc7416"}
+{"case":"tone","bin":0,"frames":60160,"seconds":1.253333333,"thread_cpu_seconds":0.340796499,"warmup_cpu_seconds":0.277112249,"pcm_fnv64":"badd33bb8070f584"}
+{"case":"tone","bin":1,"frames":60160,"seconds":1.253333333,"thread_cpu_seconds":0.347437916,"warmup_cpu_seconds":0.277292082,"pcm_fnv64":"9c4a220f77cde036"}
+{"case":"tone","bin":10,"frames":60160,"seconds":1.253333333,"thread_cpu_seconds":0.343851248,"warmup_cpu_seconds":0.274433707,"pcm_fnv64":"378fc8abbfd85d61"}

@@ -1,0 +1,7 @@
+{"case": "silence", "bin": 0, "seconds": 1.002666667, "thread_cpu_seconds": 0.248656749, "pcm_fnv64": "5af38e072fccfb25"}
+{"case": "impulse", "bin": 0, "seconds": 1.002666667, "thread_cpu_seconds": 0.240507041, "pcm_fnv64": "3e0dc5c8d9d9d285"}
+{"case": "impulse", "bin": 1, "seconds": 1.002666667, "thread_cpu_seconds": 0.239233833, "pcm_fnv64": "802e3bb06b4de505"}
+{"case": "impulse", "bin": 10, "seconds": 1.002666667, "thread_cpu_seconds": 0.243331666, "pcm_fnv64": "89e24aa640dc7416"}
+{"case": "tone", "bin": 0, "seconds": 1.253333333, "thread_cpu_seconds": 0.303868165, "pcm_fnv64": "badd33bb8070f584"}
+{"case": "tone", "bin": 1, "seconds": 1.253333333, "thread_cpu_seconds": 0.299192041, "pcm_fnv64": "9c4a220f77cde036"}
+{"case": "tone", "bin": 10, "seconds": 1.253333333, "thread_cpu_seconds": 0.298909998, "pcm_fnv64": "378fc8abbfd85d61"}

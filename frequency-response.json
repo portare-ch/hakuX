@@ -1,0 +1,434 @@
+[
+  {
+    "bin": 0,
+    "frequency_hz": 100,
+    "gain_db_lr": [
+      6.02058382889703,
+      null
+    ],
+    "phase_radians_lr": [
+      -3.118235872836499e-07,
+      0.0
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.0,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 0,
+    "frequency_hz": 1000,
+    "gain_db_lr": [
+      6.0205011419319066,
+      null
+    ],
+    "phase_radians_lr": [
+      2.737624337471921e-08,
+      0.0
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.0,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 0,
+    "frequency_hz": 8000,
+    "gain_db_lr": [
+      6.020574235421378,
+      null
+    ],
+    "phase_radians_lr": [
+      3.9126065151824296e-08,
+      0.0
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.0,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 1,
+    "frequency_hz": 100,
+    "gain_db_lr": [
+      null,
+      6.020580891451875
+    ],
+    "phase_radians_lr": [
+      0.0,
+      -2.659321838319962e-07
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.0,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 1,
+    "frequency_hz": 1000,
+    "gain_db_lr": [
+      null,
+      6.020500869952068
+    ],
+    "phase_radians_lr": [
+      0.0,
+      -7.611695523257934e-08
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.0,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 1,
+    "frequency_hz": 8000,
+    "gain_db_lr": [
+      null,
+      6.020569232188339
+    ],
+    "phase_radians_lr": [
+      0.0,
+      -1.956176985393218e-08
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.0,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 2,
+    "frequency_hz": 100,
+    "gain_db_lr": [
+      -3.0100018032876696,
+      -3.010017917572614
+    ],
+    "phase_radians_lr": [
+      2.6110585502228865e-07,
+      -6.124458247512203e-07
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.0,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 2,
+    "frequency_hz": 1000,
+    "gain_db_lr": [
+      -3.0102940155677294,
+      -3.0103008211405995
+    ],
+    "phase_radians_lr": [
+      1.8891267174579352e-07,
+      8.195741573482043e-08
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.0,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 2,
+    "frequency_hz": 8000,
+    "gain_db_lr": [
+      -3.01023035440452,
+      -3.010230354404089
+    ],
+    "phase_radians_lr": [
+      -1.1066075846875106e-07,
+      -3.319839740466248e-07
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.0,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 6,
+    "frequency_hz": 100,
+    "gain_db_lr": [
+      6.050768210967413,
+      -18.359420465669274
+    ],
+    "phase_radians_lr": [
+      -0.0010318827644721933,
+      2.996264992466418
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.458333333333334,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 6,
+    "frequency_hz": 1000,
+    "gain_db_lr": [
+      5.99031299226349,
+      -18.419522907596026
+    ],
+    "phase_radians_lr": [
+      -0.0009118652678074017,
+      1.6969119401812203
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.458333333333334,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 6,
+    "frequency_hz": 8000,
+    "gain_db_lr": [
+      6.006538043620678,
+      -18.523087669230318
+    ],
+    "phase_radians_lr": [
+      0.0031294805433573253,
+      -2.115673205997267
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.458333333333334,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 7,
+    "frequency_hz": 100,
+    "gain_db_lr": [
+      -18.35940591942159,
+      6.05076235392295
+    ],
+    "phase_radians_lr": [
+      2.996258972483302,
+      -0.001031914207447339
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.458333333333334,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 7,
+    "frequency_hz": 1000,
+    "gain_db_lr": [
+      -18.419674127912792,
+      5.990267403723809
+    ],
+    "phase_radians_lr": [
+      1.696906952311121,
+      -0.0009118919268247066
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.458333333333334,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 7,
+    "frequency_hz": 8000,
+    "gain_db_lr": [
+      -18.52307308035106,
+      6.006531859049695
+    ],
+    "phase_radians_lr": [
+      -2.1156715195177678,
+      0.003129698309550904
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.458333333333334,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 8,
+    "frequency_hz": 100,
+    "gain_db_lr": [
+      -2.9801738108290845,
+      -27.390110983739653
+    ],
+    "phase_radians_lr": [
+      -0.0010269796779966722,
+      2.9961774220163653
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.458333333333334,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 8,
+    "frequency_hz": 1000,
+    "gain_db_lr": [
+      -3.0405463018687624,
+      -27.451323927546202
+    ],
+    "phase_radians_lr": [
+      -0.0009094217368364755,
+      1.6968258012283741
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.458333333333334,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 8,
+    "frequency_hz": 8000,
+    "gain_db_lr": [
+      -3.0243811088891004,
+      -27.551966843599804
+    ],
+    "phase_radians_lr": [
+      0.003137666220144231,
+      -2.1168053233884385
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.458333333333334,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 9,
+    "frequency_hz": 100,
+    "gain_db_lr": [
+      -27.389859097711295,
+      -2.98017363221108
+    ],
+    "phase_radians_lr": [
+      2.9961927283059513,
+      -0.0010259438573106989
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.458333333333334,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 9,
+    "frequency_hz": 1000,
+    "gain_db_lr": [
+      -27.451323927546184,
+      -3.0405577150444802
+    ],
+    "phase_radians_lr": [
+      1.696825801228374,
+      -0.000908963369562385
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.458333333333334,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 9,
+    "frequency_hz": 8000,
+    "gain_db_lr": [
+      -27.5519668435998,
+      -3.024371121753617
+    ],
+    "phase_radians_lr": [
+      -2.116805323388439,
+      0.003136997557656529
+    ],
+    "impulse_first_ms": 10.0,
+    "impulse_last_ms": 10.458333333333334,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 10,
+    "frequency_hz": 100,
+    "gain_db_lr": [
+      -9.656114689064472,
+      -14.880298590256826
+    ],
+    "phase_radians_lr": [
+      -0.4183163056735778,
+      2.897699110885162
+    ],
+    "impulse_first_ms": 10.666666666666666,
+    "impulse_last_ms": 242.10416666666666,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 10,
+    "frequency_hz": 1000,
+    "gain_db_lr": [
+      -9.974843228848645,
+      -14.668069870388594
+    ],
+    "phase_radians_lr": [
+      1.5907783853162965,
+      -1.6725013618999642
+    ],
+    "impulse_first_ms": 10.666666666666666,
+    "impulse_last_ms": 242.10416666666666,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  },
+  {
+    "bin": 10,
+    "frequency_hz": 8000,
+    "gain_db_lr": [
+      -18.967209145882528,
+      -22.879771541107164
+    ],
+    "phase_radians_lr": [
+      2.979662378090716,
+      -0.14210665466276243
+    ],
+    "impulse_first_ms": 10.666666666666666,
+    "impulse_last_ms": 242.10416666666666,
+    "measurement_window_seconds": [
+      0.1,
+      0.23
+    ]
+  }
+]

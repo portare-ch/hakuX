@@ -1,0 +1,142 @@
+{
+  "method": "Bandpass 180\u20136000 Hz, normalized waveform cross-correlation; shared speech plus different background music.",
+  "matches": [
+    {
+      "reference_seconds": 3025,
+      "length": 1,
+      "nova_seconds": 0.9049375,
+      "correlation": 0.8496663816855908
+    },
+    {
+      "reference_seconds": 3024.75,
+      "length": 1,
+      "nova_seconds": 0.655,
+      "correlation": 0.8355536075914654
+    },
+    {
+      "reference_seconds": 3025.25,
+      "length": 1,
+      "nova_seconds": 1.154875,
+      "correlation": 0.7833831379847308
+    },
+    {
+      "reference_seconds": 3024.75,
+      "length": 1.5,
+      "nova_seconds": 0.654875,
+      "correlation": 0.7560194708904964
+    },
+    {
+      "reference_seconds": 3025.5,
+      "length": 1,
+      "nova_seconds": 1.4048125,
+      "correlation": 0.7375220265089895
+    },
+    {
+      "reference_seconds": 3025,
+      "length": 1.5,
+      "nova_seconds": 0.9048125,
+      "correlation": 0.7065606721770143
+    },
+    {
+      "reference_seconds": 3025.5,
+      "length": 1.5,
+      "nova_seconds": 1.4048125,
+      "correlation": 0.7036904057463335
+    },
+    {
+      "reference_seconds": 3025.75,
+      "length": 1,
+      "nova_seconds": 1.6548125,
+      "correlation": 0.694789642757772
+    },
+    {
+      "reference_seconds": 3025.25,
+      "length": 1.5,
+      "nova_seconds": 1.1548125,
+      "correlation": 0.693676543916063
+    },
+    {
+      "reference_seconds": 3025,
+      "length": 2,
+      "nova_seconds": 0.9048125,
+      "correlation": 0.6784660253052202
+    },
+    {
+      "reference_seconds": 3024.75,
+      "length": 2,
+      "nova_seconds": 0.6548125,
+      "correlation": 0.6743502079584649
+    },
+    {
+      "reference_seconds": 3025.25,
+      "length": 2,
+      "nova_seconds": 1.1548125,
+      "correlation": 0.6585339394273956
+    },
+    {
+      "reference_seconds": 3025.75,
+      "length": 1.5,
+      "nova_seconds": 1.6548125,
+      "correlation": 0.6408720796737128
+    },
+    {
+      "reference_seconds": 3025.5,
+      "length": 2,
+      "nova_seconds": 1.4048125,
+      "correlation": 0.6303905931263806
+    },
+    {
+      "reference_seconds": 3025.75,
+      "length": 2,
+      "nova_seconds": 1.6548125,
+      "correlation": 0.5110811019336549
+    }
+  ],
+  "voice_bands": [
+    {
+      "hz": [
+        200,
+        500
+      ],
+      "coherence_weighted": 0.9604988816797799,
+      "coherent_gain_db": -4.934296047584968,
+      "coherent_bins": 9
+    },
+    {
+      "hz": [
+        500,
+        1000
+      ],
+      "coherence_weighted": 0.8831738427089261,
+      "coherent_gain_db": -4.323020404968872,
+      "coherent_bins": 16
+    },
+    {
+      "hz": [
+        1000,
+        2000
+      ],
+      "coherence_weighted": 0.5291761643961306,
+      "coherent_gain_db": -3.3678078584665085,
+      "coherent_bins": 12
+    },
+    {
+      "hz": [
+        2000,
+        4000
+      ],
+      "coherence_weighted": 0.38505188681564934,
+      "coherent_gain_db": -3.1588070370943684,
+      "coherent_bins": 8
+    },
+    {
+      "hz": [
+        4000,
+        6000
+      ],
+      "coherence_weighted": 0.43134411488074414,
+      "coherent_gain_db": -3.022494315062965,
+      "coherent_bins": 13
+    }
+  ]
+}

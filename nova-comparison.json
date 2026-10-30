@@ -1,0 +1,29 @@
+{
+  "old": {
+    "thread_cpu_seconds": 3.941558454,
+    "audio_seconds": 6.517333334,
+    "cpu_per_audio_second": 0.6047808592875633,
+    "pcm_hashes": [
+      "5af38e072fccfb25",
+      "3e0dc5c8d9d9d285",
+      "badd33bb8070f584",
+      "5af38e072fccfb25",
+      "3e0dc5c8d9d9d285",
+      "badd33bb8070f584"
+    ]
+  },
+  "new": {
+    "thread_cpu_seconds": 3.535450443,
+    "audio_seconds": 6.517333334,
+    "cpu_per_audio_second": 0.5424688690627589,
+    "pcm_hashes": [
+      "5af38e072fccfb25",
+      "3e0dc5c8d9d9d285",
+      "badd33bb8070f584",
+      "5af38e072fccfb25",
+      "3e0dc5c8d9d9d285",
+      "badd33bb8070f584"
+    ]
+  },
+  "cpu_reduction_percent": 10.303234513441517
+}
