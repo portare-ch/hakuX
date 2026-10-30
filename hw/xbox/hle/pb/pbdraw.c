@@ -8,6 +8,7 @@
 #include "hw/xbox/hle/front/fe.h"
 #include "hw/xbox/hle/pb/pbdraw.h"
 #include "hw/xbox/hle/hitch.h"
+#include "hw/xbox/hle/pb/objslot.h"
 #include "hw/xbox/hle/pb/pbmode.h"
 #include "hw/xbox/hle/pb/pbstate.h"
 #include "hw/xbox/hle/vk/back.h"
@@ -595,31 +596,45 @@ static void restored_pixels(PbObj *o)
     o->written = ++g_pd.wseq;
 }
 
-/* The slot a new object takes once all are used: the one bound longest ago
- * (never bound first), and never one still in use: the bound targets, the
- * one shown, a cube or its faces (views into it), a z-read's source, the
- * one just made (a bind makes its colour target, then its depth one).
- * NULL if every one is. */
-static bool obj_busy(const PbObj *o)
+/* What holds an object (objslot.h): the bound targets, the one shown, the
+ * one just made (a bind makes its colour target, then its depth one), a
+ * z-read's source; and a cube or its faces (views into it). */
+static unsigned obj_refs(uint32_t *refs)
 {
-    bool busy = o->id == g_pd.rt || o->id == g_pd.ds || o->id == g_pd.shown_id ||
-                o->id == g_pd.made || o->cube || o->d.parent;
-    for (unsigned j = 0; j < g_pd.nzr && !busy; j++) {
-        busy = g_pd.zr[j].src == o->id;
+    unsigned n = 0;
+    refs[n++] = g_pd.rt;
+    refs[n++] = g_pd.ds;
+    refs[n++] = g_pd.shown_id;
+    refs[n++] = g_pd.made;
+    for (unsigned j = 0; j < g_pd.nzr; j++) {
+        refs[n++] = g_pd.zr[j].src;
     }
-    return busy;
+    return n;
 }
 
+static HlePbSlot obj_slot(const PbObj *o)
+{
+    return (HlePbSlot){ .id = o->id, .bound = o->bound, .kept = o->cube || o->d.parent };
+}
+
+static bool obj_busy(const PbObj *o)
+{
+    uint32_t refs[4 + MAX_ZREADS];
+    const HlePbSlot s = obj_slot(o);
+    return hle_pb_slot_held(&s, refs, obj_refs(refs));
+}
+
+/* The slot a new object takes once all are used (hle_pb_evict_choice): a
+ * free one, else the one bound longest ago not held. NULL if every one is. */
 static PbObj *evict_slot(void)
 {
-    PbObj *best = NULL;
+    HlePbSlot s[MAX_OBJS];
+    uint32_t refs[4 + MAX_ZREADS];
     for (unsigned i = 0; i < g_pd.nobjs; i++) {
-        PbObj *o = &g_pd.objs[i];
-        if (!obj_busy(o) && (!best || o->bound < best->bound)) {
-            best = o;
-        }
+        s[i] = obj_slot(&g_pd.objs[i]);
     }
-    return best;
+    const int i = hle_pb_evict_choice(s, g_pd.nobjs, refs, obj_refs(refs));
+    return i < 0 ? NULL : &g_pd.objs[i];
 }
 
 /* A linear object that reaches past the title's block of memory: one made
@@ -649,8 +664,8 @@ static uint32_t object(uint32_t pa, uint32_t xfmt, uint32_t pitch, uint32_t w, u
     for (unsigned i = 0; i < g_pd.nobjs; i++) {
         PbObj *s = &g_pd.objs[i];
         const HleSurfDesc *d = &s->d;
-        if (d->pa != pa || d->xfmt != xfmt || d->pitch != pitch || s->cube) {
-            continue;
+        if (!s->id || d->pa != pa || d->xfmt != xfmt || d->pitch != pitch || s->cube) {
+            continue;                           /* a free slot, or another surface */
         }
         if (d->w == w && d->h == h && !pitch) {
             return s->id;
@@ -1986,7 +2001,7 @@ static uint32_t cube_of_targets(uint32_t pa, uint32_t code, uint32_t w, uint32_t
 
 static const HleSurfDesc *object_desc(uint32_t id)
 {
-    for (unsigned i = 0; i < g_pd.nobjs; i++) {
+    for (unsigned i = 0; id && i < g_pd.nobjs; i++) {
         if (g_pd.objs[i].id == id) {
             return &g_pd.objs[i].d;
         }
