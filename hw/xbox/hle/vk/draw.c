@@ -3641,6 +3641,17 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
             k.pk.dither = rt->fmt == VK_FORMAT_R5G6B5_UNORM_PACK16 ? 1 :
                           rt->fmt == VK_FORMAT_A1R5G5B5_UNORM_PACK16 ? 2 : 0;
         }
+        /* SET_ANTI_ALIASING_CONTROL with multisampling on, into an antialiased
+         * target: its sample mask, alpha-to-coverage and alpha-to-one, per
+         * pixel of the larger image (shader/psh.c) */
+        if (rt && s->aa && (s->aactl & 1) && (s->xs > 1 || s->ys > 1)) {
+            const uint32_t xs = MIN(s->xs, 2u), ys = MIN(s->ys, 2u), all = (1u << (xs * ys)) - 1;
+            const uint32_t mask = (s->aactl >> 16) & all, a2c = (s->aactl >> 4) & 1, a2one = (s->aactl >> 8) & 1;
+            if (mask != all || a2c || a2one) {
+                k.pk.aa_grid = (uint8_t)(xs | ys << 2);
+                k.pk.aa_ctl = (uint8_t)(a2c | a2one << 1 | mask << 4);
+            }
+        }
         /* two-sided lighting: back faces take the back colours a vertex
          * program's shader passes (shader/vsh.c; not the D3D-model FF's) */
         k.pk.two_side = prog && s->rs[RS_TWOSIDEDLIGHTING] != 0;

@@ -117,6 +117,11 @@ typedef struct HlePshKey {
     uint8_t fblend;
     uint16_t fb_src, fb_dst, fb_op;
     uint32_t fb_const;
+    /* SET_ANTI_ALIASING_CONTROL on an antialiased target, which is emulated
+     * as an image aa_grid's times as large (bits 0-1 xs, 2-3 ys): each of
+     * its pixels is a sample of a guest pixel. aa_ctl: bit 0
+     * alpha-to-coverage, 1 alpha-to-one, 4-7 the sample mask; 0 none. */
+    uint8_t aa_grid, aa_ctl;
 } HlePshKey;
 
 /* Key from the render-state array (rs[0..56] = the pixel-shader block). */

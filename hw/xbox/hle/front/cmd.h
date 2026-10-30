@@ -250,7 +250,11 @@ typedef struct HleCmdState {
                                    0: D3D scales by xs/ys itself (supersampling) */
     uint32_t zclamp;            /* NV2A ZMIN_MAX_CONTROL ZCLAMP_EN: depth past the near
                                    and far planes is clamped to them, not clipped */
-    uint32_t pad;               /* 8-byte words (hle_fe_state) */
+    uint32_t aactl;             /* NV2A SET_ANTI_ALIASING_CONTROL (0x1D7C): bit 0
+                                   multisampling, 4 alpha-to-coverage, 8 alpha-to-one,
+                                   31:16 the sample mask (as NV30's MULTISAMPLE_CONTROL);
+                                   D3D's 0xFFFF0001 until the title sets it. Keeps the
+                                   struct in 8-byte words (hle_fe_state). */
 } HleCmdState;
 
 /* Texels are tightly packed in the arena: for each face (6 for cubes), each
