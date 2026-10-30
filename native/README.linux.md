@@ -178,6 +178,20 @@ commit, so the same build packs to the same tarball. Publish it as the
 release `linux-v<version>` and set the package's `PKG_VERSION` and
 `PKG_SHA256` to match.
 
+`tools/native/linux-ci.sh <version>` does all of it in one go, in the image:
+the pinned sources, the build and its tests, the package and its checks
+(`linux-verify.py`, which also writes the `.sha256`), the pure HLE tests,
+their generated shaders through glslang, and the savestate lock. CI runs it
+(`.github/workflows/linux.yml`, on an arm64 runner) for every push, and keeps
+the package as the run's artifact.
+
+To release, add a `## linux-v<version>` section to `CHANGELOG.md` on
+`master` and push the tag `linux-v<version>` on that commit. CI builds the
+tag and publishes the release with the section as its notes. A version with
+a suffix, such as `0.12.0-exp.1`, is a pre-release that doesn't become the
+latest release. The PortareOS bump (`PKG_VERSION`, `PKG_SHA256` from the
+`.sha256` asset) is still a pull request there.
+
 In PortareOS the Xbox system runs RetroArch with the core, which keeps the
 console's disk in `/storage/saves/xbox`. Discs are `.iso` or `.chd` images.
 
