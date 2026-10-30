@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-"""The GitHub release notes of linux-v<version> (.github/workflows/linux.yml):
-its CHANGELOG.md section, how to install it and what it was built from.
-Fails when CHANGELOG.md has no section for the version.
+"""Generate Linux release notes from CHANGELOG.md, with install and build links.
+Fail if the version has no changelog section.
     python3 tools/native/linux-release-notes.py <version> <commit> [<previous tag> [<run url>]]
 """
 from pathlib import Path
@@ -21,16 +20,18 @@ section = re.search(rf'^## {re.escape(tag)}(?:[ \t][^\n]*)?\n(.*?)(?=^## |\Z)', 
 if not section:
     sys.exit(f'CHANGELOG.md has no "## {tag}" section')
 
-on_portareos = ('On PortareOS, copy `lib/libretro/hakux_libretro.so` and `.info` to `/storage/cores`. '
-                'They take the place of the core PortareOS ships, updates included: delete them to go back. '
-                if '-' in version else '')
-built = f'Built from `{commit}` using `tools/native/linux-ci.sh {version}` in the pinned image (`tools/native/Dockerfile.linux`)'
+on_portareos = ('On PortareOS, extract the archive and copy `hakux_libretro.so` and '
+                '`hakux_libretro.info` from `lib/libretro/` to `/storage/cores/`, then restart. '
+                'These files override the bundled core, including after OS updates; '
+                'remove both and restart to restore it. Back up `/storage/saves/xbox/hdd/` before updating.')
+built = f'Built from [{commit[:10]}]({repo}/commit/{commit})'
 built += f' by [CI]({run}).' if run else '.'
-print('hakuX for PortareOS on the Retroid Pocket Nova\n')
+print('For PortareOS on the Retroid Pocket Nova.\n')
 print(section.group(1).strip() + '\n')
-print('**Installing**')
-print(f'{on_portareos}Other ARM64 Linux systems can follow the '
+print('### Install\n')
+print(on_portareos + '\n')
+print('For other ARM64 Linux systems, follow the '
       f'[RetroArch installation guide]({repo}/blob/{tag}/README.md#play-on-other-aarch64-linux-systems).\n')
-print(built + ' `BUILD-INFO` records the source commit and pinned dependencies.')
+print(built + ' `BUILD-INFO` lists the source revision and pinned dependencies.')
 if previous:
     print(f'\n[Full changelog]({repo}/compare/{previous}...{tag})')

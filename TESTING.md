@@ -1,22 +1,19 @@
 # Testing the hakuX core
 
-hakuX's RetroArch core, `hakux_libretro.so`, is made and tested for
-PortareOS on the Retroid Pocket Nova (Snapdragon 8 Gen 2, Adreno 740).
-Other ARM64 Linux systems with RetroArch should work too, but are not
-tested by this fork.
+The RetroArch core, `hakux_libretro.so`, is tested on the Retroid Pocket
+Nova with PortareOS (Snapdragon 8 Gen 2, Adreno 740). The ROCKNIX community
+has also tested the build on other devices.
 
 ## Before you start
 
-- **Games:** your own discs, as `.iso` images or as CHDs made from them with
-  `chdman createdvd -i game.iso -o game.chd`. XISO images and full disc
-  dumps (Redump) are tested, as ISO and CHD. CD CHDs (`chdman createcd`)
-  don't work: an Xbox disc is a DVD.
+- **Games:** use your own XISO or full disc dump (Redump), as `.iso` or DVD
+  CHD. Convert with `chdman createdvd -i game.iso -o game.chd`. CD CHDs
+  and CHDs that need a parent image are unsupported.
 - **No BIOS** or other Xbox files are needed.
-- **Back up the console's hard disk** before trying a new version. Game saves
-  are stored inside it, in the `hdd/` folder of RetroArch's save directory
+- **Back up game saves** before changing versions: the `hdd/` folder in
+  RetroArch's save directory
   (`/storage/saves/xbox/hdd` on PortareOS).
-- **Note the version** you test: RetroArch's Main Menu → Information → Core
-  Information shows it.
+- **Record the core version:** **Main Menu → Information → Core Information**.
 
 ## On PortareOS
 
@@ -25,31 +22,30 @@ tested by this fork.
 Put games in `/storage/roms/xbox`. The launcher's Xbox system starts them in
 RetroArch with hakuX.
 
-### A newer core than the installed one
+### Update the core manually
 
 To try a release before PortareOS ships it:
 
 1. Download `hakux-<version>-aarch64.tar.gz` from the
-   [releases](https://github.com/portare-ch/hakuX/releases), and check it
+   [releases](https://github.com/portare-ch/hakuX-lr/releases), and check it
    against its `.sha256` file.
 2. Copy `lib/libretro/hakux_libretro.so` and `lib/libretro/hakux_libretro.info`
    from it into `/storage/cores`.
-3. Restart the device. The copies now take the place of the installed core.
+3. Restart. These files override the bundled core, including after OS updates.
 
-To go back, delete both files from `/storage/cores` and restart. Delete them
-there, not in `/tmp/cores`: deleting them in `/tmp/cores` hides the
-installed core as well.
+To restore the bundled core, remove both files from `/storage/cores` and
+restart. Removing files from `/tmp/cores` also hides the bundled core.
 
 ### Logs
 
-After the problem, before you start another game (each game replaces them):
+Copy both logs after the problem, before starting another game overwrites them:
 
-- `/var/log/exec.log`: the core's lines start with `hakuX-`.
-- `/var/log/retroarch/retroarch.log`: RetroArch's own.
+- `/var/log/exec.log`: core output, with lines prefixed `hakuX-`.
+- `/var/log/retroarch/retroarch.log`: RetroArch output.
 
-For frame rate numbers, start the game over SSH with the statistics on.
-They show up in `exec.log` every 10 s, such as
-`stats: 59.9 new frames/s` and `retro_run ... ms each`:
+For frame rates and core timings, launch over SSH with statistics enabled.
+`exec.log` reports them every 10 seconds (`stats: 59.9 new frames/s`,
+`retro_run ... ms each`):
 
 ```sh
 systemctl stop portarelauncher
@@ -60,15 +56,14 @@ systemctl start portarelauncher
 
 ## On other ARM64 Linux systems
 
-### What it needs
+### Requirements
 
 - **System:** ARM64 (aarch64) Linux with glibc 2.38 or newer, libstdc++ from
   GCC 13 or newer, and zlib.
-- **GPU driver:** Vulkan 1.3. Mesa's Turnip on Adreno 740 is tested; other
-  GPUs are not tested by this fork.
+- **GPU driver:** Vulkan 1.3. Tested with Mesa Turnip on Adreno 740.
 - **RetroArch:** with its `vulkan` video driver. 1.22.2 as PortareOS builds it
-  is tested. With another video driver the core copies every frame through
-  the CPU, which is meant for diagnosis only.
+  is tested. Other video drivers copy frames through the CPU and are intended
+  for diagnostics.
 
 ### Installing
 
@@ -83,14 +78,13 @@ Or load it directly:
 retroarch -v -L /path/to/hakux_libretro.so "/path/to/game.iso" 2>&1 | tee hakux.log
 ```
 
-The core keeps the console's hard disk in `hdd/` and its shader and pipeline
-caches in `cache/`, both under RetroArch's save directory. Leave run-ahead
-off.
+The core stores game saves in `hdd/` and shader/pipeline caches in `cache/`
+under RetroArch's save directory. Save states, rewind and run-ahead are
+unsupported; leave them off.
 
-Release builds are PortareOS's build. If stopping a game takes over 10 s,
-they end RetroArch rather than hang. `HAKUX_LR_STOP=0` in RetroArch's
-environment brings back the way before 0.4.0: closing a game then closes
-RetroArch.
+Release builds exit RetroArch if shutdown takes over 10 seconds.
+`HAKUX_LR_STOP=0` restores the pre-0.4.0 behavior: closing a game always
+exits RetroArch.
 
 ### Logs
 
@@ -100,53 +94,47 @@ the frame rate and the core's time per frame.
 
 ## What to check
 
-1. **Booting and playing:** the game gets to its menus and plays, with sound
-   and controller 1.
-2. **More players:** a second controller (RetroArch's user 2) plays as player
-   2, and so on up to 4. Each port has a controller plugged in unless its
-   Device Type (Quick Menu → Controls → Port N Controls) is None. Setting
-   player 1's to None during the game pulls the controller out: most games
-   pause and ask for it. Setting it back plugs it in again.
-3. **Speed:** play is smooth. With the statistics on, a 60 fps game shows
-   about 59.9 new frames a second and a 30 fps game about 30.
-4. **Restart** (Quick Menu → Restart): the game starts again from the
-   beginning. This hasn't been confirmed in RetroArch yet; please report what
-   you see either way.
-5. **Close Content:** the game closes without hanging. On PortareOS,
-   RetroArch then returns to the launcher. Elsewhere, load the same game or
-   another in the same RetroArch session.
-6. **Core options** (Quick Menu → Core Options): Render Scale, Screen Format,
-   Language and Video Region take effect the next time the game starts, and
-   RetroArch says so. Crop Overscan changes at once.
-7. **Game saves:** what the game saves is still there after closing and
-   starting it again.
-8. **Games that start another of their programs** (some compilations and
-   demo discs): they continue without going back to the menu.
-9. **Video driver restarts:** some RetroArch video settings restart its video
-   driver. The game then starts again, with a message saying so.
+1. **Boot and play:** reach the menus and play with sound and controller 1.
+2. **Controllers:** test players 1–4. In **Quick Menu → Controls → Port N
+   Controls**, set **Device Type** to **None** to disconnect a controller,
+   then reconnect it. Most games pause when player 1 disconnects.
+3. **Speed:** check smooth play and frame statistics: about 59.9 new frames/s
+   for a 60 fps game, or 30 for a 30 fps game.
+4. **Restart:** **Quick Menu → Restart** should restart from the beginning
+   with sound. Direct RetroArch confirmation is still needed; report the result.
+5. **Close Content:** check that it closes without hanging. PortareOS should
+   return to the launcher. Elsewhere, load another game in the same session.
+6. **Core options:** Render Scale, Screen Format, Language, Video Region,
+   Network and Audio Resampler apply after restarting the game. Crop
+   Overscan and Rumble update immediately.
+7. **Game saves:** save in-game, close it, then reopen and load the save.
+8. **Game executable changes:** compilations and demo discs should continue
+   when launching another program, without returning to the frontend.
+9. **Video driver restarts:** changing a setting that rebuilds RetroArch's
+   video driver should restart the game and show a message.
 10. **System link** (two devices): set **Network** to **LAN (system link)** in
     the core options on both, start a game with system link on both, and open
-    its system link menu. Each should see the other's game. Note whether both
-    devices are on the same Wi-Fi, and if not, what `lan-peers.txt` names.
+    its system link menu. Each should see the other's game. Record the network
+    setup and any `lan-peers.txt` entries.
+11. **Audio:** compare **Sinc** and **Linear** in the same scene, restarting
+    after each change. Check stereo placement, quiet or distorted sounds,
+    short effects and crackling. Record the game and scene.
 
 ## Reporting
 
-Open an issue at https://github.com/portare-ch/hakuX/issues with:
+Open an [issue](https://github.com/portare-ch/hakuX-lr/issues) with:
 
-- the hakuX version;
-- the device, GPU and driver (Mesa version), and the system (PortareOS
-  version or distribution);
-- the RetroArch version;
-- the game, its region, whether the image is an XISO or a full dump, and
-  whether it's an ISO or a CHD;
-- what you did, what happened, and what you expected;
-- the logs.
+- hakuX and RetroArch versions;
+- device, GPU, driver/Mesa version, and OS version;
+- game, region, and image type (XISO/full dump, ISO/CHD);
+- steps to reproduce, actual result and expected result;
+- logs.
 
 Don't attach games or other copyrighted files.
 
 ## For developers
 
-The checks run without a device: see
+For tests without a device, see
 [Build and check](native/README.linux.md#build-and-check). The libretro
 harness, `libretro-harness <core.so> <game.iso> <frames> <save directory>`,
 loads the core as RetroArch does and can play a real game headless. Its

@@ -215,7 +215,7 @@ def main():
         env = dict(os.environ, HARNESS_OPTIONS_LATER='hakux_render_scale=3;hakux_video_region=pal;'
                    'hakux_crop_overscan=disabled;hakux_rumble=enabled')
         run([args.harness, args.core, root / 'spin.iso', 60, root / 'saves'], 0,
-            ('options: render scale 2x', 'message: Render Scale, Video Region: takes effect when the game starts next',
+            ('options: render scale 2x', 'message: Render Scale, Video Region: restart the game to apply',
              'rumble: the frontend has none', 'ran 60 frames'), env)
         # Ports 1-4 are players 1-4, a controller on each by default. A port
         # set to None in RetroArch's menu pulls its controller out while the

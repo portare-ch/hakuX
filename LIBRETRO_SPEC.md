@@ -6,7 +6,7 @@ The core stops, unloads and loads again in RetroArch's process (M2); ports
 Written: 2026-10-24, from the owner's draft and its review against the source.
 Target: Retroid Pocket Nova (SM8550), AArch64 Linux, PortareOS, RetroArch
 Vulkan on KMS.
-Related: [issue #8](https://github.com/portare-ch/hakuX/issues/8) (VRR,
+Related: [issue #8](https://github.com/portare-ch/hakuX-lr/issues/8) (VRR,
 timed presents and the kernel's LFC).
 
 ## 1. Decision and result

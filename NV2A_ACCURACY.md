@@ -1,15 +1,14 @@
 # NV2A accuracy: missing and inaccurate features
 
-An audit of the HLE Vulkan renderer (`hw/xbox/hle/`) against the NV2A, made
-on 2026-10-29 at commit `532c8f9700`. Rows are ranked by visibility over GPU
-cost, best first. Cost is GPU cost on the Nova's Adreno 740 (Turnip) at the
-default 2x render scale.
+Source audit of the HLE Vulkan renderer (`hw/xbox/hle/`), dated 2026-10-29
+at `532c8f9700`. Rows prioritize visible improvements with low GPU cost.
+Cost estimates assume the Nova's Adreno 740, Turnip and 2x render scale.
 
-The visibility ratings are estimates from reading the code. No row has been
-checked in a game on the Nova unless its Status says so. Line numbers refer
-to that commit.
+The baseline column and line numbers refer to that commit; Status records
+later changes. Visibility is estimated from code. In-game checks on the
+Nova are noted explicitly.
 
-| # | NV2A feature | Current state | Visibility | Perf cost | Status |
+| # | NV2A feature | Audit baseline | Visibility | GPU cost | Status |
 |---|---|---|---|---|---|
 | 1 | **Anisotropic filtering** | Read from the register (`pb/kelvin.c:167`), but the sampler never turns it on (`vk/draw.c:1644`). `caps.aniso` is queried in `vkdev.c:587` and never used. | Med–High: floors and roads blur at angles in games that ask for it | Low, and only on stages the game sets | PR #28. Vulkan's anisotropic filtering is the driver's, so this approximates the NV2A's until compared with Xbox output, nearest filtering especially. |
 | 2 | **Two-sided lighting / back colours** | Method `0x17C4` is never read. The vertex shaders write `vBack0`/`vBack1` (`shader/vsh.c:222`), but no fragment shader reads them. Fixed-function lighting doesn't light back faces (`shader/ffhw.c:202`). | Med: lit geometry drawn with culling off (foliage, cloth, hair, flags) shows front colours on its back faces | ~0 (pick by `gl_FrontFacing`) | PR #29 |

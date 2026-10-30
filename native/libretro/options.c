@@ -1,16 +1,7 @@
 /*
- * hakuX native core — the libretro core's options (LIBRETRO_SPEC.md section
- * 10): what the emulator itself backs, the render scale and the console's
- * settings as its dashboard keeps them. The picture's filters and its shape
- * on screen are RetroArch's (its shaders, its aspect setting).
- *
- * Each option but the overscan crop is read once, before the console boots:
- * the render scale sizes the renderer's targets, the console's settings
- * are in the EEPROM the title reads as it starts, and the network is the
- * NIC's from its start (net.c). The core can't boot again
- * in its process (M2), so a change to one during the game takes effect when
- * the game starts next, and RetroArch shows a message saying so. The crop
- * (video.c) and rumble (input.c) change at once.
+ * Libretro core options (LIBRETRO_SPEC.md section 10).
+ * RetroArch handles display filters and aspect ratio. Crop (video.c) and
+ * rumble (input.c) update immediately; other options apply at the next boot.
  */
 #include "native/libretro/libretro_int.h"
 #include "native/hle/hle_native.h"
@@ -21,7 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define NEXT " Takes effect when the game starts next."
+#define NEXT " Restart the game to apply."
 
 enum { OPT_SCALE, OPT_CROP, OPT_FORMAT, OPT_LANGUAGE, OPT_REGION, OPT_RUMBLE, OPT_NETWORK, OPT_RESAMPLER, OPT_COUNT };
 
@@ -29,30 +20,29 @@ enum { OPT_SCALE, OPT_CROP, OPT_FORMAT, OPT_LANGUAGE, OPT_REGION, OPT_RUMBLE, OP
 static struct retro_core_option_v2_definition g_defs[OPT_COUNT + 1] = {
     [OPT_SCALE] = {
         "hakux_render_scale", "Render Scale", NULL,
-        "The resolution games are drawn at: 1x is the Xbox's own, 640x480 for most; 2x, the default, "
-        "fills a 1280x960 screen pixel for pixel. Higher is sharper and costs the GPU more." NEXT,
+        "1x uses the Xbox's native resolution (usually 640x480). The default, 2x, doubles it. "
+        "Higher values sharpen the picture but need more GPU power." NEXT,
         NULL, NULL,
         {{"1", "1x (Xbox)"}, {"2", "2x"}, {"3", "3x"}, {"4", "4x"}, {NULL, NULL}},
         "2"},
     [OPT_CROP] = {
         "hakux_crop_overscan", "Crop Overscan", NULL,
-        "Hides the border a TV hid, 1/30 of the picture on each side, so a standard-definition game fills a "
-        "4:3 screen. Off shows the whole frame.",
+        "Crops the TV overscan border (1/30 of each edge) to fill a 4:3 screen. Off shows the full frame.",
         NULL, NULL,
         {{"enabled", "On"}, {"disabled", "Off"}, {NULL, NULL}},
         "enabled"},
     [OPT_FORMAT] = {
         "hakux_screen_format", "Screen Format", NULL,
-        "The TV the console is set up for. Widescreen games then render 16:9 and are shown so, letterbox "
-        "ones show 16:9 scenes inside 4:3; games without either ignore it." NEXT,
+        "Sets the console's screen format. Widescreen uses 16:9; Letterbox fits 16:9 inside 4:3. "
+        "Only games that support these formats use them." NEXT,
         NULL, NULL,
         {{"normal", "Normal (4:3)"}, {"widescreen", "Widescreen (16:9)"}, {"letterbox", "Letterbox"},
          {NULL, NULL}},
         "normal"},
     [OPT_LANGUAGE] = {
         "hakux_language", "Language", NULL,
-        "The console's language, for games that have several. Auto is RetroArch's, or English where the "
-        "Xbox lacks it." NEXT,
+        "Sets the language in games that support it. Auto uses RetroArch's language, "
+        "falling back to English if the Xbox does not support it." NEXT,
         NULL, NULL,
         {{"auto", "Auto"}, {"english", "English"}, {"japanese", "Japanese"}, {"german", "German"},
          {"french", "French"}, {"spanish", "Spanish"}, {"italian", "Italian"}, {"korean", "Korean"},
@@ -60,8 +50,8 @@ static struct retro_core_option_v2_definition g_defs[OPT_COUNT + 1] = {
         "auto"},
     [OPT_REGION] = {
         "hakux_video_region", "Video Region", NULL,
-        "The console's TV standard. Auto follows the game: PAL for a European game, NTSC-M otherwise. PAL "
-        "games run at 60 Hz where they offer it; one with only 50 Hz runs at its own speed, less smoothly."
+        "Sets the console's TV standard. Auto selects PAL for European games and NTSC-M otherwise. "
+        "PAL games use 60 Hz when supported; 50 Hz games keep their speed but may look less smooth."
         NEXT,
         NULL, NULL,
         {{"auto", "Auto"}, {"ntsc-m", "NTSC-M (Americas)"}, {"ntsc-j", "NTSC-J (Japan)"},
@@ -69,24 +59,21 @@ static struct retro_core_option_v2_definition g_defs[OPT_COUNT + 1] = {
         "auto"},
     [OPT_RUMBLE] = {
         "hakux_rumble", "Rumble", NULL,
-        "Passes the game's controller vibration on to the controllers' motors, where RetroArch and the "
-        "controller have them.",
+        "Enables vibration when supported by RetroArch and the controller.",
         NULL, NULL,
         {{"disabled", "Off"}, {"enabled", "On"}, {NULL, NULL}},
         "disabled"},
     [OPT_NETWORK] = {
         "hakux_network", "Network", NULL,
-        "The console's network cable. LAN plays system link games with the consoles on this network that have "
-        "it on too: they find each other by broadcast, on UDP port 3075. Consoles the broadcast doesn't reach "
-        "(another subnet, a VPN) can be named in lan-peers.txt in the save directory." NEXT,
+        "Enables system link over LAN. Turn it on on each device; discovery uses UDP port 3075. "
+        "For peers on another subnet or a VPN, add their addresses to lan-peers.txt in the save directory." NEXT,
         NULL, NULL,
         {{"disabled", "Off (no cable)"}, {"lan", "LAN (system link)"}, {NULL, NULL}},
         "disabled"},
     [OPT_RESAMPLER] = {
         "hakux_audio_resampler", "Audio Resampler", NULL,
-        "How the game's sounds are converted to the output's 48 kHz. Sinc, the default, keeps their high "
-        "frequencies and avoids aliasing; Linear, what hakuX used before, is lighter on the sound thread and duller. "
-        "Neither is known to be the Xbox's own; a core that isn't 64-bit ARM uses Linear." NEXT,
+        "Converts game audio to 48 kHz. Sinc preserves high frequencies and reduces aliasing. "
+        "Linear uses less CPU but softens high frequencies. Non-ARM64 builds use Linear." NEXT,
         NULL, NULL,
         {{"sinc", "Sinc (higher quality)"}, {"linear", "Linear"}, {NULL, NULL}},
         "sinc"},
@@ -238,7 +225,7 @@ void nc_lr_options_run(void)
         return;
     }
     static char text[320];
-    snprintf(text, sizeof(text), "%s: takes effect when the game starts next", names);
+    snprintf(text, sizeof(text), "%s: restart the game to apply", names);
     const struct retro_message msg = {text, 240};
     nc_lr_env(RETRO_ENVIRONMENT_SET_MESSAGE, (void *)&msg);
     nc_log("hakuX-libretro", "options: %s", text);

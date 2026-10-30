@@ -1,10 +1,9 @@
 # Android build (upstream)
 
-Retained for the Android app; this PortareOS fork does not validate Android builds.
+Upstream Android build notes. Android builds are not validated by this fork.
 
-The app (this directory) builds no native code itself: it packs the native
-core's libraries from `app/src/main/jniLibs`. Build the core first, copy its
-libraries in, then build the APK.
+The app packages native libraries from `app/src/main/jniLibs`. Build the
+core first, copy its libraries there, then build the APK.
 
 ## Toolchain
 
@@ -16,8 +15,7 @@ libraries in, then build the APK.
 ## Sources
 
 - The FEX fork ([rfandango/FEX](https://github.com/rfandango/FEX), branch
-  `hakuX`) is the submodule `external/fex`, with the FEX submodules it builds
-  with:
+  `hakuX`) lives in `external/fex`. Initialize it and its dependencies:
 
   ```
   git submodule update --init external/fex
@@ -25,7 +23,7 @@ libraries in, then build the APK.
     External/rpmalloc External/unordered_dense External/xxhash Source/Common/cpp-optparse
   ```
 
-  CMake `HAKUX_FEX_DIR` names another checkout instead.
+  Set CMake's `HAKUX_FEX_DIR` to use another checkout.
 - The core's third-party sources, outside the repository (CMake `NC_DEPS`):
 
 | Path in `NC_DEPS` | Revision |
@@ -54,9 +52,9 @@ cd android
 ./gradlew assembleDebug
 ```
 
-`app-libs.sh` copies the core, SDL3 and adrenotools' hook libraries into
-`app/src/main/jniLibs`, stripped. Run it again after each core build: the
-APK packs whatever is there.
+`app-libs.sh` strips and copies the core, SDL3 and adrenotools libraries to
+`app/src/main/jniLibs`. Run it after every core build to avoid packaging
+stale libraries.
 
 A release build (`assembleRelease`) is signed with the keystore that
 `key.properties` names (`storeFile`, `storePassword`, `keyAlias`,

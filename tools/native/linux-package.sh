@@ -25,7 +25,7 @@ sed "s/^display_version = .*/display_version = \"$version\"/" native/libretro/ha
 cp LICENSE COPYING licenses/* "$out/$name/share/licenses/hakux/"
 {
     echo "hakuX $version"
-    echo "source $(git rev-parse HEAD) (https://github.com/portare-ch/hakuX)"
+    echo "source $(git rev-parse HEAD) (https://github.com/portare-ch/hakuX-lr)"
     echo "compiler $("${CC:-clang}" --version | head -1)"
     echo "runtime libz, libstdc++, libm, libgcc_s, glibc 2.38 (aarch64); libvulkan.so.1 loaded at run time"
     echo "dependencies (tools/native/linux-deps.json):"

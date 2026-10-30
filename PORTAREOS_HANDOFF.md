@@ -1,6 +1,6 @@
 # PortareOS handoff — 2026-10-24
 
-Issue: https://github.com/portare-ch/hakuX/issues/2
+Issue: https://github.com/portare-ch/hakuX-lr/issues/2
 Specification: [SPEC.md](SPEC.md)
 Build/run instructions: [native/README.linux.md](native/README.linux.md)
 
@@ -13,14 +13,13 @@ PR #5 as `1a058f38dd`, and day four, controls, in PR #6 as `8d32ef4afd`.
 Day five, the launcher, merged in PR #7 as `93bad3d7fe`; the libretro core
 and Vulkan handoff merged in PR #10 as `100e9fadef`.
 
-Since 0.4.0 (2026-10-25), PortareOS runs Xbox games only through RetroArch
-with the core, which keeps the emulated disk and caches in
-`/storage/saves/xbox`. The Linux standalone `hakux` was dropped: it wasn't
-tested, and PortareOS had stopped shipping it in portare-ch/portareos#754.
-The sections on it below are history. The core stops and boots again in
-RetroArch's process (M2: unloading, a reset, a title's relaunch, a video
-driver rebuild). Ports 1-4 are players 1-4. It lacks rumble and save states; its options
-are the render scale and the console's settings. Current usage: [native/README.linux.md](native/README.linux.md).
+Since 0.4.0 (2026-10-25), PortareOS uses the RetroArch core, with disk and
+caches in `/storage/saves/xbox`. The untested Linux standalone was removed
+after PortareOS stopped shipping it (portare-ch/portareos#754); its sections
+below are historical. The core supports unload/reload, reset, game relaunch
+and video driver rebuilds within RetroArch (M2). Ports 1–4 map to players
+1–4. Rumble is available from 0.8.0; save states remain unsupported.
+For current options and usage, see [native/README.linux.md](native/README.linux.md).
 Issue #8's display checks passed on the Nova on 2026-10-25: through
 RetroArch, Burnout 3 was shown for two refreshes per frame for 10 minutes
 (see "Issue #8" below).
@@ -357,12 +356,10 @@ host (untracked). The runs' files were removed from the Nova afterwards.
 
 ## Remaining work
 
-- In-process core shutdown, unload/reload and reset; see
-  [LIBRETRO_SPEC.md](LIBRETRO_SPEC.md) for the lifecycle and validation targets.
-- Additional controller ports and save states.
+- Save states. In-process lifecycle (0.4.0) and players 2–4 (0.5.0) are
+  implemented; see [LIBRETRO_SPEC.md](LIBRETRO_SPEC.md) for validation targets.
 - Complete the long-run audio, pause/resume and relaunch checks in the
-  libretro design (the display's, #8, are done); investigate rumble when
-  prioritized.
+  libretro design (display checks, #8, are done). Rumble was added in 0.8.0.
 - Check #11 on the Nova: a relaunching title, and a video driver rebuild
   mid-game. The relaunch has run only the harness's synthetic title. A
   quit already ends through the context teardown there (2026-10-25).

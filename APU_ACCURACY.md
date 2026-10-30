@@ -1,26 +1,21 @@
 # APU accuracy: missing and inaccurate features
 
-A source audit of the audio emulation (`native/dev/apu/`, the MCPX APU, and
-`native/dev/aci.c`, its AC'97 controller), made on 2026-10-30 at commit
-`be0ff4cd64` and updated with the first stereo batch (branch
-`apu-stereo-first-run`) and the resampler (branch `apu-resample-sinc`). It reads the code against what is known of the
-Xbox's audio; no row has been compared with an Xbox recording, so "Xbox"
-below is the documented or inferred behaviour, not a measurement. Line
-numbers refer to `be0ff4cd64`; paths are under `native/dev/apu/` unless
-given.
+Audio source audit from 2026-10-30, based on `be0ff4cd64` and updated for
+the stereo and sinc-resampler changes. Covers the MCPX APU
+(`native/dev/apu/`) and AC'97 controller (`native/dev/aci.c`). Xbox behavior
+is documented or inferred; no row has been checked against an Xbox
+recording. DSP-program measurements are described below. Line numbers refer
+to the audit commit; paths are relative to `native/dev/apu/` unless stated.
 
-The APU is xemu's: a voice processor (VP) that decodes, resamples, filters
-and mixes up to 256 voices into 32 mix bins, and two DSP56300s, the global
-processor (GP), which runs DirectSound's effects and mixing program, and the
-encode processor (EP), which makes the outputs. By default (`use_dsp` off,
-as in xemu) the VP mixes the output itself (the monitor point `MON_VP`) and
-the DSPs get limited interpreter time; `NC_APU_DSP=1` runs them to
-completion and takes their output instead.
+The xemu-derived APU has a voice processor (VP) that decodes, resamples,
+filters and mixes up to 256 voices into 32 bins. Two DSP56300s handle
+DirectSound effects and mixing (GP) and output encoding (EP). By default,
+the VP supplies the output (`MON_VP`), with limited DSP interpreter time.
+`NC_APU_DSP=1` runs the DSPs to completion and uses their output.
 
-Rows are in implementation order: what the delivered batches cover first,
-then what needs evidence before it can be implemented correctly. Rows 1, 2,
-3 and 4 are candidate causes of issue #44 (Halo and Ninja Gaiden Black muted
-and off-centre); none has been isolated in those games.
+Rows follow implementation order: delivered changes, then work needing more
+evidence. Rows 1–4 may explain issue #44 (quiet, off-centre audio in Halo
+and Ninja Gaiden Black); none has been isolated in those games.
 
 | # | Part | Xbox | Current state | Effect | Next | Status |
 |---|---|---|---|---|---|---|

@@ -2,94 +2,91 @@
 
 ## linux-v0.12.0 (PortareOS)
 
-Sound that's placed and clearer, and more of the Xbox GPU's graphics features. It replaces 0.11.0 and the 0.12.0-exp builds.
+Better stereo audio, a NEON-accelerated audio resampler, and broader graphics support. Replaces 0.11.0 and all 0.12.0 experimental builds.
 
 ### What's new
 
-- **Stereo as a stereo Xbox mixes it** — Sounds play on the left and right speakers as the game places them. The Xbox's surround channels are mixed down as its own audio processor does for a stereo console: the centre on both sides at -3 dB, the rear channels on their own side at -3 dB, the subwoofer channel left out. 3D sounds keep their left/right placement, and sounds behind you are no longer 3 dB too loud. Before, many sounds came out of both speakers alike. The mix was measured from Halo's own audio programs.
-- **Clearer high frequencies** — Sounds at a lower rate than the output's 48 kHz, such as 22 kHz effects and speech, are converted with a band-limited (sinc) filter: a 22 kHz sound's 10 kHz content was about 6 dB quieter, now it's within 0.2 dB, and sounds pitched up past 48 kHz no longer alias. A new core option, **Audio Resampler** in **Quick Menu → Core Options**, switches back to **Linear**, what earlier versions used; it takes effect the next time the game starts.
-- **Short sounds play to their end** — A sound that doesn't loop lost its last 2 to 3 ms, and very short sounds pitched up could be lost entirely.
-- **No dropped audio** — When RetroArch takes fewer samples than it's offered, the rest plays next. Before, a whole period of sound (about 17 ms) was lost each time, heard as a click or a gap.
-- **Reused 3D voices** — A 3D sound no longer starts with the end of the sound its voice played before.
-- **More texture formats** — Textures in L16, V16U16, R6G5B5, R5G5B5A1 and R4G4B4A4, and depth textures that a pixel shader reads, now show. Before, they came out white.
-- **Window clip** — Exclusive clip windows, and several windows at once, clip as the Xbox does: split-screen, picture-in-picture and HUD masks.
-- **Lighting** — Spotlight falloff and specular highlights follow the curve the Xbox's lighting unit computes.
-- **Pixel-shader modes** — Depth replace (`texm3x2depth`), BRDF lookups and constant-eye specular reflections (`texm3x3spec`) now work. Before, they were drawn as plain 2D textures.
+- **Stereo positioning** — Sounds keep their left/right placement, including 3D effects. Surround channels use the stereo downmix measured from Halo's audio programs, correcting rear sounds that were too loud.
+- **Clearer audio with ARM NEON** — A new 32-tap sinc resampler preserves high frequencies in speech and effects and reduces aliasing in high-pitched sounds. It uses ARM NEON vector instructions. To use the lighter, previous resampler, choose **Quick Menu → Core Options → Audio Resampler → Linear**, then restart the game.
+- **Fewer audio glitches** — Short sounds play to the end, new 3D sounds no longer inherit audio from a previous sound, and audio left over after a partial RetroArch write is queued instead of dropped.
+- **More texture formats** — L16, V16U16, R6G5B5, R5G5B5A1, R4G4B4A4 and depth textures used by pixel shaders render instead of appearing white.
+- **Clipping** — Supports exclusive and multiple clip windows used for split-screen, picture-in-picture and HUD masks.
+- **Lighting and shaders** — More accurate spotlight falloff and specular highlights. Adds depth replacement (`texm3x2depth`), BRDF lookups and constant-eye specular reflections (`texm3x3spec`).
 
-Tried on the Nova: Burnout 3 and Halo showed no graphics glitches in a quick play session, and Halo ran at its full 30 fps with the sinc filter, its sound processing at about 3 % of one core. The stereo mix follows the measurement of Halo's audio programs and hasn't been listened to in a game yet.
+On the Nova, brief play sessions in Burnout 3 and Halo showed no graphics glitches. Halo ran at 30 fps with sinc resampling; audio processing used about 3% of one CPU core. The new stereo mix has been measured against Halo's audio programs, but still needs in-game listening tests.
 
 ### Current limitations
 
 - Save states are not yet available.
-- The reverb and other effects the Xbox's audio processor adds aren't produced.
-- XLink Kai, which upstream also has, isn't offered in RetroArch yet, and neither is the Internet (NAT).
-- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
-- NBA Inside Drive 2003 saves its prestamped player textures blank: it reads back small images the GPU drew, which hakuX doesn't copy back to memory yet.
+- Reverb and other Xbox DSP effects are missing from the default audio mix.
+- XLink Kai and Internet (NAT) networking are unavailable in RetroArch.
+- CD CHDs and CHDs that require a parent image are unsupported. Use `chdman createdvd`.
+- NBA Inside Drive 2003 has blank saved player textures because GPU readback is incomplete.
 
 ## linux-v0.12.0-exp.3 (PortareOS, experimental)
 
-Clearer high frequencies in the game's sounds, and short sounds that play to their end. It's a pre-release; 0.11.0 stays the latest stable release.
+Clearer audio and complete playback of short sounds. Experimental; 0.11.0 remained stable at release.
 
 ### What's new
 
-- **Clearer high frequencies** — Sounds at a lower rate than the output's 48 kHz, such as 22 kHz effects and speech, are now converted with a band-limited (sinc) filter. A 22 kHz sound's 10 kHz content came out about 6 dB quieter before; now it's within 0.2 dB. Sounds pitched up past 48 kHz, such as engines at high revs, no longer alias. A new core option, **Audio Resampler** in **Quick Menu → Core Options**, switches back to **Linear**, what earlier versions used. It takes effect the next time the game starts.
-- **Short sounds play to their end** — A sound that doesn't loop was cut off in the frame its data ran out, losing its last 2 to 3 ms. Very short sounds, such as clicks played at a high pitch, could be lost entirely. They now play to their last sample.
+- **NEON sinc resampler** — Preserves high-frequency detail in speech and effects and reduces aliasing in high-pitched sounds. In tests with 22 kHz input, 10 kHz content was within 0.2 dB of its original level, compared with a 6 dB loss before. Choose **Quick Menu → Core Options → Audio Resampler → Linear** for the previous resampler, then restart the game.
+- **Complete short sounds** — Fixes lost audio at the end of non-looping sounds (2–3 ms) and very short effects disappearing at high pitch.
 - Everything in 0.12.0-exp.2 below.
 
 ### Experimental
 
-The sinc filter meets its targets in the build's tests and was measured on the Nova, but it hasn't been listened to in a game yet. It costs two to three times the linear one: with 64 sounds playing at once, about 5 to 9 % of a frame on the Nova's big cores. If a game sounds worse than in 0.12.0-exp.2, or crackles, set **Audio Resampler** to **Linear** and report the game.
+Sinc passed automated tests and device benchmarks; in-game listening tests were still pending. With 64 simultaneous sounds, it used about 5–9% of a frame on the Nova's big cores, two to three times the linear resampler. If audio sounds worse or crackles, try **Linear** and report the game.
 
 ### Current limitations
 
 - Save states are not yet available.
-- XLink Kai, which upstream also has, isn't offered in RetroArch yet, and neither is the Internet (NAT).
-- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
-- NBA Inside Drive 2003 saves its prestamped player textures blank: it reads back small images the GPU drew, which hakuX doesn't copy back to memory yet.
+- XLink Kai and Internet (NAT) networking are unavailable in RetroArch.
+- CD CHDs and CHDs that require a parent image are unsupported. Use `chdman createdvd`.
+- NBA Inside Drive 2003 has blank saved player textures because GPU readback is incomplete.
 
 ## linux-v0.12.0-exp.2 (PortareOS, experimental)
 
-The first batch of audio fixes, on top of 0.12.0-exp.1's graphics features. It's a pre-release; 0.11.0 stays the latest stable release.
+Audio fixes alongside the graphics changes in 0.12.0-exp.1. Experimental; 0.11.0 remained stable at release.
 
 ### What's new
 
-- **Stereo panning** — Ordinary 2D sounds, such as music, menus and effects a game doesn't place in 3D, now play on the left and right speakers as the game pans them. Before, they came out of both speakers at the louder side's level.
-- **Reused 3D voices** — A 3D sound no longer starts with the end of the sound its voice played before.
-- **No dropped audio** — When RetroArch takes fewer samples than it's offered, the rest is played next instead of dropped. Before, a whole period of sound (about 17 ms) was lost each time, heard as a click or a gap.
+- **Stereo panning** — 2D sounds, including music and menu effects, keep their left/right balance instead of playing equally through both speakers.
+- **Clean 3D sound starts** — New sounds no longer inherit audio from the previous sound using the same voice.
+- **Audio buffering** — Queues samples RetroArch could not accept, fixing clicks and gaps caused by dropping about 17 ms of audio per partial write.
 - Everything in 0.12.0-exp.1 below.
 
 ### Experimental
 
-The audio fixes follow from how the Xbox's audio unit routes and filters a voice, and pass the build's tests; they haven't been listened to in a game yet. Halo's and Ninja Gaiden Black's quiet, off-centre sound may not be fixed by them: 3D sounds, centre and surround channels, and effects such as reverb are still mixed as before. If a game sounds different from 0.11.0, report the game and the scene.
+Automated tests passed; in-game listening tests were still pending. These changes may not fix quiet, off-centre audio in Halo and Ninja Gaiden Black: 3D sounds, surround channels and reverb are unchanged in this build. Report differences from 0.11.0 with the game and scene.
 
 ### Current limitations
 
 - Save states are not yet available.
-- XLink Kai, which upstream also has, isn't offered in RetroArch yet, and neither is the Internet (NAT).
-- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
-- NBA Inside Drive 2003 saves its prestamped player textures blank: it reads back small images the GPU drew, which hakuX doesn't copy back to memory yet.
+- XLink Kai and Internet (NAT) networking are unavailable in RetroArch.
+- CD CHDs and CHDs that require a parent image are unsupported. Use `chdman createdvd`.
+- NBA Inside Drive 2003 has blank saved player textures because GPU readback is incomplete.
 
 ## linux-v0.12.0-exp.1 (PortareOS, experimental)
 
-An experimental build with more of the Xbox GPU's graphics features. It's a pre-release; 0.11.0 stays the latest stable release. PortareOS ships it for broad testing.
+Broader Xbox GPU support, shipped in PortareOS for testing. Experimental; 0.11.0 remained stable at release.
 
 ### What's new
 
-- **More texture formats** — Textures in L16, V16U16, R6G5B5, R5G5B5A1 and R4G4B4A4, and depth textures that a pixel shader reads, now show. Before, they came out white.
-- **Window clip** — Exclusive clip windows, and several windows at once, now clip as the Xbox does: split-screen, picture-in-picture and HUD masks. Before, only the box around the windows clipped.
-- **Lighting** — Spotlight falloff and specular highlights follow the curve the Xbox's lighting unit computes, instead of a linear cone and an approximated power.
-- **Pixel-shader modes** — Depth replace (`texm3x2depth`), BRDF lookups and constant-eye specular reflections (`texm3x3spec`) now work. Before, they were drawn as plain 2D textures.
+- **Texture formats** — L16, V16U16, R6G5B5, R5G5B5A1, R4G4B4A4 and depth textures used by pixel shaders render instead of appearing white.
+- **Clipping** — Supports exclusive and multiple clip windows for split-screen, picture-in-picture and HUD masks.
+- **Lighting** — Uses the Xbox lighting curve for spotlight falloff and specular highlights.
+- **Pixel shaders** — Adds depth replacement (`texm3x2depth`), BRDF lookups and constant-eye specular reflections (`texm3x3spec`).
 
 ### Experimental
 
-These follow NVIDIA's documentation, xemu, and the Xbox captures of nxdk_pgraph_tests where they exist. Burnout 3 and Halo showed no glitches in a quick play session on the Nova; other games haven't been tried. A game that looked right in 0.11.0 can look wrong in this build; if one does, report the game and the scene.
+Based on NVIDIA documentation, xemu and available Xbox captures from nxdk_pgraph_tests. Brief Nova sessions in Burnout 3 and Halo showed no graphics glitches; other games were untested. Report regressions from 0.11.0 with the game and scene.
 
 ### Current limitations
 
 - Save states are not yet available.
-- XLink Kai, which upstream also has, isn't offered in RetroArch yet, and neither is the Internet (NAT).
-- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
-- NBA Inside Drive 2003 saves its prestamped player textures blank: it reads back small images the GPU drew, which hakuX doesn't copy back to memory yet.
+- XLink Kai and Internet (NAT) networking are unavailable in RetroArch.
+- CD CHDs and CHDs that require a parent image are unsupported. Use `chdman createdvd`.
+- NBA Inside Drive 2003 has blank saved player textures because GPU readback is incomplete.
 
 ## linux-v0.11.0 (PortareOS)
 
@@ -97,37 +94,37 @@ System link: play a game's LAN mode with other devices on your network.
 
 ### What's new
 
-- **System link (LAN)** — A new core option, **Network**, connects the console to the other consoles on your network. Set it to **LAN (system link)** in **Quick Menu → Core Options** on each device, then close and reopen the game. Devices on the same Wi-Fi find each other. A device the broadcast doesn't reach, such as one on another subnet or a VPN (Tailscale, ZeroTier), can be added by address to `lan-peers.txt` in the save directory. It's off by default.
-- **Copied consoles** — Two devices with the same console identity, such as a hard disk copied from one to the other, can't see each other's games. RetroArch now says so, and the device gets an identity of its own the next time the game starts. Its saves stay valid.
+- **System link (LAN)** — Enable **Quick Menu → Core Options → Network → LAN (system link)** on each device, then restart the game. Devices on the same Wi-Fi discover each other. Add peers on another subnet or a VPN to `lan-peers.txt` in the save directory. Off by default.
+- **Duplicate console identities** — Detects devices sharing a copied hard disk identity and warns in RetroArch. A new identity is generated on the next game start; existing saves remain valid.
 
-Tried on the Nova: Halo's system link game reached another computer on the network, and that computer's frames reached the game. A game between two devices hasn't been tried yet.
+Verified two-way LAN traffic between Halo on the Nova and another computer. Multiplayer between two devices was still untested.
 
 ### Current limitations
 
 - Save states are not yet available.
-- XLink Kai, which upstream also has, isn't offered in RetroArch yet, and neither is the Internet (NAT).
-- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
-- NBA Inside Drive 2003 saves its prestamped player textures blank: it reads back small images the GPU drew, which hakuX doesn't copy back to memory yet.
+- XLink Kai and Internet (NAT) networking are unavailable in RetroArch.
+- CD CHDs and CHDs that require a parent image are unsupported. Use `chdman createdvd`.
+- NBA Inside Drive 2003 has blank saved player textures because GPU readback is incomplete.
 
 ## linux-v0.10.0 (PortareOS)
 
-A crash fix for NBA Inside Drive 2003, the GPU's antialiasing control, and nxdk homebrew that gets past its start-up.
+Fixes an NBA Inside Drive 2003 crash and nxdk startup, and adds antialiasing controls.
 
 ### What's new
 
-- **NBA Inside Drive 2003** — The game no longer crashes to the launcher after its intro. hakuX had sized its 640x480 front buffer as 640x960 and copied it back to memory at that size, over a page of the game's code. Images a game draws into now stay within the memory block the game gave them. Tried on the Nova: past the intro at full speed.
-- **Antialiasing control** — Games that antialias with alpha-to-coverage, such as for foliage, fences and hair, or that draw into only some of a pixel's samples, get those effects. Before, those edges were hard and every sample was drawn.
-- **nxdk homebrew** — Programs built with nxdk, the open-source Xbox SDK, no longer stop in their first second. nxdk_pgraph_tests now runs to the end, but what nxdk's graphics library draws doesn't show yet: the screen stays white.
-- **First start after updating** — The GPU pipelines are built again once, so a game may stutter briefly the first time.
+- **NBA Inside Drive 2003** — Fixes a crash after the intro caused by an oversized framebuffer copy overwriting game code. Confirmed past the intro at full speed on the Nova.
+- **Antialiasing controls** — Adds alpha-to-coverage and sample masks for effects such as foliage, fences and hair.
+- **nxdk homebrew** — Programs built with the open-source Xbox SDK get past startup. nxdk_pgraph_tests completes, but its graphics still show a white screen.
+- **Cache rebuild** — Graphics pipelines rebuild on first launch after updating, which may cause brief stutter.
 
-The antialiasing control follows the GPU's register as documented for its successor, and passes the build's tests and shader checks. It hasn't been tried in a game that uses it yet, and its sample order and coverage pattern haven't been compared against an Xbox.
+Antialiasing controls follow register documentation for the NV2A's successor and pass automated tests and shader checks. In-game use, sample order and coverage patterns still need verification against an Xbox.
 
 ### Current limitations
 
 - Save states are not yet available.
-- Upstream's LAN and XLink Kai backends are included, but this release does not add network settings to RetroArch. Networking is off by default.
-- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
-- NBA Inside Drive 2003 saves its prestamped player textures blank: it reads back small images the GPU drew, which hakuX doesn't copy back to memory yet.
+- Networking is off; RetroArch network settings are not available in this release.
+- CD CHDs and CHDs that require a parent image are unsupported. Use `chdman createdvd`.
+- NBA Inside Drive 2003 has blank saved player textures because GPU readback is incomplete.
 
 ## linux-v0.9.0 (PortareOS)
 
@@ -149,25 +146,25 @@ These follow the Xbox GPU's registers and its published hardware tests, and pass
 ### Current limitations
 
 - Save states are not yet available.
-- Upstream's LAN and XLink Kai backends are included, but this release does not add network settings to RetroArch. Networking is off by default.
-- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
-- Full disc dumps (Redump), as `.iso` or CHD, haven't been tested with a real game yet.
+- Networking is off; RetroArch network settings are not available in this release.
+- CD CHDs and CHDs that require a parent image are unsupported. Use `chdman createdvd`.
+- Full disc dumps (Redump), as ISO or CHD, are untested with real games.
 
 ## linux-v0.8.0 (PortareOS)
 
-Rumble, and a sharper picture by default.
+Controller rumble and a sharper default picture.
 
 ### What's new
 
-- **Rumble** — The game's controller vibration reaches the controllers' motors. It is off by default: turn it on in **Quick Menu → Core Options → Rumble**; the change applies at once. The motors stop when the game is paused, closed or restarted. RetroArch's **Vibration Strength** (Settings → Input → Haptic Feedback/Vibration) scales it, as for every core.
-- **Render Scale 2x by default** — Games draw at twice the Xbox's resolution, 1280x960 for most. Text and edges are sharper and no longer uneven on a 1280x960 screen. The overscan stays cropped, so the picture fills a 4:3 screen as on a CRT. Choose **1x** for a game that runs slowly.
+- **Rumble** — Enable **Quick Menu → Core Options → Rumble**; it applies immediately. Vibration stops when paused, closed or restarted. Adjust strength in **Settings → Input → Haptic Feedback/Vibration**.
+- **2x render scale by default** — Most games render at 1280x960, with sharper text and edges. Overscan stays cropped to fill a 4:3 screen. Choose **1x** if a game runs slowly.
 
 ### Current limitations
 
 - Save states are not yet available.
-- Upstream's LAN and XLink Kai backends are included, but this release does not add network settings to RetroArch. Networking is off by default.
-- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
-- Full disc dumps (Redump), as `.iso` or CHD, haven't been tested with a real game yet.
+- Networking is off; RetroArch network settings are not available in this release.
+- CD CHDs and CHDs that require a parent image are unsupported. Use `chdman createdvd`.
+- Full disc dumps (Redump), as ISO or CHD, are untested with real games.
 
 ## linux-v0.7.2 (PortareOS)
 
@@ -175,15 +172,15 @@ Every frame the game draws reaches RetroArch.
 
 ### What's fixed
 
-- **Frames shown twice and skipped** — The core took each frame from the game at a moment it estimated from the start of RetroArch's frame, not when it actually looked. When RetroArch spent a varying time first, for example waiting on audio with audio sync on, the game's next frame sometimes arrived just after the look: one frame was shown twice and the next one never. ROCKNIX's RetroArch showed 47.5 new frames a second of the game's 59.9. The moment is now taken when the frame is read. PortareOS's own settings were not affected.
+- **Repeated and skipped frames** — Fixes frame timing with variable RetroArch delays, such as audio sync waits. On ROCKNIX, these delays reduced a 59.9 fps game to 47.5 displayed frames/s. Frame selection now uses the actual read time. PortareOS's settings were unaffected.
 
 ### Current limitations
 
-- Rumble is not passed on to the controllers yet.
+- Controller rumble is unavailable.
 - Save states are not yet available.
-- Upstream's LAN and XLink Kai backends are included, but this release does not add network settings to RetroArch. Networking is off by default.
-- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
-- Full disc dumps (Redump), as `.iso` or CHD, haven't been tested with a real game yet.
+- Networking is off; RetroArch network settings are not available in this release.
+- CD CHDs and CHDs that require a parent image are unsupported. Use `chdman createdvd`.
+- Full disc dumps (Redump), as ISO or CHD, are untested with real games.
 
 ## linux-v0.7.1 (PortareOS)
 
@@ -196,11 +193,11 @@ Sound after a game starts again in RetroArch.
 
 ### Current limitations
 
-- Rumble is not passed on to the controllers yet.
+- Controller rumble is unavailable.
 - Save states are not yet available.
-- Upstream's LAN and XLink Kai backends are included, but this release does not add network settings to RetroArch. Networking is off by default.
-- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
-- Full disc dumps (Redump), as `.iso` or CHD, haven't been tested with a real game yet.
+- Networking is off; RetroArch network settings are not available in this release.
+- CD CHDs and CHDs that require a parent image are unsupported. Use `chdman createdvd`.
+- Full disc dumps (Redump), as ISO or CHD, are untested with real games.
 
 ## linux-v0.7.0 (PortareOS)
 
@@ -215,11 +212,11 @@ Upstream hakuX 1.2.0, with game compatibility and sound fixes.
 
 ### Current limitations
 
-- Rumble is not passed on to the controllers yet.
+- Controller rumble is unavailable.
 - Save states are not yet available.
-- Upstream's LAN and XLink Kai backends are included, but this release does not add network settings to RetroArch. Networking is off by default.
-- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
-- Full disc dumps (Redump), as `.iso` or CHD, haven't been tested with a real game yet.
+- Networking is off; RetroArch network settings are not available in this release.
+- CD CHDs and CHDs that require a parent image are unsupported. Use `chdman createdvd`.
+- Full disc dumps (Redump), as ISO or CHD, are untested with real games.
 
 ## linux-v0.6.0 (PortareOS)
 
@@ -235,10 +232,10 @@ CHD disc images in the RetroArch core.
 
 ### Current limitations
 
-- Rumble is not passed on to the controllers yet.
+- Controller rumble is unavailable.
 - Save states are not yet available.
-- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
-- Full disc dumps (Redump), as `.iso` or CHD, haven't been tested with a real game yet.
+- CD CHDs and CHDs that require a parent image are unsupported. Use `chdman createdvd`.
+- Full disc dumps (Redump), as ISO or CHD, are untested with real games.
 
 ## linux-v0.5.0 (PortareOS)
 
@@ -251,7 +248,7 @@ Players 2-4 in the RetroArch core.
 
 ### Current limitations
 
-- Rumble is not passed on to the controllers yet.
+- Controller rumble is unavailable.
 - Save states are not yet available.
 - Games must be `.iso` disc images.
 
