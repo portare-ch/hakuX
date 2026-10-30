@@ -1,5 +1,23 @@
 # Changelog
 
+## linux-v0.12.1 (PortareOS)
+
+Clearer core options and documentation. The emulator is unchanged from 0.12.0.
+
+### What's changed
+
+- **Core options** — Shorter, plainer descriptions in **Quick Menu → Core Options**. Options that apply at the next boot now say "Restart the game to apply", and RetroArch's message after changing one says the same.
+- **Core information** — The description and notes RetroArch shows for the core are rewritten.
+- **`BUILD-INFO`** — Links the source revision to the hakuX-lr repository.
+
+### Current limitations
+
+- Save states are not yet available.
+- Reverb and other Xbox DSP effects are missing from the default audio mix.
+- XLink Kai and Internet (NAT) networking are unavailable in RetroArch.
+- CD CHDs and CHDs that require a parent image are unsupported. Use `chdman createdvd`.
+- NBA Inside Drive 2003 has blank saved player textures because GPU readback is incomplete.
+
 ## linux-v0.12.0 (PortareOS)
 
 Better stereo audio, a NEON-accelerated audio resampler, and broader graphics support. Replaces 0.11.0 and all 0.12.0 experimental builds.
