@@ -110,6 +110,7 @@ add_library(hakux_apu STATIC
   ${NC_APU}/dsp/dsp_cpu.c
   ${NC_APU}/dsp/dsp_dma.c
   ${NC_APU}/dsp/gp_ep.c
+  ${NC_APU}/dsp/gp_probe.c
   ${NC_APU}/vp/resample.c
   ${NC_APU}/vp/resample_sinc.c
   ${NC_APU}/vp/vp.c
