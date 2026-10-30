@@ -1,0 +1,7 @@
+{"case":"silence","engine":"JIT","bin":0,"frequency_hz":1000.0,"stimulus_frames":0,"frames":48128,"seconds":1.002666667,"thread_cpu_seconds":0.142275541,"warmup_cpu_seconds":0.172037458,"pcm_fnv64":"5af38e072fccfb25"}
+{"case":"impulse","engine":"JIT","bin":0,"frequency_hz":1000.0,"stimulus_frames":1,"frames":48128,"seconds":1.002666667,"thread_cpu_seconds":0.142879541,"warmup_cpu_seconds":0.171491416,"pcm_fnv64":"3e0dc5c8d9d9d285"}
+{"case":"impulse","engine":"JIT","bin":1,"frequency_hz":1000.0,"stimulus_frames":1,"frames":48128,"seconds":1.002666667,"thread_cpu_seconds":0.144780875,"warmup_cpu_seconds":0.172117416,"pcm_fnv64":"802e3bb06b4de505"}
+{"case":"impulse","engine":"JIT","bin":10,"frequency_hz":1000.0,"stimulus_frames":1,"frames":48128,"seconds":1.002666667,"thread_cpu_seconds":0.143162792,"warmup_cpu_seconds":0.170997457,"pcm_fnv64":"89e24aa640dc7416"}
+{"case":"tone","engine":"JIT","bin":0,"frequency_hz":1000.0,"stimulus_frames":12000,"frames":60160,"seconds":1.253333333,"thread_cpu_seconds":0.184731250,"warmup_cpu_seconds":0.174735083,"pcm_fnv64":"badd33bb8070f584"}
+{"case":"tone","engine":"JIT","bin":1,"frequency_hz":1000.0,"stimulus_frames":12000,"frames":60160,"seconds":1.253333333,"thread_cpu_seconds":0.181071374,"warmup_cpu_seconds":0.172459124,"pcm_fnv64":"9c4a220f77cde036"}
+{"case":"tone","engine":"JIT","bin":10,"frequency_hz":1000.0,"stimulus_frames":12000,"frames":60160,"seconds":1.253333333,"thread_cpu_seconds":0.185674208,"warmup_cpu_seconds":0.172796333,"pcm_fnv64":"378fc8abbfd85d61"}

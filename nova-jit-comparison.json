@@ -1,0 +1,386 @@
+{
+  "description": "Paired DOA3 captured-program replay on Nova CPU4; C/JIT/JIT/C; same core, env engine override; 1 second silence washout per case; compilation/warmup excluded from timed output; game kept on Fast in background",
+  "core_unstripped_sha256": "e2700b4c891a52d6f553f437c45f1947ee69ca3c7c26bc7a7da88867c3052b26",
+  "runs": [
+    {
+      "label": "c2",
+      "engine": "interpreter",
+      "cpu_seconds_per_audio_second": 0.48056750894472516,
+      "frequency_khz_min": 2803200,
+      "frequency_khz_median": 2803200,
+      "frequency_khz_max": 2803200,
+      "cases": [
+        {
+          "case": "silence",
+          "engine": "interpreter",
+          "bin": 0,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 0,
+          "frames": 48128,
+          "seconds": 1.002666667,
+          "thread_cpu_seconds": 0.480357356,
+          "warmup_cpu_seconds": 0.4816714,
+          "pcm_fnv64": "5af38e072fccfb25"
+        },
+        {
+          "case": "impulse",
+          "engine": "interpreter",
+          "bin": 0,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 1,
+          "frames": 48128,
+          "seconds": 1.002666667,
+          "thread_cpu_seconds": 0.480494802,
+          "warmup_cpu_seconds": 0.482177348,
+          "pcm_fnv64": "3e0dc5c8d9d9d285"
+        },
+        {
+          "case": "impulse",
+          "engine": "interpreter",
+          "bin": 1,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 1,
+          "frames": 48128,
+          "seconds": 1.002666667,
+          "thread_cpu_seconds": 0.481153649,
+          "warmup_cpu_seconds": 0.482197189,
+          "pcm_fnv64": "802e3bb06b4de505"
+        },
+        {
+          "case": "impulse",
+          "engine": "interpreter",
+          "bin": 10,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 1,
+          "frames": 48128,
+          "seconds": 1.002666667,
+          "thread_cpu_seconds": 0.481955274,
+          "warmup_cpu_seconds": 0.482393565,
+          "pcm_fnv64": "89e24aa640dc7416"
+        },
+        {
+          "case": "tone",
+          "engine": "interpreter",
+          "bin": 0,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 12000,
+          "frames": 60160,
+          "seconds": 1.253333333,
+          "thread_cpu_seconds": 0.601470134,
+          "warmup_cpu_seconds": 0.483218389,
+          "pcm_fnv64": "badd33bb8070f584"
+        },
+        {
+          "case": "tone",
+          "engine": "interpreter",
+          "bin": 1,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 12000,
+          "frames": 60160,
+          "seconds": 1.253333333,
+          "thread_cpu_seconds": 0.601483934,
+          "warmup_cpu_seconds": 0.483650163,
+          "pcm_fnv64": "9c4a220f77cde036"
+        },
+        {
+          "case": "tone",
+          "engine": "interpreter",
+          "bin": 10,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 12000,
+          "frames": 60160,
+          "seconds": 1.253333333,
+          "thread_cpu_seconds": 0.607414774,
+          "warmup_cpu_seconds": 0.48428016,
+          "pcm_fnv64": "378fc8abbfd85d61"
+        }
+      ]
+    },
+    {
+      "label": "j1",
+      "engine": "JIT",
+      "cpu_seconds_per_audio_second": 0.3509558445714243,
+      "frequency_khz_min": 1056000,
+      "frequency_khz_median": 2803200.0,
+      "frequency_khz_max": 2803200,
+      "cases": [
+        {
+          "case": "silence",
+          "engine": "JIT",
+          "bin": 0,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 0,
+          "frames": 48128,
+          "seconds": 1.002666667,
+          "thread_cpu_seconds": 0.352071672,
+          "warmup_cpu_seconds": 0.425788227,
+          "pcm_fnv64": "5af38e072fccfb25"
+        },
+        {
+          "case": "impulse",
+          "engine": "JIT",
+          "bin": 0,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 1,
+          "frames": 48128,
+          "seconds": 1.002666667,
+          "thread_cpu_seconds": 0.35199113,
+          "warmup_cpu_seconds": 0.422947413,
+          "pcm_fnv64": "3e0dc5c8d9d9d285"
+        },
+        {
+          "case": "impulse",
+          "engine": "JIT",
+          "bin": 1,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 1,
+          "frames": 48128,
+          "seconds": 1.002666667,
+          "thread_cpu_seconds": 0.352345638,
+          "warmup_cpu_seconds": 0.422940717,
+          "pcm_fnv64": "802e3bb06b4de505"
+        },
+        {
+          "case": "impulse",
+          "engine": "JIT",
+          "bin": 10,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 1,
+          "frames": 48128,
+          "seconds": 1.002666667,
+          "thread_cpu_seconds": 0.351500275,
+          "warmup_cpu_seconds": 0.422678017,
+          "pcm_fnv64": "89e24aa640dc7416"
+        },
+        {
+          "case": "tone",
+          "engine": "JIT",
+          "bin": 0,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 12000,
+          "frames": 60160,
+          "seconds": 1.253333333,
+          "thread_cpu_seconds": 0.439067173,
+          "warmup_cpu_seconds": 0.421749106,
+          "pcm_fnv64": "badd33bb8070f584"
+        },
+        {
+          "case": "tone",
+          "engine": "JIT",
+          "bin": 1,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 12000,
+          "frames": 60160,
+          "seconds": 1.253333333,
+          "thread_cpu_seconds": 0.438987863,
+          "warmup_cpu_seconds": 0.422094391,
+          "pcm_fnv64": "9c4a220f77cde036"
+        },
+        {
+          "case": "tone",
+          "engine": "JIT",
+          "bin": 10,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 12000,
+          "frames": 60160,
+          "seconds": 1.253333333,
+          "thread_cpu_seconds": 0.441197132,
+          "warmup_cpu_seconds": 0.42203725,
+          "pcm_fnv64": "378fc8abbfd85d61"
+        }
+      ]
+    },
+    {
+      "label": "j2",
+      "engine": "JIT",
+      "cpu_seconds_per_audio_second": 0.35109693684149373,
+      "frequency_khz_min": 2592000,
+      "frequency_khz_median": 2803200.0,
+      "frequency_khz_max": 2803200,
+      "cases": [
+        {
+          "case": "silence",
+          "engine": "JIT",
+          "bin": 0,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 0,
+          "frames": 48128,
+          "seconds": 1.002666667,
+          "thread_cpu_seconds": 0.35154562,
+          "warmup_cpu_seconds": 0.424597141,
+          "pcm_fnv64": "5af38e072fccfb25"
+        },
+        {
+          "case": "impulse",
+          "engine": "JIT",
+          "bin": 0,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 1,
+          "frames": 48128,
+          "seconds": 1.002666667,
+          "thread_cpu_seconds": 0.351893072,
+          "warmup_cpu_seconds": 0.423133639,
+          "pcm_fnv64": "3e0dc5c8d9d9d285"
+        },
+        {
+          "case": "impulse",
+          "engine": "JIT",
+          "bin": 1,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 1,
+          "frames": 48128,
+          "seconds": 1.002666667,
+          "thread_cpu_seconds": 0.352037924,
+          "warmup_cpu_seconds": 0.422926605,
+          "pcm_fnv64": "802e3bb06b4de505"
+        },
+        {
+          "case": "impulse",
+          "engine": "JIT",
+          "bin": 10,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 1,
+          "frames": 48128,
+          "seconds": 1.002666667,
+          "thread_cpu_seconds": 0.35160989,
+          "warmup_cpu_seconds": 0.422518302,
+          "pcm_fnv64": "89e24aa640dc7416"
+        },
+        {
+          "case": "tone",
+          "engine": "JIT",
+          "bin": 0,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 12000,
+          "frames": 60160,
+          "seconds": 1.253333333,
+          "thread_cpu_seconds": 0.440112829,
+          "warmup_cpu_seconds": 0.423075273,
+          "pcm_fnv64": "badd33bb8070f584"
+        },
+        {
+          "case": "tone",
+          "engine": "JIT",
+          "bin": 1,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 12000,
+          "frames": 60160,
+          "seconds": 1.253333333,
+          "thread_cpu_seconds": 0.439193451,
+          "warmup_cpu_seconds": 0.422189842,
+          "pcm_fnv64": "9c4a220f77cde036"
+        },
+        {
+          "case": "tone",
+          "engine": "JIT",
+          "bin": 10,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 12000,
+          "frames": 60160,
+          "seconds": 1.253333333,
+          "thread_cpu_seconds": 0.441864478,
+          "warmup_cpu_seconds": 0.422760997,
+          "pcm_fnv64": "378fc8abbfd85d61"
+        }
+      ]
+    },
+    {
+      "label": "c3",
+      "engine": "interpreter",
+      "cpu_seconds_per_audio_second": 0.4856631750821181,
+      "frequency_khz_min": 2803200,
+      "frequency_khz_median": 2803200.0,
+      "frequency_khz_max": 2803200,
+      "cases": [
+        {
+          "case": "silence",
+          "engine": "interpreter",
+          "bin": 0,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 0,
+          "frames": 48128,
+          "seconds": 1.002666667,
+          "thread_cpu_seconds": 0.487887451,
+          "warmup_cpu_seconds": 0.486558265,
+          "pcm_fnv64": "5af38e072fccfb25"
+        },
+        {
+          "case": "impulse",
+          "engine": "interpreter",
+          "bin": 0,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 1,
+          "frames": 48128,
+          "seconds": 1.002666667,
+          "thread_cpu_seconds": 0.485466835,
+          "warmup_cpu_seconds": 0.487756993,
+          "pcm_fnv64": "3e0dc5c8d9d9d285"
+        },
+        {
+          "case": "impulse",
+          "engine": "interpreter",
+          "bin": 1,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 1,
+          "frames": 48128,
+          "seconds": 1.002666667,
+          "thread_cpu_seconds": 0.485540781,
+          "warmup_cpu_seconds": 0.487339907,
+          "pcm_fnv64": "802e3bb06b4de505"
+        },
+        {
+          "case": "impulse",
+          "engine": "interpreter",
+          "bin": 10,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 1,
+          "frames": 48128,
+          "seconds": 1.002666667,
+          "thread_cpu_seconds": 0.486523598,
+          "warmup_cpu_seconds": 0.487798221,
+          "pcm_fnv64": "89e24aa640dc7416"
+        },
+        {
+          "case": "tone",
+          "engine": "interpreter",
+          "bin": 0,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 12000,
+          "frames": 60160,
+          "seconds": 1.253333333,
+          "thread_cpu_seconds": 0.607065993,
+          "warmup_cpu_seconds": 0.488194602,
+          "pcm_fnv64": "badd33bb8070f584"
+        },
+        {
+          "case": "tone",
+          "engine": "interpreter",
+          "bin": 1,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 12000,
+          "frames": 60160,
+          "seconds": 1.253333333,
+          "thread_cpu_seconds": 0.606940602,
+          "warmup_cpu_seconds": 0.487810938,
+          "pcm_fnv64": "9c4a220f77cde036"
+        },
+        {
+          "case": "tone",
+          "engine": "interpreter",
+          "bin": 10,
+          "frequency_hz": 1000.0,
+          "stimulus_frames": 12000,
+          "frames": 60160,
+          "seconds": 1.253333333,
+          "thread_cpu_seconds": 0.614501386,
+          "warmup_cpu_seconds": 0.487197602,
+          "pcm_fnv64": "378fc8abbfd85d61"
+        }
+      ]
+    }
+  ],
+  "interpreter_cpu_seconds_per_audio_second": 0.48311534201342166,
+  "jit_cpu_seconds_per_audio_second": 0.351026390706459,
+  "reduction_percent": 27.341079825052006,
+  "all_pcm_identical": true
+}
