@@ -1,5 +1,27 @@
 # Changelog
 
+## linux-v0.12.0-exp.1 (PortareOS, experimental)
+
+An experimental build with more of the Xbox GPU's graphics features. None of them has been tried in a game yet, so it's a pre-release: 0.11.0 stays the current version, and PortareOS keeps shipping it.
+
+### What's new
+
+- **More texture formats** — Textures in L16, V16U16, R6G5B5, R5G5B5A1 and R4G4B4A4, and depth textures that a pixel shader reads, now show. Before, they came out white.
+- **Window clip** — Exclusive clip windows, and several windows at once, now clip as the Xbox does: split-screen, picture-in-picture and HUD masks. Before, only the box around the windows clipped.
+- **Lighting** — Spotlight falloff and specular highlights follow the curve the Xbox's lighting unit computes, instead of a linear cone and an approximated power.
+- **Pixel-shader modes** — Depth replace (`texm3x2depth`), BRDF lookups and constant-eye specular reflections (`texm3x3spec`) now work. Before, they were drawn as plain 2D textures.
+
+### Experimental
+
+These follow NVIDIA's documentation, xemu, and the Xbox captures of nxdk_pgraph_tests where they exist. A game that looked right in 0.11.0 can look wrong in this build; if one does, go back to 0.11.0 and report the game.
+
+### Current limitations
+
+- Save states are not yet available.
+- XLink Kai, which upstream also has, isn't offered in RetroArch yet, and neither is the Internet (NAT).
+- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
+- NBA Inside Drive 2003 saves its prestamped player textures blank: it reads back small images the GPU drew, which hakuX doesn't copy back to memory yet.
+
 ## linux-v0.11.0 (PortareOS)
 
 System link: play a game's LAN mode with other devices on your network.
