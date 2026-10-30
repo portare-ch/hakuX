@@ -10,6 +10,7 @@
 #ifndef HW_XBOX_HLE_SHADER_PSH_H
 #define HW_XBOX_HLE_SHADER_PSH_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -118,11 +119,20 @@ typedef struct HlePshKey {
     uint16_t fb_src, fb_dst, fb_op;
     uint32_t fb_const;
     /* SET_ANTI_ALIASING_CONTROL on an antialiased target, which is emulated
-     * as an image aa_grid's times as large (bits 0-1 xs, 2-3 ys): each of
-     * its pixels is a sample of a guest pixel. aa_ctl: bit 0
-     * alpha-to-coverage, 1 alpha-to-one, 4-7 the sample mask; 0 none. */
+     * as an image aa_grid's times as large (bits 0-1 xs, 2-3 ys; 0: no
+     * coverage control): each of its pixels is a sample of a guest pixel.
+     * aa_ctl: bit 0 alpha-to-coverage, 1 alpha-to-one, 4-7 the sample mask
+     * (all clear: no sample is written). hle_psh_aa_key sets both. */
     uint8_t aa_grid, aa_ctl;
 } HlePshKey;
+
+/* Antialiasing control into k (aa_grid, aa_ctl): SET_ANTI_ALIASING_CONTROL's
+ * aactl for a draw into a target with xs x ys samples (1 x 1: none), colour
+ * or depth (a depth-only draw's mask applies to its depth and stencil).
+ * Inactive without multisampling (bit 0), without a target or samples, or
+ * with every sample in the mask and neither alpha-to-coverage nor
+ * alpha-to-one. */
+void hle_psh_aa_key(HlePshKey *k, uint32_t aactl, uint32_t xs, uint32_t ys, bool colour, bool depth);
 
 /* Key from the render-state array (rs[0..56] = the pixel-shader block). */
 void hle_psh_key(const uint32_t *rs, HlePshKey *k);

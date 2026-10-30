@@ -293,6 +293,23 @@ static const char *blend_eq(uint32_t o)
     }
 }
 
+void hle_psh_aa_key(HlePshKey *k, uint32_t aactl, uint32_t xs, uint32_t ys, bool colour, bool depth)
+{
+    k->aa_grid = k->aa_ctl = 0;
+    xs = xs > 2 ? 2 : xs;
+    ys = ys > 2 ? 2 : ys;
+    if (!(colour || depth) || !(aactl & 1) || xs * ys < 2) {
+        return;
+    }
+    const uint32_t all = (1u << (xs * ys)) - 1, mask = (aactl >> 16) & all;
+    const uint32_t a2c = (aactl >> 4) & 1, a2one = (aactl >> 8) & 1;
+    if (mask == all && !a2c && !a2one) {
+        return;
+    }
+    k->aa_grid = (uint8_t)(xs | ys << 2);
+    k->aa_ctl = (uint8_t)(a2c | a2one << 1 | mask << 4);
+}
+
 static const char *k_cmp[8] = {
     "false", "a < r", "a == r", "a <= r", "a > r", "a != r", "a >= r", "true",
 };
@@ -708,7 +725,7 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
     if (k->fbfetch & HLE_FB_ZEQ) {
         put(&b, "%s", HLE_ZEQ_TEST_GLSL(k->fbfetch));
     }
-    if (k->aa_ctl) {
+    if (k->aa_grid) {
         /* antialiasing control: this pixel is sample si of its guest pixel
          * (row-major, by guest pixel: the resolution scale divided out). A
          * sample the mask leaves out isn't written; alpha-to-coverage writes
