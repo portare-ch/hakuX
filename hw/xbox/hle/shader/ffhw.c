@@ -163,13 +163,14 @@ static void lighting(Buf *b, const HleFfhwKey *k)
         base_colour(b, "oB0", k->bsrc, HLE_FFHW_C_BACK_AMBIENT, HLE_FFHW_C_BACK_EMISSION);
         put(b, "    oB1 = vec4(0.0, 0.0, 0.0, v4.a);\n");
     }
-    /* the direction to the eye: the eye position for a local viewer, else
-     * along -z (D3D's eye space looks down +z) */
+    /* Without LOCALEYE, local lights use the light vector itself as the
+     * half vector (nxdk_pgraph_tests' Lighting control, FF_0x000001).
+     * Infinite lights use their supplied half vector below. */
     if (k->local_eye) {
         put(b, "    vec3 eyeV = normalize(c[%u].xyz / c[%u].w - tPos.xyz / tPos.w);\n",
             HLE_FFHW_C_EYE, HLE_FFHW_C_EYE);
     } else {
-        put(b, "    vec3 eyeV = vec3(0.0, 0.0, -1.0);\n");
+        put(b, "    vec3 eyeV = vec3(0.0);\n");
     }
     for (unsigned i = 0; i < 8; i++) {
         const unsigned t = k->light[i], L = HLE_FFHW_C_LIGHTS + HLE_FFHW_LIGHT_VEC4 * i;
