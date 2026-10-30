@@ -8,6 +8,7 @@
 #include "hw/xbox/hle/front/fe.h"
 #include "hw/xbox/hle/pb/pbdraw.h"
 #include "hw/xbox/hle/hitch.h"
+#include "hw/xbox/hle/pb/objslot.h"
 #include "hw/xbox/hle/pb/pbmode.h"
 #include "hw/xbox/hle/pb/pbstate.h"
 #include "hw/xbox/hle/vk/back.h"
@@ -245,7 +246,7 @@ static volatile int g_phase;            /* 0 none, 1 arena space, 2 ring space *
 
 /* The log lines' limits: the first few of each a boot (hle_pbd_reset) */
 static struct {
-    unsigned objs_full, surfaces, no_target, gamma, overlay, sprog;
+    unsigned objs_full, past_blocks, surfaces, no_target, gamma, overlay, sprog;
     int64_t scan_for;                   /* the idle period logged (hle_pbd_scanout) */
 } g_lg;
 
@@ -503,6 +504,29 @@ static uint32_t tile_pitch(uint32_t bytes)
     return 0;
 }
 
+/* A linear target's rows, no more than the title's block of memory holds: a
+ * write-back (front_stale, writeback) covers pitch x rows. NBA Inside Drive
+ * 2003 binds its 640 x 480 front buffer (a 600 KiB block) while the display
+ * is still its first target's, the 640 x 960 antialiased back buffer; sized
+ * as the display, the front buffer's write-back overwrote the 600 KiB above
+ * it, where a page of the title's code had been moved, and the title ran
+ * into zeros after its intro. */
+static uint32_t rows_in_block(uint32_t pa, uint32_t pitch, uint32_t h)
+{
+    const uint32_t end = pitch ? hle_host_contig_end(pa) : 0;
+    if (!end || (uint64_t)pitch * h <= end - pa) {
+        return h;
+    }
+    const uint32_t rows = (end - pa) / pitch;
+    static unsigned s_logged;
+    if (s_logged < 8) {
+        s_logged++;
+        hle_log("hakuX-hle-pb", "target %08x: %u rows of %u bytes, %u in its block (first 8 logged)", pa,
+                h, pitch, rows);
+    }
+    return MAX(rows, 1u);
+}
+
 static void linear_size(uint32_t pitch, uint32_t xfmt, uint32_t sx, uint32_t sy, uint32_t *w,
                         uint32_t *h)
 {
@@ -572,26 +596,55 @@ static void restored_pixels(PbObj *o)
     o->written = ++g_pd.wseq;
 }
 
-/* The slot a new object takes once all are used: the one bound longest ago
- * (never bound first), and never one still in use: the bound targets, the
- * one shown, a cube or its faces (views into it), a z-read's source, the
- * one just made (a bind makes its colour target, then its depth one).
- * NULL if every one is. */
+/* What holds an object (objslot.h): the bound targets, the one shown, the
+ * one just made (a bind makes its colour target, then its depth one), a
+ * z-read's source; and a cube or its faces (views into it). */
+static unsigned obj_refs(uint32_t *refs)
+{
+    unsigned n = 0;
+    refs[n++] = g_pd.rt;
+    refs[n++] = g_pd.ds;
+    refs[n++] = g_pd.shown_id;
+    refs[n++] = g_pd.made;
+    for (unsigned j = 0; j < g_pd.nzr; j++) {
+        refs[n++] = g_pd.zr[j].src;
+    }
+    return n;
+}
+
+static HlePbSlot obj_slot(const PbObj *o)
+{
+    return (HlePbSlot){ .id = o->id, .bound = o->bound, .kept = o->cube || o->d.parent };
+}
+
+static bool obj_busy(const PbObj *o)
+{
+    uint32_t refs[4 + MAX_ZREADS];
+    const HlePbSlot s = obj_slot(o);
+    return hle_pb_slot_held(&s, refs, obj_refs(refs));
+}
+
+/* The slot a new object takes once all are used (hle_pb_evict_choice): a
+ * free one, else the one bound longest ago not held. NULL if every one is. */
 static PbObj *evict_slot(void)
 {
-    PbObj *best = NULL;
+    HlePbSlot s[MAX_OBJS];
+    uint32_t refs[4 + MAX_ZREADS];
     for (unsigned i = 0; i < g_pd.nobjs; i++) {
-        PbObj *o = &g_pd.objs[i];
-        bool busy = o->id == g_pd.rt || o->id == g_pd.ds || o->id == g_pd.shown_id ||
-                    o->id == g_pd.made || o->cube || o->d.parent;
-        for (unsigned j = 0; j < g_pd.nzr && !busy; j++) {
-            busy = g_pd.zr[j].src == o->id;
-        }
-        if (!busy && (!best || o->bound < best->bound)) {
-            best = o;
-        }
+        s[i] = obj_slot(&g_pd.objs[i]);
     }
-    return best;
+    const int i = hle_pb_evict_choice(s, g_pd.nobjs, refs, obj_refs(refs));
+    return i < 0 ? NULL : &g_pd.objs[i];
+}
+
+/* A linear object that reaches past the title's block of memory: one made
+ * before the memory was freed and given to a smaller block. It is never
+ * reused or written back (its write-back would cover memory not the
+ * target's), and goes once nothing holds it (object). */
+static bool past_block(const HleSurfDesc *d)
+{
+    const uint32_t end = d->pitch ? hle_host_contig_end(d->pa) : 0;
+    return end && (uint64_t)d->pitch * d->h > end - d->pa;
 }
 
 /* The object for a surface (memory, format, pitch, size), made the first
@@ -609,12 +662,27 @@ static uint32_t object(uint32_t pa, uint32_t xfmt, uint32_t pitch, uint32_t w, u
     uint32_t best = 0;
     uint64_t best_area = 0;
     for (unsigned i = 0; i < g_pd.nobjs; i++) {
-        const HleSurfDesc *d = &g_pd.objs[i].d;
-        if (d->pa != pa || d->xfmt != xfmt || d->pitch != pitch || g_pd.objs[i].cube) {
-            continue;
+        PbObj *s = &g_pd.objs[i];
+        const HleSurfDesc *d = &s->d;
+        if (!s->id || d->pa != pa || d->xfmt != xfmt || d->pitch != pitch || s->cube) {
+            continue;                           /* a free slot, or another surface */
         }
         if (d->w == w && d->h == h && !pitch) {
-            return g_pd.objs[i].id;
+            return s->id;
+        }
+        if (pitch && past_block(d)) {
+            if (!obj_busy(s)) {
+                if (g_lg.past_blocks++ < 8) {
+                    hle_log("hakuX-hle-pb", "surface %u (%08x %ux%u): past its block now, gone "
+                            "(first 8 logged)", s->id, d->pa, d->w, d->h);
+                }
+                HleCmdObjDestroy *x = begin(HLE_OP_OBJ_DESTROY, sizeof(*x));
+                x->after = 0;
+                x->id = s->id;
+                hle_fe_commit();
+                memset(s, 0, sizeof(*s));       /* a free slot (evict_slot's first) */
+            }
+            continue;
         }
         const uint64_t area = (uint64_t)d->w * d->h;
         if (pitch && d->w == w && d->h >= h && area > best_area) {
@@ -636,10 +704,12 @@ static uint32_t object(uint32_t pa, uint32_t xfmt, uint32_t pitch, uint32_t w, u
             }
             return 0;
         }
-        HleCmdObjDestroy *x = begin(HLE_OP_OBJ_DESTROY, sizeof(*x));
-        x->after = 0;
-        x->id = o->id;
-        hle_fe_commit();
+        if (o->id) {                            /* not a slot freed already */
+            HleCmdObjDestroy *x = begin(HLE_OP_OBJ_DESTROY, sizeof(*x));
+            x->after = 0;
+            x->id = o->id;
+            hle_fe_commit();
+        }
     }
     memset(o, 0, sizeof(*o));
     o->id = g_pd.next_id++;
@@ -886,7 +956,7 @@ static void writeback(uint32_t id)
     const HleSurfDesc *d = id ? object_desc(id) : NULL;
     const HleFmtInfo *fi = d ? hle_fmt_info(d->xfmt) : NULL;
     const PbObj *o = d ? obj_of(id) : NULL;
-    if (!fi || !d->pitch || (fi->flags & (HLE_FI_DEPTH | HLE_FI_DXT)) ||
+    if (!fi || !d->pitch || (fi->flags & (HLE_FI_DEPTH | HLE_FI_DXT)) || past_block(d) ||
         ((uint64_t)d->pitch * d->h > WRITEBACK_MAX && !(cpu_wb && o && o->cpu_used))) {
         return;
     }
@@ -1046,10 +1116,10 @@ static void sync_rt(void)
         }
     }
     uint32_t rt = cx_fmt ? object_view(cpa, cx_fmt, swz ? 0 : hle_kelvin_color_xfmt(cf, true),
-                                       swz ? 0 : cpitch, w, h) : 0;
+                                       swz ? 0 : cpitch, w, swz ? h : rows_in_block(cpa, cpitch, h)) : 0;
     uint32_t ds = zx_fmt ? object_view(zpa, zx_fmt,
                                        swz ? 0 : hle_kelvin_depth_xfmt(zf == 2, zfloat, true),
-                                       swz ? 0 : zpitch, w, h) : 0;
+                                       swz ? 0 : zpitch, w, swz ? h : rows_in_block(zpa, zpitch, h)) : 0;
     g_pd.binds++;
     for (unsigned i = 0; i < g_pd.nobjs; i++) {
         if (g_pd.objs[i].id == rt || g_pd.objs[i].id == ds) {
@@ -1225,7 +1295,7 @@ static void restored_display(void)
 static void front_stale(const PbObj *o)
 {
     const HleFmtInfo *fi = o && o->d.pitch && !o->cube ? hle_fmt_info(o->d.xfmt) : NULL;
-    const bool colour = fi && !(fi->flags & (HLE_FI_DEPTH | HLE_FI_DXT));
+    const bool colour = fi && !(fi->flags & (HLE_FI_DEPTH | HLE_FI_DXT)) && !past_block(&o->d);
     hle_barrier_set_stale(colour ? o->d.pa : 0, colour ? o->d.pitch * o->d.h : 0, front_fill);
 }
 
@@ -1931,7 +2001,7 @@ static uint32_t cube_of_targets(uint32_t pa, uint32_t code, uint32_t w, uint32_t
 
 static const HleSurfDesc *object_desc(uint32_t id)
 {
-    for (unsigned i = 0; i < g_pd.nobjs; i++) {
+    for (unsigned i = 0; id && i < g_pd.nobjs; i++) {
         if (g_pd.objs[i].id == id) {
             return &g_pd.objs[i].d;
         }
@@ -2710,7 +2780,7 @@ static unsigned writeback_range(uint32_t pa, uint32_t end, uint64_t v, bool gpu_
             const HleFmtInfo *fi = hle_fmt_info(o->d.xfmt);
             if (o->written > after && (!next || o->written < next->written) && !o->cube &&
                 o->d.pitch && o->d.pa < end && o->d.pa + o->d.pitch * o->d.h > pa && fi &&
-                !(fi->flags & (HLE_FI_DEPTH | HLE_FI_DXT))) {
+                !(fi->flags & (HLE_FI_DEPTH | HLE_FI_DXT)) && !past_block(&o->d)) {
                 next = o;
             }
         }

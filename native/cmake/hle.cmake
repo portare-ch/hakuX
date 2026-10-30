@@ -49,6 +49,7 @@ add_library(hakux_hle STATIC
   ${NC_HLE}/mem/guestmem.c
   ${NC_HLE}/mem/pageuse.c
   ${NC_HLE}/pb/kelvin.c
+  ${NC_HLE}/pb/objslot.c
   ${NC_HLE}/pb/pbdraw.c
   ${NC_HLE}/pb/pbmode.c
   ${NC_HLE}/pb/pbres.c

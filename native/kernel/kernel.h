@@ -310,6 +310,9 @@ void nc_pool_free(NcKernel *k, uint32_t va, uint32_t size);
 /* mm.c: physical memory held by contiguous allocations and by committed
  * virtual memory (bytes), and the number of contiguous blocks. */
 void nc_mm_usage(NcKernel *k, uint32_t *contig_bytes, uint32_t *virtual_bytes, unsigned *contig_blocks);
+/* mm.c: the end of the contiguous block (MmAllocateContiguousMemory) that
+ * holds physical address pa, 0 when none does. */
+uint32_t nc_mm_contig_end(uint32_t pa);
 /* mm.c: frees the contiguous blocks that code in [lo, hi) allocated (a mod's
  * buffers once its code is gone); returns their bytes. */
 uint32_t nc_mm_contig_free_callers(NcKernel *k, uint32_t lo, uint32_t hi);
