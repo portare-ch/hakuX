@@ -412,6 +412,53 @@ static void twelve_voices(unsigned workers, int16_t out[NUM_SAMPLES_PER_FRAME][2
     apu_down();
 }
 
+static void *idle_race_frame(void *opaque)
+{
+    float bins[NUM_MIXBINS][NUM_SAMPLES_PER_FRAME] = {{0}};
+    mcpx_apu_vp_frame(opaque, bins);
+    return NULL;
+}
+
+/* DirectSound may lock an idle voice after the list walk and release its
+ * software object before the next report. Reporting the old candidate then
+ * makes its ISR dereference the freed object (DOA3's voice table). */
+static void test_idle_voice_locked_after_walk(void)
+{
+    apu_up(false, true, 1);
+    pcm_page(0, false, HALF, 0);
+    Voice later = voice(5, NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_2D_TOP, false, 0);
+    Voice idle = voice(4, NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_2D_TOP, false, 0);
+    start(&later);
+    start(&idle);
+    d->regs[NV_PAPU_FETFORCE1] |= NV_PAPU_FETFORCE1_SE2FE_IDLE_VOICE;
+    pio(NV1BA0_PIO_VOICE_OFF, idle.handle);
+
+    apu_spin_lock(&d->vp.voice_spinlocks[later.handle]);
+    pthread_t frame;
+    pthread_create(&frame, NULL, idle_race_frame, d);
+    const int64_t deadline = apu_host_us() + 1000000;
+    while (apu_ld(&d->regs[NV_PAPU_CVL2D]) != later.handle && apu_host_us() < deadline) {
+        usleep(100);
+    }
+    const bool walked = apu_ld(&d->regs[NV_PAPU_CVL2D]) == later.handle;
+    check(walked, "idle race: list walk reached the later voice");
+    pio(NV1BA0_PIO_SET_CURRENT_VOICE, idle.handle);
+    pio(NV1BA0_PIO_VOICE_LOCK, 1);
+    apu_spin_unlock(&d->vp.voice_spinlocks[later.handle]);
+    pthread_join(frame, NULL);
+    check((d->regs[NV_PAPU_FECTL] & NV_PAPU_FECTL_FEMETHMODE) != NV_PAPU_FECTL_FEMETHMODE_TRAPPED,
+          "idle voice locked after the walk: no stale release trap");
+
+    pio(NV1BA0_PIO_VOICE_LOCK, 0);
+    d->regs[NV_PAPU_FECTL] &= ~NV_PAPU_FECTL_FEMETHMODE;
+    float bins[NUM_MIXBINS][NUM_SAMPLES_PER_FRAME] = {{0}};
+    mcpx_apu_vp_frame(d, bins);
+    check((d->regs[NV_PAPU_FECTL] & NV_PAPU_FECTL_FEMETHMODE) == NV_PAPU_FECTL_FEMETHMODE_TRAPPED &&
+          d->regs[NV_PAPU_FEDECMETH] == SE2FE_IDLE_VOICE && d->regs[NV_PAPU_FEDECPARAM] == idle.handle,
+          "idle voice unlocked again: its valid release trap is delivered");
+    apu_down();
+}
+
 static void test_workers(void)
 {
     int16_t one[NUM_SAMPLES_PER_FRAME][2], four[NUM_SAMPLES_PER_FRAME][2];
@@ -482,6 +529,7 @@ int main(int argc, char **argv)
     test_full_dsp();
     test_voice_reuse_hrtf_history();
     test_workers();
+    test_idle_voice_locked_after_walk();
     free(g_ram);
     return failures ? 1 : 0;
 }

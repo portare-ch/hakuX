@@ -46,6 +46,8 @@ void nc_dev_apu_init(struct NcVm *vm);
 /* The voices' resampler for the next init: band-limited sinc, else linear
  * (vp/resample.h; NC_APU_RESAMPLER overrides it) */
 void nc_dev_apu_set_resampler(bool sinc);
+/* Full Xbox DSP processing for the next init; NC_APU_DSP overrides it. */
+void nc_dev_apu_set_dsp(bool enabled);
 /* The frame thread, the voice workers and the output stopped and joined;
  * then the APU's state and DSPs freed, for another init. */
 void nc_dev_apu_stop(void);

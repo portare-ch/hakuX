@@ -124,7 +124,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('harness', type=Path)
     parser.add_argument('core', type=Path)
+    parser.add_argument('--audio-default', choices=('fast', 'dsp'), default='dsp',
+                        help='Expected build default (Fast when built without the DSP JIT)')
     args = parser.parse_args()
+    for name in ('NC_APU_DSP', 'NC_APU_DSP_JIT'):
+        os.environ.pop(name, None)
+    fast_processing = 'processing: fast dry mix (GP interpreter, EP interpreter)'
+    full_processing = ('processing: full DSP (GP JIT, EP JIT)' if args.audio_default == 'dsp' else
+                       'processing: full DSP (GP interpreter, EP interpreter)')
     # PortareOS's mode (HAKUX_LR_END_PROCESS) for the runs, whatever the build:
     # the stop's watchdog, and the way before M2 (HAKUX_LR_STOP=0).
     os.environ['HAKUX_LR_END_PROCESS'] = '1'
@@ -142,7 +149,8 @@ def main():
                                        'option: hakux_language (Language), default auto',
                                        'option: hakux_video_region (Video Region), default auto',
                                        'option: hakux_rumble (Rumble), default disabled',
-                                       'option: hakux_audio_resampler (Audio Resampler), default sinc'))
+                                       'option: hakux_audio_resampler (Audio Resampler), default sinc',
+                                       f'option: hakux_audio_processing (Audio Processing), default {args.audio_default}'))
     with tempfile.TemporaryDirectory(prefix='hakux-libretro-') as folder:
         root = Path(folder)
         (root / 'saves').mkdir()
@@ -275,6 +283,26 @@ def main():
         run([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'], 0,
             ('resampler linear', 'resampler: linear', 'ran 30 frames'),
             dict(os.environ, HARNESS_OPTIONS='hakux_audio_resampler=linear'))
+        run([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'], 0,
+            (f'audio processing {args.audio_default}',
+             full_processing if args.audio_default == 'dsp' else fast_processing, 'ran 30 frames'))
+        run([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'], 0,
+            ('audio processing fast', fast_processing, 'ran 30 frames'),
+            dict(os.environ, HARNESS_OPTIONS='hakux_audio_processing=fast'))
+        run([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'], 0,
+            ('audio processing dsp', 'processing: full DSP (GP interpreter, EP interpreter)', 'ran 30 frames'),
+            dict(os.environ, HARNESS_OPTIONS='hakux_audio_processing=dsp', NC_APU_DSP_JIT='0'))
+        run([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'], 0,
+            ('audio processing fast', full_processing, 'ran 30 frames'),
+            dict(os.environ, HARNESS_OPTIONS='hakux_audio_processing=fast', NC_APU_DSP='1'))
+        run([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'], 0,
+            (f'audio processing {args.audio_default}', fast_processing, 'ran 30 frames'),
+            dict(os.environ, NC_APU_DSP='0'))
+        run([args.harness, args.core, root / 'spin.iso', 60, root / 'saves'], 0,
+            (full_processing, fast_processing,
+             'reset at frame 40', 'ran 60 frames'),
+            dict(os.environ, HARNESS_OPTIONS='hakux_audio_processing=dsp',
+                 HARNESS_OPTIONS_LATER='hakux_audio_processing=fast', HARNESS_RESET_AT='40'))
         run([args.harness, args.core, root / 'spin.iso', 60, root / 'saves'], 0,
             ('reset at frame 20', 'reset: the core stopped in', 'ran 60 frames',
              'RetroArch destroyed the context: the core stopped in', 'stop: the front end stopped the console',

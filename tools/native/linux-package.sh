@@ -14,6 +14,10 @@ if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
     echo "linux-package.sh: the checkout has changes; package a commit" >&2
     exit 1
 fi
+if [ ! -f "$build/CMakeCache.txt" ]; then
+    echo "linux-package.sh: missing $build/CMakeCache.txt; build with linux-build.sh first" >&2
+    exit 1
+fi
 
 out=$repo/build/package
 name=hakux-$version
@@ -23,10 +27,19 @@ mkdir -p "$out/$name/lib/libretro" "$out/$name/share/licenses/hakux"
 sed "s/^display_version = .*/display_version = \"$version\"/" native/libretro/hakux_libretro.info \
     > "$out/$name/lib/libretro/hakux_libretro.info"
 cp LICENSE COPYING licenses/* "$out/$name/share/licenses/hakux/"
+dsp_jit=off
+if grep -q '^HAKUX_DSP_JIT:BOOL=ON$' "$build/CMakeCache.txt"; then
+    dsp_jit=on
+    cp -R "$build/dsp-jit/licenses" "$out/$name/share/licenses/hakux/dsp-jit"
+fi
 {
     echo "hakuX $version"
     echo "source $(git rev-parse HEAD) (https://github.com/portare-ch/hakuX-lr)"
     echo "compiler $("${CC:-clang}" --version | head -1)"
+    echo "DSP JIT $dsp_jit"
+    if [ "$dsp_jit" = on ]; then
+        cat "$build/dsp-jit/licenses/BUILD-INFO"
+    fi
     echo "runtime libz, libstdc++, libm, libgcc_s, glibc 2.38 (aarch64); libvulkan.so.1 loaded at run time"
     echo "dependencies (tools/native/linux-deps.json):"
     cat tools/native/linux-deps.json

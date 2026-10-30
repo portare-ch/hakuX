@@ -40,11 +40,12 @@ static pthread_t g_apu_trace_thread;
 uint8_t *g_apu_ram;
 uint32_t g_apu_ram_size;
 ApuConfig g_apu_config = {
-    .use_dsp = false,
+    .use_dsp = NC_HAVE_DSP_JIT,
     .hrtf = true,
     .volume_limit = 1.0f,
     .num_workers = 0,
     .resampler = VP_RESAMPLE_SINC,      /* linear where the build isn't AArch64 (vp/resample_sinc.h) */
+    .use_dsp_jit = true,
 };
 
 /* ------------------------------------------------------------ platform */
@@ -532,10 +533,8 @@ void mcpx_apu_reset(MCPXAPUState *d)
     mcpx_apu_vp_reset(d);
 
     // FIXME: Reset DSP state
-    memset(d->gp.dsp->core.pram_opcache, 0,
-           sizeof(d->gp.dsp->core.pram_opcache));
-    memset(d->ep.dsp->core.pram_opcache, 0,
-           sizeof(d->ep.dsp->core.pram_opcache));
+    dsp_invalidate_cache(d->gp.dsp);
+    dsp_invalidate_cache(d->ep.dsp);
     apu_st(&d->set_irq, false);
     d->snapshot_just_loaded = false;
     d->next_frame_time_us = 0;
@@ -666,6 +665,7 @@ static void config_init(void)
         g_apu_config.resampler = !strcmp(rs, "sinc") ? VP_RESAMPLE_SINC : VP_RESAMPLE_LINEAR;
     }
     g_apu_config.use_dsp = getenv_int_clamped("NC_APU_DSP", 0, 1, g_apu_config.use_dsp);
+    g_apu_config.use_dsp_jit = getenv_int_clamped("NC_APU_DSP_JIT", 0, 1, true);
     g_apu_config.hrtf = getenv_int_clamped("NC_APU_HRTF", 0, 1, g_apu_config.hrtf);
     g_apu_config.num_workers = getenv_int_clamped("NC_APU_WORKERS", 0, 64, g_apu_config.num_workers);
     g_trap_park = getenv_int_clamped("NC_APU_TRAP_PARK", 0, 1, 0);
@@ -722,6 +722,11 @@ static void *apu_trace_thread(void *arg)
 void nc_dev_apu_set_resampler(bool sinc)
 {
     g_apu_config.resampler = sinc ? VP_RESAMPLE_SINC : VP_RESAMPLE_LINEAR;
+}
+
+void nc_dev_apu_set_dsp(bool enabled)
+{
+    g_apu_config.use_dsp = enabled;
 }
 
 void nc_dev_apu_init(NcVm *vm)

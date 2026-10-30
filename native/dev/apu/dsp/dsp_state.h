@@ -27,6 +27,7 @@
 
 #include "dsp_cpu.h"
 #include "dsp_dma.h"
+#include "jit.h"
 
 struct DSPState {
     dsp_core_t core;
@@ -36,6 +37,13 @@ struct DSPState {
     uint32_t interrupts;
 
     bool is_gp;
+
+#if NC_HAVE_DSP_JIT
+    Dsp56300Jit *jit;
+    bool jit_state_valid;
+    Dsp56300State jit_state;
+    uint32_t jit_dma_reads;
+#endif
 };
 
 #endif /* DSP_STATE_H */

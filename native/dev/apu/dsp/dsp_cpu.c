@@ -25,6 +25,7 @@
 
 #include "native/dev/apu/apu_base.h"
 #include "dsp_cpu.h"
+#include "dsp_state.h"
 #include "debug.h"
 
 #define BITMASK(x)  ((1<<(x))-1)
@@ -594,7 +595,8 @@ static const char* disasm_get_instruction_text(dsp_core_t* dsp)
     return dsp->disasm_str_instr2;
 }
 
-void dsp56k_execute_instruction(dsp_core_t* dsp)
+/* Keep the executor inside the frame loop without requiring whole-core LTO. */
+static inline __attribute__((always_inline)) void execute_instruction(dsp_core_t* dsp)
 {
 
     uint32_t disasm_return = 0;
@@ -621,27 +623,22 @@ void dsp56k_execute_instruction(dsp_core_t* dsp)
         }
     }
 
-    if (dsp->cur_inst < 0x100000) {
-        /* the cache covers P memory; a PC past it (the guest program's
-         * jump) reads zeros (read_memory_p), decoded each time */
-        const bool in_pram = likely(dsp->pc < DSP_PRAM_SIZE);
-        const OpcodeEntry *op = in_pram ? dsp->pram_opcache[dsp->pc] : NULL;
-        if (unlikely(op == NULL)) {
-            op = lookup_opcode(dsp->cur_inst);
-            if (in_pram) {
-                dsp->pram_opcache[dsp->pc] = op;
-            }
-        }
-        if (likely(op->emu_func != NULL)) {
-            op->emu_func(dsp);
+    const bool in_pram = likely(dsp->pc < DSP_PRAM_SIZE);
+    emu_func_t execute = in_pram ? dsp->pram_opcache[dsp->pc] : NULL;
+    if (unlikely(execute == NULL)) {
+        if (dsp->cur_inst < 0x100000) {
+            const OpcodeEntry *op = lookup_opcode(dsp->cur_inst);
+            execute = op->emu_func ? op->emu_func : emu_undefined;
+        } else if ((dsp->cur_inst & 0xffff00) == 0x200000) {
+            execute = opcodes_alu[dsp->cur_inst & BITMASK(8)];
         } else {
-            DPRINTF("%x - %s\n", dsp->cur_inst, op->name);
-            emu_undefined(dsp);
+            execute = opcodes_parmove[(dsp->cur_inst>>20) & BITMASK(4)];
         }
-    } else {
-        /* Do parallel move read */
-        opcodes_parmove[(dsp->cur_inst>>20) & BITMASK(4)](dsp);
+        if (in_pram) {
+            dsp->pram_opcache[dsp->pc] = execute;
+        }
     }
+    execute(dsp);
 
     if (unlikely(disasm_return)) {
         if (TRACE_DSP_DISASM_REG) {
@@ -692,6 +689,45 @@ void dsp56k_execute_instruction(dsp_core_t* dsp)
         }
     }
 #endif
+}
+
+void dsp56k_execute_instruction(dsp_core_t* dsp)
+{
+    execute_instruction(dsp);
+}
+
+void dsp_run_interpreter(DSPState* dsp, int cycles)
+{
+    dsp->save_cycles += cycles;
+
+    if (dsp->save_cycles <= 0) return;
+
+    int dma_timer = 0;
+
+    while (dsp->save_cycles > 0)
+    {
+        execute_instruction(&dsp->core);
+        dsp->save_cycles -= dsp->core.instr_cycle;
+        dsp->core.cycle_count++;
+
+        if (dsp->dma.control & DMA_CONTROL_RUNNING) {
+            dma_timer++;
+        }
+
+        if (dma_timer > 2) {
+            dma_timer = 0;
+            dsp->dma.control &= ~DMA_CONTROL_RUNNING;
+            dsp->dma.control |= DMA_CONTROL_STOPPED;
+        }
+
+        if (dsp->core.is_idle) break;
+    }
+
+    /* FIXME: DMA timing be done cleaner. Xbox enables running
+     * then polls to make sure its running. But we complete DMA instantaneously,
+     * so when is it supposed to be signaled that it stopped? Maybe just wait at
+     * least one cycle? How long does hardware wait?
+     */
 }
 
 /**********************************

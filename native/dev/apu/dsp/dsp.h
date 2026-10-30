@@ -44,6 +44,11 @@ void dsp_reset(DSPState* dsp);
 
 void dsp_step(DSPState* dsp);
 void dsp_run(DSPState* dsp, int cycles);
+void dsp_run_interpreter(DSPState* dsp, int cycles);
+void dsp_invalidate_cache(DSPState* dsp);
+void dsp_state_prepare_save(DSPState* dsp);
+void dsp_state_finish_load(DSPState* dsp);
+const char *dsp_engine_name(DSPState* dsp);
 
 void dsp_bootstrap(DSPState* dsp);
 void dsp_start_frame(DSPState* dsp);

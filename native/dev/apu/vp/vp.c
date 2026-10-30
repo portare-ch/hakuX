@@ -2531,6 +2531,21 @@ static void voice_work_finalize(MCPXAPUState *d)
  * to stop playing; with its first voice reported every frame and ignored,
  * the group was never released and the game spun in GetStatus, loading,
  * where the guest turned the three off within one frame (the Odin 3). */
+static bool voice_still_listed(MCPXAPUState *d, uint8_t *c, uint16_t wanted)
+{
+    for (unsigned list = 0; list < ARRAY_SIZE(voice_list_regs); list++) {
+        uint32_t v = d->regs[voice_list_regs[list].top];
+        for (unsigned i = 0; v < MCPX_HW_MAX_VOICES && i < MCPX_HW_MAX_VOICES; i++) {
+            if (v == wanted) {
+                return true;
+            }
+            v = voice_get_mask_nolock(d, c, v, NV_PAVS_VOICE_TAR_PITCH_LINK,
+                                     NV_PAVS_VOICE_TAR_PITCH_LINK_NEXT_VOICE_HANDLE);
+        }
+    }
+    return false;
+}
+
 static void idle_report(MCPXAPUState *d, const uint16_t *idle, unsigned n)
 {
     unsigned k = 0;
@@ -2548,9 +2563,23 @@ static void idle_report(MCPXAPUState *d, const uint16_t *idle, unsigned n)
      * holds the voice locks of its batch, which a guest write may be waiting
      * on (a voice not reported now is in a later frame: it stays listed) */
     if ((d->regs[NV_PAPU_FECTL] & NV_PAPU_FECTL_FEMETHMODE) != NV_PAPU_FECTL_FEMETHMODE_TRAPPED) {
-        fe_method(d, SE2FE_IDLE_VOICE, idle[k]);
-        off_notify_now(d, idle[k]);     /* its VOICE_OFF's, with the trap (voice_off) */
-        g_idle_last = idle[k];
+        /* The walk released these voices' locks. The guest may since have
+         * locked, restarted or removed one; its old report can refer to a
+         * software voice the guest has freed. */
+        uint8_t *c = apu_ld_acq(&d->vp.voice_cache);
+        for (unsigned i = 0; i < n; i++) {
+            const uint16_t v = idle[(k + i) % n];
+            if (is_voice_locked(d, v) ||
+                voice_get_mask_nolock(d, c, v, NV_PAVS_VOICE_PAR_STATE,
+                                      NV_PAVS_VOICE_PAR_STATE_ACTIVE_VOICE) ||
+                !voice_still_listed(d, c, v)) {
+                continue;
+            }
+            fe_method(d, SE2FE_IDLE_VOICE, v);
+            off_notify_now(d, v);
+            g_idle_last = v;
+            break;
+        }
     }
     apu_spin_unlock(&d->vp.fe_spin);
 }

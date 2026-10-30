@@ -63,6 +63,18 @@ const char *space_names[] = {
 
 #endif
 
+static uint32_t dma_read_memory(DSPDMAState *s, int space, uint32_t address)
+{
+    DSPState *dsp = container_of(s->core, DSPState, core);
+    return dsp_read_memory(dsp, "XYP"[space], address);
+}
+
+static void dma_write_memory(DSPDMAState *s, int space, uint32_t address, uint32_t value)
+{
+    DSPState *dsp = container_of(s->core, DSPState, core);
+    dsp_write_memory(dsp, "XYP"[space], address, value);
+}
+
 static void scratch_circular_copy(
     DSPDMAState *s,
     uint32_t     scratch_base,
@@ -128,13 +140,13 @@ static void dsp_dma_run(DSPDMAState *s)
             break;
         }
 
-        uint32_t next_block = dsp56k_read_memory(s->core, block_space, block_addr);
-        uint32_t control = dsp56k_read_memory(s->core, block_space, block_addr+1);
-        uint32_t count = dsp56k_read_memory(s->core, block_space, block_addr+2);
-        uint32_t dsp_offset = dsp56k_read_memory(s->core, block_space, block_addr+3);
-        uint32_t scratch_offset = dsp56k_read_memory(s->core, block_space, block_addr+4);
-        uint32_t scratch_base = dsp56k_read_memory(s->core, block_space, block_addr+5);
-        uint32_t scratch_size = dsp56k_read_memory(s->core, block_space, block_addr+6)+1;
+        uint32_t next_block = dma_read_memory(s, block_space, block_addr);
+        uint32_t control = dma_read_memory(s, block_space, block_addr+1);
+        uint32_t count = dma_read_memory(s, block_space, block_addr+2);
+        uint32_t dsp_offset = dma_read_memory(s, block_space, block_addr+3);
+        uint32_t scratch_offset = dma_read_memory(s, block_space, block_addr+4);
+        uint32_t scratch_base = dma_read_memory(s, block_space, block_addr+5);
+        uint32_t scratch_size = dma_read_memory(s, block_space, block_addr+6)+1;
 
         s->next_block = next_block;
         if (s->next_block & NODE_POINTER_EOL) {
@@ -222,7 +234,7 @@ static void dsp_dma_run(DSPDMAState *s)
                 // Interleave samples
                 for (int i = 0; i < block_count; i++) {
                     for (int ch = 0; ch < channel_count; ch++) {
-                        uint32_t v = dsp56k_read_memory(s->core,
+                        uint32_t v = dma_read_memory(s,
                             mem_space, mem_address+ch*block_count+i);
                         switch(item_size) {
                         case 2:
@@ -239,7 +251,7 @@ static void dsp_dma_run(DSPDMAState *s)
                 }
             } else {
                 for (int i = 0; i < count; i++) {
-                    uint32_t v = dsp56k_read_memory(s->core, mem_space, mem_address+i);
+                    uint32_t v = dma_read_memory(s, mem_space, mem_address+i);
                     switch(item_size) {
                     case 2:
                         *(uint16_t*)(scratch_buf + i*2) = v >> 8;
@@ -299,12 +311,12 @@ static void dsp_dma_run(DSPDMAState *s)
                     break;
                 }
 
-                dsp56k_write_memory(s->core, mem_space, mem_address+i, v);
+                dma_write_memory(s, mem_space, mem_address+i, v);
             }
         }
 
         if (buffer_offset_writeback) {
-            dsp56k_write_memory(s->core, block_space, block_addr+4, scratch_offset);
+            dma_write_memory(s, block_space, block_addr+4, scratch_offset);
         }
 
     }

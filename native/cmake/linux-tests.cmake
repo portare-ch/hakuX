@@ -15,6 +15,12 @@ target_include_directories(apu-stereo-smoke PRIVATE "${NC_REPO}")
 target_link_libraries(apu-stereo-smoke PRIVATE hakux_native m)
 add_test(NAME apu-stereo-smoke COMMAND apu-stereo-smoke)
 set_tests_properties(apu-stereo-smoke PROPERTIES TIMEOUT 30)
+if(HAKUX_DSP_JIT)
+  add_executable(apu-jit-smoke "${NC_REPO}/tests/native/linux/apu_jit.c" "${NC_APU_OUT_NULL}")
+  target_link_libraries(apu-jit-smoke PRIVATE hakux_native m)
+  add_test(NAME apu-jit-smoke COMMAND apu-jit-smoke)
+  set_tests_properties(apu-jit-smoke PROPERTIES TIMEOUT 30)
+endif()
 # The voices' resamplers, linear and sinc, through voice processing: levels,
 # loops, pitch changes, a voice's end, reuse, a starved stream, ADPCM loops;
 # `apu-resample-smoke bench` counts allocations (malloc wrapped).
@@ -59,6 +65,7 @@ if(TARGET hakux_libretro)
   target_link_libraries(libretro-harness PRIVATE ${CMAKE_DL_LIBS} Threads::Threads)
   add_test(NAME libretro-smoke
            COMMAND "${Python3_EXECUTABLE}" "${NC_REPO}/tests/native/libretro/check.py"
-                   "$<TARGET_FILE:libretro-harness>" "$<TARGET_FILE:hakux_libretro>")
+                   "$<TARGET_FILE:libretro-harness>" "$<TARGET_FILE:hakux_libretro>"
+                   --audio-default "$<IF:$<BOOL:${HAKUX_DSP_JIT}>,dsp,fast>")
   set_tests_properties(libretro-smoke PROPERTIES TIMEOUT 120)
 endif()

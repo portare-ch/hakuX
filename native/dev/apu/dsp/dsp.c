@@ -59,6 +59,12 @@ DSPState *dsp_init(void *rw_opaque,
 
     dsp_reset(dsp);
 
+#if NC_HAVE_DSP_JIT
+    if (g_apu_config.use_dsp && g_apu_config.use_dsp_jit) {
+        dsp->jit = dsp_jit_create(dsp);
+    }
+#endif
+
     return dsp;
 }
 
@@ -66,10 +72,22 @@ void dsp_reset(DSPState* dsp)
 {
     dsp56k_reset_cpu(&dsp->core);
     dsp->save_cycles = 0;
+#if NC_HAVE_DSP_JIT
+    dsp->jit_state_valid = false;
+    dsp->jit_dma_reads = 0;
+    if (dsp->jit) {
+        dsp56300_reset(dsp->jit);
+    }
+#endif
 }
 
 void dsp_destroy(DSPState* dsp)
 {
+#if NC_HAVE_DSP_JIT
+    if (dsp->jit) {
+        dsp56300_destroy(dsp->jit);
+    }
+#endif
     free(dsp);
 }
 
@@ -94,6 +112,15 @@ static uint32_t read_peripheral(dsp_core_t* core, uint32_t address) {
         v = dsp_dma_read(&dsp->dma, DMA_START_BLOCK);
         break;
     case 0xFFFFD6:
+#if NC_HAVE_DSP_JIT
+        /* The JIT has no C callback per instruction. Complete synchronous
+         * DMA after the guest has observed RUNNING, as xemu's JIT does. */
+        if (dsp->jit && (dsp->dma.control & DMA_CONTROL_RUNNING) && ++dsp->jit_dma_reads > 2) {
+            dsp->dma.control &= ~DMA_CONTROL_RUNNING;
+            dsp->dma.control |= DMA_CONTROL_STOPPED;
+            dsp->jit_dma_reads = 0;
+        }
+#endif
         v = dsp_dma_read(&dsp->dma, DMA_CONTROL);
         break;
     case 0xFFFFD7:
@@ -111,6 +138,11 @@ static void write_peripheral(dsp_core_t* core, uint32_t address, uint32_t value)
     case 0xFFFFC4:
         if (value & 1) {
             core->is_idle = true;
+#if NC_HAVE_DSP_JIT
+            if (dsp->jit) {
+                dsp56300_set_halt_requested(dsp->jit, true);
+            }
+#endif
         }
         break;
     case 0xFFFFC5:
@@ -126,6 +158,9 @@ static void write_peripheral(dsp_core_t* core, uint32_t address, uint32_t value)
         dsp_dma_write(&dsp->dma, DMA_START_BLOCK, value);
         break;
     case 0xFFFFD6:
+#if NC_HAVE_DSP_JIT
+        dsp->jit_dma_reads = 0;
+#endif
         dsp_dma_write(&dsp->dma, DMA_CONTROL, value);
         break;
     case 0xFFFFD7:
@@ -138,41 +173,65 @@ static void write_peripheral(dsp_core_t* core, uint32_t address, uint32_t value)
 
 void dsp_step(DSPState* dsp)
 {
+#if NC_HAVE_DSP_JIT
+    if (dsp->jit) {
+        dsp56300_step(dsp->jit);
+        dsp_jit_save(dsp);
+        return;
+    }
+#endif
     dsp56k_execute_instruction(&dsp->core);
 }
 
 void dsp_run(DSPState* dsp, int cycles)
 {
-    dsp->save_cycles += cycles;
-
-    if (dsp->save_cycles <= 0) return;
-
-    int dma_timer = 0;
-
-    while (dsp->save_cycles > 0)
-    {
-        dsp56k_execute_instruction(&dsp->core);
-        dsp->save_cycles -= dsp->core.instr_cycle;
-        dsp->core.cycle_count++;
-
-        if (dsp->dma.control & DMA_CONTROL_RUNNING) {
-            dma_timer++;
-        }
-
-        if (dma_timer > 2) {
-            dma_timer = 0;
-            dsp->dma.control &= ~DMA_CONTROL_RUNNING;
-            dsp->dma.control |= DMA_CONTROL_STOPPED;
-        }
-
-        if (dsp->core.is_idle) break;
+#if NC_HAVE_DSP_JIT
+    if (dsp->jit) {
+        dsp_jit_run(dsp, cycles);
+        return;
     }
+#endif
+    dsp_run_interpreter(dsp, cycles);
+}
 
-    /* FIXME: DMA timing be done cleaner. Xbox enables running
-     * then polls to make sure its running. But we complete DMA instantaneously,
-     * so when is it supposed to be signaled that it stopped? Maybe just wait at
-     * least one cycle? How long does hardware wait?
-     */
+void dsp_invalidate_cache(DSPState* dsp)
+{
+    memset(dsp->core.pram_opcache, 0, sizeof(dsp->core.pram_opcache));
+#if NC_HAVE_DSP_JIT
+    if (dsp->jit) {
+        dsp56300_invalidate_cache(dsp->jit);
+    }
+#endif
+}
+
+void dsp_state_prepare_save(DSPState* dsp)
+{
+#if NC_HAVE_DSP_JIT
+    dsp->jit_state_valid = false;
+    if (dsp->jit) {
+        dsp_jit_save(dsp);
+    }
+#endif
+}
+
+void dsp_state_finish_load(DSPState* dsp)
+{
+    dsp_invalidate_cache(dsp);
+#if NC_HAVE_DSP_JIT
+    if (dsp->jit) {
+        dsp_jit_load(dsp);
+    }
+#endif
+}
+
+const char *dsp_engine_name(DSPState* dsp)
+{
+#if NC_HAVE_DSP_JIT
+    if (dsp->jit) {
+        return "JIT";
+    }
+#endif
+    return "interpreter";
 }
 
 void dsp_bootstrap(DSPState* dsp)
@@ -186,12 +245,24 @@ void dsp_bootstrap(DSPState* dsp)
             dsp->core.pram[i] &= 0x00ffffff;
         }
     }
-    memset(dsp->core.pram_opcache, 0, sizeof(dsp->core.pram_opcache));
+    dsp_invalidate_cache(dsp);
 }
 
 void dsp_start_frame(DSPState* dsp)
 {
     dsp->interrupts |= INTERRUPT_START_FRAME;
+    dsp->core.is_idle = false;
+    dsp->core.cycle_count = 0;
+#if NC_HAVE_DSP_JIT
+    if (dsp->jit) {
+        Dsp56300State state;
+        dsp56300_get_state(dsp->jit, &state);
+        state.halt_requested = false;
+        state.cycle_count = 0;
+        state.cycle_budget = 0;
+        dsp56300_set_state(dsp->jit, &state);
+    }
+#endif
 }
 
 uint32_t dsp_read_memory(DSPState* dsp, char space, uint32_t address)
@@ -213,6 +284,11 @@ uint32_t dsp_read_memory(DSPState* dsp, char space, uint32_t address)
         return 0;
     }
 
+#if NC_HAVE_DSP_JIT
+    if (dsp->jit) {
+        return dsp56300_read_memory(dsp->jit, space_id, address);
+    }
+#endif
     return dsp56k_read_memory(&dsp->core, space_id, address);
 }
 
@@ -235,5 +311,11 @@ void dsp_write_memory(DSPState* dsp, char space, uint32_t address, uint32_t valu
         return;
     }
 
+#if NC_HAVE_DSP_JIT
+    if (dsp->jit) {
+        dsp56300_write_memory(dsp->jit, space_id, address, value);
+        return;
+    }
+#endif
     dsp56k_write_memory(&dsp->core, space_id, address, value);
 }

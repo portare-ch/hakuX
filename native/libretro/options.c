@@ -14,7 +14,14 @@
 
 #define NEXT " Restart the game to apply."
 
-enum { OPT_SCALE, OPT_CROP, OPT_FORMAT, OPT_LANGUAGE, OPT_REGION, OPT_RUMBLE, OPT_NETWORK, OPT_RESAMPLER, OPT_COUNT };
+#if NC_HAVE_DSP_JIT
+#define AUDIO_PROCESSING_DEFAULT "dsp"
+#else
+#define AUDIO_PROCESSING_DEFAULT "fast"
+#endif
+
+enum { OPT_SCALE, OPT_CROP, OPT_FORMAT, OPT_LANGUAGE, OPT_REGION, OPT_RUMBLE, OPT_NETWORK, OPT_RESAMPLER,
+       OPT_PROCESSING, OPT_COUNT };
 
 /* The language values follow XC_LANGUAGE after auto: english is 1. */
 static struct retro_core_option_v2_definition g_defs[OPT_COUNT + 1] = {
@@ -77,6 +84,13 @@ static struct retro_core_option_v2_definition g_defs[OPT_COUNT + 1] = {
         NULL, NULL,
         {{"sinc", "Sinc (higher quality)"}, {"linear", "Linear"}, {NULL, NULL}},
         "sinc"},
+    [OPT_PROCESSING] = {
+        "hakux_audio_processing", "Audio Processing", NULL,
+        "Full DSP runs the game's Xbox reverb and other audio effects with stereo output. "
+        "It uses more CPU. Fast plays the dry mix; try it if Full DSP crackles or runs slowly." NEXT,
+        NULL, NULL,
+        {{"fast", "Fast (dry mix)"}, {"dsp", "Full DSP (experimental)"}, {NULL, NULL}},
+        AUDIO_PROCESSING_DEFAULT},
     {NULL},
 };
 
@@ -192,10 +206,12 @@ void nc_lr_options_apply(void)
     nc_lr_net_apply(lan);
     const bool sinc = !strcmp(g_defs[OPT_RESAMPLER].values[g_applied[OPT_RESAMPLER]].value, "sinc");
     nc_dev_apu_set_resampler(sinc);
+    const bool dsp = !strcmp(g_defs[OPT_PROCESSING].values[g_applied[OPT_PROCESSING]].value, "dsp");
+    nc_dev_apu_set_dsp(dsp);
     nc_log("hakuX-libretro", "options: render scale %dx, overscan %s, screen %s, language %d (%s), video region %s, "
-           "rumble %s, network %s, resampler %s", scale, crop ? "cropped" : "shown", format, language,
+           "rumble %s, network %s, resampler %s, audio processing %s", scale, crop ? "cropped" : "shown", format, language,
            g_defs[OPT_LANGUAGE].values[g_applied[OPT_LANGUAGE]].value, region, rumble ? "on" : "off",
-           lan ? "lan" : "off", sinc ? "sinc" : "linear");
+           lan ? "lan" : "off", sinc ? "sinc" : "linear", dsp ? "dsp" : "fast");
 }
 
 void nc_lr_options_run(void)
