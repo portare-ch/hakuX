@@ -426,6 +426,60 @@ static void test_convolution(void)
     HT_CHECK(strstr(buf, "vec4 t0 = samp3(0u") != NULL);
 }
 
+/* antialiasing control on a 2 x 2 target: the sample by guest pixel, the
+ * mask's samples, alpha-to-coverage's first alpha x 4, alpha-to-one */
+static void test_aa_control(void)
+{
+    uint32_t rs[HLE_PS_REGS] = { 0 };
+    rs[HLE_PS_RGB_IN] = IN4(R_V0, R_ZERO | INVERT, R_ZERO, R_ZERO);
+    rs[HLE_PS_RGB_OUT] = R_R0 << 4;
+    rs[HLE_PS_COUNT] = 1;
+    HlePshKey k;
+    hle_psh_key(rs, &k);
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
+    HT_CHECK(strstr(buf, "uint si") == NULL);
+    /* inactive: multisampling off, every sample with nothing else, no
+     * samples, no target */
+    hle_psh_aa_key(&k, 0x00050010u, 2, 2, true, false);
+    HT_EQ_INT(k.aa_grid, 0);
+    hle_psh_aa_key(&k, 0xFFFF0001u, 2, 2, true, false);
+    HT_EQ_INT(k.aa_grid, 0);
+    hle_psh_aa_key(&k, 0x00050001u, 1, 1, true, false);
+    HT_EQ_INT(k.aa_grid, 0);
+    hle_psh_aa_key(&k, 0x00050001u, 2, 2, false, false);
+    HT_EQ_INT(k.aa_grid, 0);
+    /* a depth-only draw keeps its mask (its depth and stencil samples) */
+    hle_psh_aa_key(&k, 0x00050001u, 2, 2, false, true);
+    HT_EQ_INT(k.aa_grid, 2 | 2 << 2);
+    HT_EQ_INT(k.aa_ctl, 0x5 << 4);
+    /* an empty mask writes no sample: active, though aa_ctl is 0 */
+    hle_psh_aa_key(&k, 0x00000001u, 2, 2, true, false);
+    HT_EQ_INT(k.aa_grid, 2 | 2 << 2);
+    HT_EQ_INT(k.aa_ctl, 0);
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
+    HT_CHECK(strstr(buf, "if (((0u >> si) & 1u) == 0u) discard;") != NULL);
+    hle_psh_aa_key(&k, 0x00050111u, 2, 2, true, false);
+    HT_EQ_INT(k.aa_ctl, 1 | 2 | 0x5 << 4);
+    size_t n = hle_psh_glsl(&k, buf, sizeof(buf), NULL);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("psh_aa_control");
+    HT_CHECK(strstr(buf, "ivec2 sp = ivec2(gl_FragCoord.xy / float(max((pc.flags >> 16) & 255u, "
+                         "1u))) % ivec2(2, 2);") != NULL);
+    HT_CHECK(strstr(buf, "uint si = uint(sp.y * 2 + sp.x);") != NULL);
+    HT_CHECK(strstr(buf, "if (((5u >> si) & 1u) == 0u) discard;") != NULL);
+    HT_CHECK(strstr(buf, "if (float(si) + 0.5 >= outc.a * 4.0) discard;") != NULL);
+    HT_CHECK(strstr(buf, "outc.a = 1.0;") != NULL);
+    /* before the output: the blend takes alpha-to-one's alpha */
+    HT_CHECK(strstr(buf, "outc.a = 1.0;") < strstr(buf, "oColor = outc;"));
+    /* 2 x 1, every sample in the mask: alpha-to-coverage alone */
+    hle_psh_aa_key(&k, 0xFFFF0011u, 2, 1, true, false);
+    HT_EQ_INT(k.aa_ctl, 1 | 0x3 << 4);
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), NULL) > 0);
+    HT_CHECK(strstr(buf, ">> si) & 1u") == NULL);
+    HT_CHECK(strstr(buf, "if (float(si) + 0.5 >= outc.a * 2.0) discard;") != NULL);
+    HT_CHECK(strstr(buf, "outc.a = 1.0;") == NULL);
+}
+
 /* dithering into a 16-bit target: the ordered offset by its channel steps */
 static void test_dither(void)
 {
@@ -497,6 +551,7 @@ int main(void)
     HT_RUN(test_sign);
     HT_RUN(test_sign_color_key);
     HT_RUN(test_dither);
+    HT_RUN(test_aa_control);
     HT_RUN(test_overflow);
     HT_DONE();
 }
