@@ -169,14 +169,30 @@ static void dxt_volume(uint32_t xfmt, const uint8_t *s, uint32_t w, uint32_t h, 
     }
 }
 
-/* A4R4G4B4 -> A8R8G8B8 (bytes B, G, R, A), each 4-bit value n as n * 17, for a
- * GPU without the 4444 formats (Mali's r26: HleCaps.x4444 off) */
-static void expand_4444(const uint16_t *s, size_t n, uint32_t *out)
+/* Whether the back end samples a texture's texels as the guest stores them
+ * (vk/draw.c tex_format), else they're converted on the way into the arena
+ * (hle_tex_convert): R6G5B5, which Vulkan has no format for, and depth, read
+ * as a float; and the formats a GPU lacks (HleCaps x4444: Mali's r26; r16,
+ * r5551, r4444). */
+static bool tex_native(uint32_t fmt)
 {
-    for (size_t i = 0; i < n; i++) {
-        uint32_t c = s[i];
-        uint32_t x = (c & 0xF) | (c & 0xF0) << 4 | (c & 0xF00) << 8 | (c & 0xF000) << 12;
-        out[i] = x | x << 4;
+    switch (fmt) {
+    case HLE_XFMT_A4R4G4B4: case HLE_XFMT_LIN_A4R4G4B4:
+        return g_hvk.caps.x4444;
+    case HLE_XFMT_R5G5B5A1: case HLE_XFMT_LIN_R5G5B5A1:
+        return g_hvk.caps.r5551;
+    case HLE_XFMT_R4G4B4A4: case HLE_XFMT_LIN_R4G4B4A4:
+        return g_hvk.caps.r4444;
+    case HLE_XFMT_V16U16: case HLE_XFMT_LIN_V16U16:
+    case HLE_XFMT_D16: case HLE_XFMT_LIN_D16:
+        return g_hvk.caps.r16;
+    case HLE_XFMT_R6G5B5: case HLE_XFMT_LIN_R6G5B5:
+    case HLE_XFMT_D24S8: case HLE_XFMT_LIN_D24S8:
+    case HLE_XFMT_F24S8: case HLE_XFMT_LIN_F24S8:
+    case HLE_XFMT_F16: case HLE_XFMT_LIN_F16:
+        return false;
+    default:
+        return true;
     }
 }
 
@@ -281,8 +297,8 @@ static bool tex_define(uint32_t id, const uint32_t h5[5], const HleResDesc *dp,
     const HleResInfo ri = *rip;
     const HleFmtInfo *fi = hle_fmt_info(d.fmt);
     bool p8 = d.fmt == HLE_XFMT_P8;
-    if (!fi || (fi->flags & (HLE_FI_YUV | HLE_FI_DEPTH)) || (p8 && !npal)) {
-        /* YUV / depth textures, P8 without a palette */
+    if (!fi || (fi->flags & HLE_FI_YUV) || (p8 && !npal)) {
+        /* YUV textures other than yuv_define's, P8 without a palette */
         for (unsigned i = 0; i < 8; i++) {
             if (g_lg.fmts[i] == d.fmt + 1) {
                 break;
@@ -306,13 +322,10 @@ static bool tex_define(uint32_t id, const uint32_t h5[5], const HleResDesc *dp,
      * blocks in groups of four slices), depth halving per level */
     bool vol = d.kind == HLE_RK_VOLUME;
     bool dxtd = (fi->flags & HLE_FI_DXT) && (vol || !g_hvk.caps.bc);
-    /* A4R4G4B4 on a GPU without the 4444 formats: A8R8G8B8 as well (expand_4444),
-     * a linear texture a linear one */
-    bool x4444 = (d.fmt == HLE_XFMT_A4R4G4B4 || d.fmt == HLE_XFMT_LIN_A4R4G4B4) &&
-                 !g_hvk.caps.x4444;
-    uint32_t oxfmt = p8 || dxtd ? HLE_XFMT_A8R8G8B8 :
-                     x4444 ? (d.fmt == HLE_XFMT_LIN_A4R4G4B4 ? HLE_XFMT_LIN_A8R8G8B8
-                                                            : HLE_XFMT_A8R8G8B8) : d.fmt;
+    /* a format the back end doesn't sample as stored: A8R8G8B8 as well, or
+     * depth as a float (hle_tex_convert), a linear texture a linear one */
+    bool conv = !p8 && !dxtd && !tex_native(d.fmt);
+    uint32_t oxfmt = p8 || dxtd ? HLE_XFMT_A8R8G8B8 : conv ? hle_tex_conv_xfmt(d.fmt) : d.fmt;
     const HleFmtInfo *ofi = hle_fmt_info(oxfmt);
     /* colour sign: those 8-bit channels offset binary (the texels as stored,
      * not a conversion's) */
@@ -342,13 +355,13 @@ static bool tex_define(uint32_t id, const uint32_t h5[5], const HleResDesc *dp,
             uint32_t sw, sh, bo;
             hle_res_level(&d, l, &sw, &sh, &bo);
             HleXgRect img = { bo, bo, w, h };
-            /* x4444: the 16-bit texels to a scratch copy first, expanded below */
+            /* conv: the guest's texels to a scratch copy first, converted below */
             uint8_t *out = dst + pos;
             uint32_t orow = row;
-            g_autofree uint8_t *t16 = NULL;
-            if (x4444) {
-                orow = w * 2;
-                out = t16 = g_malloc((size_t)orow * h * dd);
+            g_autofree uint8_t *raw = NULL;
+            if (conv) {
+                orow = w * fi->bpp / 8;
+                out = raw = g_malloc((size_t)orow * h * dd);
             }
             if (dxtd && !vol) {
                 dxt_volume(d.fmt, s, w, h, 1, (uint32_t *)(dst + pos));
@@ -378,8 +391,8 @@ static bool tex_define(uint32_t id, const uint32_t h5[5], const HleResDesc *dp,
                     memcpy(out + y * orow, s + y * sp, orow);
                 }
             }
-            if (x4444) {
-                expand_4444((const uint16_t *)t16, (size_t)w * h * dd, (uint32_t *)(dst + pos));
+            if (conv) {
+                hle_tex_convert(d.fmt, raw, w * h * dd, dst + pos);
             }
             if (sxor && ofi->bpp == 32) {
                 for (uint32_t i = 0; i + 4 <= n; i += 4) {

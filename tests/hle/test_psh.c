@@ -192,6 +192,28 @@ static void test_shadow_project(void)
     HT_CHECK(strstr(buf, "/ vTex0.w") == NULL);
 }
 
+/* An uploaded F24 texture (shadow_fmt 0 with the stage's shadow bit): the
+ * stored float compared as it is, r cut to F24's 16-bit mantissa */
+static void test_shadow_f24(void)
+{
+    uint32_t rs[HLE_PS_REGS] = { 0 };
+    rs[HLE_PS_RGB_IN] = IN4(R_T0, R_C0, R_ZERO, R_ZERO);
+    rs[HLE_PS_RGB_OUT] = R_R0 << 4;
+    rs[HLE_PS_COUNT] = 1;
+    rs[HLE_PS_TEXMODES] = 2;                            /* t0 PROJECT3D */
+    HlePshKey k;
+    hle_psh_key(rs, &k);
+    k.shadow = 1 | (2u << 4);                           /* EQUAL */
+    k.shadow_fmt = 0;
+    size_t n = hle_psh_glsl(&k, buf, sizeof(buf), NULL);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("psh_shadow_f24");
+    HT_CHECK(strstr(buf, "float m = 3.402823466e38, r = uintBitsToFloat(floatBitsToUint("
+                         "clamp(pq.z, 0.0, m)) & 0xFFFFFF80u);") != NULL);
+    HT_CHECK(strstr(buf, "uv) * 1.0;") != NULL);
+    HT_CHECK(strstr(buf, "equal(d, vec4(r))") != NULL);
+}
+
 /* Otogi's title ripple (modes 0x004c1): t0 the bump map, t1 BUMPENVMAP of
  * the copied scene, t2 2D; then t2 BUMPENVMAP_LUM reading t1 (PSInputTexture) */
 static void test_bumpenv(void)
@@ -544,6 +566,7 @@ int main(void)
     HT_RUN(test_dot_mux);
     HT_RUN(test_reflect);
     HT_RUN(test_shadow_project);
+    HT_RUN(test_shadow_f24);
     HT_RUN(test_bumpenv);
     HT_RUN(test_two_side);
     HT_RUN(test_color_key);

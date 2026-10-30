@@ -70,7 +70,8 @@ typedef struct HlePshKey {
                                            unit 3's coordinates are the point's */
     /* Shadow buffers: stages whose texture is a depth surface (bits 0-3),
      * D3DRS_SHADOWFUNC - 0x200 (bits 4-6); per stage (2 bits) the depth
-     * range the r coordinate is in: 1 D24 (2^24 - 1), 2 D16, 3 float. */
+     * range the r coordinate is in: 1 D24 (2^24 - 1), 2 D16, 3 F16's float
+     * (511.9375), 0 F24's (an uploaded F24 texture, stored as its float). */
     uint8_t shadow;
     uint8_t shadow_fmt;
     uint8_t out_bgra;                   /* 8-bit (B8) target: it stores blue */

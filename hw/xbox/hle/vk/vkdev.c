@@ -192,6 +192,9 @@ static void caps_override(HleCaps *c)
         { "push", offsetof(HleCaps, push) },         { "pushdesc", offsetof(HleCaps, push_desc) },
         { "cbc", offsetof(HleCaps, cbc) },           { "d24s8", offsetof(HleCaps, d24s8) },
         { "4444", offsetof(HleCaps, x4444) },        { "bindless", offsetof(HleCaps, bindless) },
+        { "r16", offsetof(HleCaps, r16) },           { "5551", offsetof(HleCaps, r5551) },
+        { "r4444", offsetof(HleCaps, r4444) },
+        { "bcs", offsetof(HleCaps, bcs) },           { "bcsimage", offsetof(HleCaps, bcs_image) },
         { "dclamp", offsetof(HleCaps, depth_clamp) },
         { "bda", offsetof(HleCaps, bda) },           { "ahb", offsetof(HleCaps, ahb) },
         { "fbfetch", offsetof(HleCaps, fbfetch) },   { "vk13", offsetof(HleCaps, vk13) },
@@ -352,6 +355,7 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
     bool e_vids = has_ext(ext, ne, VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
     bool e_eds2 = has_ext(ext, ne, VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME);
     bool e_cbc = has_ext(ext, ne, VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME);
+    bool e_bcs = e_cbc && has_ext(ext, ne, VK_EXT_BORDER_COLOR_SWIZZLE_EXTENSION_NAME);
     bool e_pv = has_ext(ext, ne, VK_EXT_PROVOKING_VERTEX_EXTENSION_NAME);
     bool e_dce = has_ext(ext, ne, VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME);
     bool e_4444 = has_ext(ext, ne, VK_EXT_4444_FORMATS_EXTENSION_NAME);
@@ -414,6 +418,8 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_2_FEATURES_EXT };
     VkPhysicalDeviceCustomBorderColorFeaturesEXT q_cbc = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_FEATURES_EXT };
+    VkPhysicalDeviceBorderColorSwizzleFeaturesEXT q_bcs = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BORDER_COLOR_SWIZZLE_FEATURES_EXT };
     VkPhysicalDeviceProvokingVertexFeaturesEXT q_pv = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROVOKING_VERTEX_FEATURES_EXT };
     VkPhysicalDeviceDepthClipEnableFeaturesEXT q_dce = {
@@ -467,6 +473,7 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
     if (e_vids) chain(&tail, &q_vids);
     if (e_eds2) chain(&tail, &q_eds2);
     if (e_cbc) chain(&tail, &q_cbc);
+    if (e_bcs) chain(&tail, &q_bcs);
     if (e_pv) chain(&tail, &q_pv);
     if (e_dce) chain(&tail, &q_dce);
     if (e_4444) chain(&tail, &q_4444);
@@ -537,6 +544,10 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
     c->eds2 = v13 || (e_eds2 && q_eds2.extendedDynamicState2);
     /* custom border colours and A4R4G4B4: substituted where missing (Mali's r26) */
     c->cbc = e_cbc && q_cbc.customBorderColors;
+    /* a view's component mapping and an opaque black or custom border: the
+     * texel undefined without it (Turnip has both, FromImage too) */
+    c->bcs = e_bcs && q_bcs.borderColorSwizzle;
+    c->bcs_image = c->bcs && q_bcs.borderColorSwizzleFromImage;
     c->x4444 = e_4444 && q_4444.formatA4R4G4B4;
     if (!c->x4444 && v13) {             /* core in 1.3, its extension listed or not */
         VkFormatProperties f4;
@@ -544,6 +555,23 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
                                           VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
         vkGetPhysicalDeviceFormatProperties(v->phys, VK_FORMAT_A4R4G4B4_UNORM_PACK16, &f4);
         c->x4444 = (f4.optimalTilingFeatures & want) == want;
+    }
+    {   /* optional formats of the NV2A's 16-bit textures (pb/pbres.c tex_native) */
+        const VkFormatFeatureFlags want = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+                                          VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+                                          VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+        static const VkFormat k_f[4] = { VK_FORMAT_R16_UNORM, VK_FORMAT_R16G16_UNORM,
+                                         VK_FORMAT_R5G5B5A1_UNORM_PACK16,
+                                         VK_FORMAT_R4G4B4A4_UNORM_PACK16 };
+        bool ok[4];
+        for (unsigned i = 0; i < 4; i++) {
+            VkFormatProperties fp;
+            vkGetPhysicalDeviceFormatProperties(v->phys, k_f[i], &fp);
+            ok[i] = (fp.optimalTilingFeatures & want) == want;
+        }
+        c->r16 = ok[0] && ok[1];
+        c->r5551 = ok[2];
+        c->r4444 = ok[3];
     }
     c->bc = q.features.textureCompressionBC;
     if (!c->bc) {
@@ -608,6 +636,8 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
     c->raster_order = c->fbfetch && e_roa && q_roa.rasterizationOrderColorAttachmentAccess &&
                       !getenv("HAKUX_HLE_NO_RASTER_ORDER");
     c->cbc_any = c->cbc_any && c->cbc;
+    c->bcs = c->bcs && c->cbc;
+    c->bcs_image = c->bcs_image && c->bcs;
     if (!c->bindless) {                 /* the draw sets' arrays, by the push block's index */
         need(c, q.features.shaderSampledImageArrayDynamicIndexing, "sampledImageDynamicIndexing");
     }
@@ -638,6 +668,9 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
     VkPhysicalDeviceCustomBorderColorFeaturesEXT f_cbc = {
         .sType = q_cbc.sType, .customBorderColors = VK_TRUE,
         .customBorderColorWithoutFormat = q_cbc.customBorderColorWithoutFormat };
+    VkPhysicalDeviceBorderColorSwizzleFeaturesEXT f_bcs = {
+        .sType = q_bcs.sType, .borderColorSwizzle = VK_TRUE,
+        .borderColorSwizzleFromImage = c->bcs_image };
     VkPhysicalDeviceProvokingVertexFeaturesEXT f_pv = {
         .sType = q_pv.sType, .provokingVertexLast = VK_TRUE };
     VkPhysicalDeviceDepthClipEnableFeaturesEXT f_dce = {
@@ -718,6 +751,7 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
     if (u_vids) chain(&tail, &f_vids);
     if (u_eds2) chain(&tail, &f_eds2);
     if (c->cbc) chain(&tail, &f_cbc);
+    if (c->bcs) chain(&tail, &f_bcs);
     if (u_pv) chain(&tail, &f_pv);
     if (u_dce) chain(&tail, &f_dce);
     if (u_4444) chain(&tail, &f_4444);
@@ -750,6 +784,7 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
     if (u_vids) exts[nx++] = VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME;
     if (u_eds2) exts[nx++] = VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME;
     if (c->cbc) exts[nx++] = VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME;
+    if (c->bcs) exts[nx++] = VK_EXT_BORDER_COLOR_SWIZZLE_EXTENSION_NAME;
     if (u_pv) exts[nx++] = VK_EXT_PROVOKING_VERTEX_EXTENSION_NAME;
     if (u_dce) exts[nx++] = VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME;
     if (u_4444) exts[nx++] = VK_EXT_4444_FORMATS_EXTENSION_NAME;
@@ -818,11 +853,12 @@ static int vk_init(PFN_vkGetInstanceProcAddr gipa_shared, VkInstance inst_shared
             VK_API_VERSION_PATCH(v->props.apiVersion), v->props.driverVersion,
             c->gpl, c->eds3, c->descriptor_buffer, c->maint5, c->sscaled,
             c->local_read, c->fbfetch, c->raster_order, c->cache_control, c->swapchain);
-    hle_log("hakuX-hle-back", "vk: bc=%d vids=%d push=%d push_desc=%d cbc=%d cbc_any=%d "
-            "x4444=%d d24s8=%d bda=%d ahb=%d vk13=%d dyn_render=%d sync2=%d eds1=%d eds2=%d "
-            "bindless=%d depth_clamp=%d (0: the substitute runs)", c->bc, c->vids, c->push,
-            c->push_desc, c->cbc, c->cbc_any, c->x4444, c->d24s8, c->bda, c->ahb, c->vk13,
-            c->dyn_render, c->sync2, c->eds1, c->eds2, c->bindless, c->depth_clamp);
+    hle_log("hakuX-hle-back", "vk: bc=%d vids=%d push=%d push_desc=%d cbc=%d cbc_any=%d bcs=%d "
+            "bcs_image=%d x4444=%d r16=%d r5551=%d r4444=%d d24s8=%d bda=%d ahb=%d vk13=%d "
+            "dyn_render=%d sync2=%d eds1=%d eds2=%d bindless=%d depth_clamp=%d (0: the substitute "
+            "runs)", c->bc, c->vids, c->push, c->push_desc, c->cbc, c->cbc_any, c->bcs, c->bcs_image,
+            c->x4444, c->r16, c->r5551, c->r4444, c->d24s8, c->bda, c->ahb, c->vk13, c->dyn_render, c->sync2, c->eds1, c->eds2,
+            c->bindless, c->depth_clamp);
     hle_quirks_init(v->phys);           /* what this driver needs worked around */
     return 0;
 }

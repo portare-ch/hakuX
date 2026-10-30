@@ -95,6 +95,116 @@ uint32_t hle_fmt_sign_rgba(uint32_t code, uint32_t sign)
     return m;
 }
 
+static uint32_t ld16(const uint8_t *p)
+{
+    return (uint32_t)p[0] | (uint32_t)p[1] << 8;
+}
+
+static uint32_t ld32(const uint8_t *p)
+{
+    return ld16(p) | ld16(p + 2) << 16;
+}
+
+/* an n-bit channel (4 <= n <= 8) as eight bits: n * 17 for four */
+static uint32_t bits8(uint32_t v, unsigned n)
+{
+    return (v << (8 - n) | v >> (2 * n - 8)) & 0xFF;
+}
+
+static void put32(uint8_t *o, uint32_t i, uint32_t v)
+{
+    memcpy(o + 4 * i, &v, 4);
+}
+
+static void put_depth(uint8_t *o, uint32_t i, float z)
+{
+    z = z < 1.0f ? z : 1.0f;            /* and NaN */
+    memcpy(o + 4 * i, &z, 4);
+}
+
+static float nv2a_float(uint32_t i)
+{
+    float f;
+    memcpy(&f, &i, 4);
+    return f;
+}
+
+bool hle_tex_convert(uint32_t code, const void *src, uint32_t n, void *dst)
+{
+    const uint8_t *s = src;
+    uint8_t *o = dst;
+    switch (code) {
+    case HLE_XFMT_A4R4G4B4: case HLE_XFMT_LIN_A4R4G4B4:
+        for (uint32_t i = 0; i < n; i++) {
+            uint32_t v = ld16(s + 2 * i);
+            put32(o, i, bits8(v >> 12, 4) << 24 | bits8(v >> 8 & 15, 4) << 16 |
+                        bits8(v >> 4 & 15, 4) << 8 | bits8(v & 15, 4));
+        }
+        return true;
+    case HLE_XFMT_R4G4B4A4: case HLE_XFMT_LIN_R4G4B4A4:
+        for (uint32_t i = 0; i < n; i++) {
+            uint32_t v = ld16(s + 2 * i);
+            put32(o, i, bits8(v & 15, 4) << 24 | bits8(v >> 12, 4) << 16 |
+                        bits8(v >> 8 & 15, 4) << 8 | bits8(v >> 4 & 15, 4));
+        }
+        return true;
+    case HLE_XFMT_R5G5B5A1: case HLE_XFMT_LIN_R5G5B5A1:
+        for (uint32_t i = 0; i < n; i++) {
+            uint32_t v = ld16(s + 2 * i);
+            put32(o, i, (v & 1 ? 0xFFu : 0) << 24 | bits8(v >> 11, 5) << 16 |
+                        bits8(v >> 6 & 31, 5) << 8 | bits8(v >> 1 & 31, 5));
+        }
+        return true;
+    case HLE_XFMT_R6G5B5: case HLE_XFMT_LIN_R6G5B5:
+        for (uint32_t i = 0; i < n; i++) {
+            uint32_t v = ld16(s + 2 * i);
+            put32(o, i, 0xFFu << 24 | bits8(v >> 10, 6) << 16 | bits8(v >> 5 & 31, 5) << 8 |
+                        bits8(v & 31, 5));
+        }
+        return true;
+    case HLE_XFMT_V16U16: case HLE_XFMT_LIN_V16U16:
+        for (uint32_t i = 0; i < n; i++) {
+            uint32_t u = s[4 * i + 1], v = s[4 * i + 3];
+            put32(o, i, v << 24 | u << 16 | v << 8 | u);
+        }
+        return true;
+    case HLE_XFMT_D16: case HLE_XFMT_LIN_D16:
+        for (uint32_t i = 0; i < n; i++) {
+            put_depth(o, i, ld16(s + 2 * i) / 65535.0f);
+        }
+        return true;
+    case HLE_XFMT_D24S8: case HLE_XFMT_LIN_D24S8:
+        for (uint32_t i = 0; i < n; i++) {
+            put_depth(o, i, (ld32(s + 4 * i) >> 8) / 16777215.0f);
+        }
+        return true;
+    case HLE_XFMT_F16: case HLE_XFMT_LIN_F16:
+        for (uint32_t i = 0; i < n; i++) {
+            uint32_t v = ld16(s + 2 * i);
+            put_depth(o, i, v ? nv2a_float((v << 11) + 0x3C000000u) / 511.9375f : 0.0f);
+        }
+        return true;
+    case HLE_XFMT_F24S8: case HLE_XFMT_LIN_F24S8:
+        for (uint32_t i = 0; i < n; i++) {
+            const uint32_t f = ld32(s + 4 * i) >> 8 << 7;
+            memcpy(o + 4 * i, &f, 4);
+        }
+        return true;
+    default:
+        return false;
+    }
+}
+
+uint32_t hle_tex_conv_xfmt(uint32_t code)
+{
+    const HleFmtInfo *fi = hle_fmt_info(code);
+    const bool lin = fi && (fi->flags & HLE_FI_LIN);
+    if (fi && (fi->flags & HLE_FI_DEPTH)) {
+        return lin ? HLE_XFMT_LIN_F24S8 : HLE_XFMT_F24S8;
+    }
+    return lin ? HLE_XFMT_LIN_A8R8G8B8 : HLE_XFMT_A8R8G8B8;
+}
+
 static int log2_exact(uint32_t v)
 {
     if (!v || (v & (v - 1))) {
