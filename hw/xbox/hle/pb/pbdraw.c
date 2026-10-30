@@ -245,7 +245,7 @@ static volatile int g_phase;            /* 0 none, 1 arena space, 2 ring space *
 
 /* The log lines' limits: the first few of each a boot (hle_pbd_reset) */
 static struct {
-    unsigned objs_full, surfaces, no_target, gamma, overlay, sprog;
+    unsigned objs_full, past_blocks, surfaces, no_target, gamma, overlay, sprog;
     int64_t scan_for;                   /* the idle period logged (hle_pbd_scanout) */
 } g_lg;
 
@@ -600,21 +600,36 @@ static void restored_pixels(PbObj *o)
  * one shown, a cube or its faces (views into it), a z-read's source, the
  * one just made (a bind makes its colour target, then its depth one).
  * NULL if every one is. */
+static bool obj_busy(const PbObj *o)
+{
+    bool busy = o->id == g_pd.rt || o->id == g_pd.ds || o->id == g_pd.shown_id ||
+                o->id == g_pd.made || o->cube || o->d.parent;
+    for (unsigned j = 0; j < g_pd.nzr && !busy; j++) {
+        busy = g_pd.zr[j].src == o->id;
+    }
+    return busy;
+}
+
 static PbObj *evict_slot(void)
 {
     PbObj *best = NULL;
     for (unsigned i = 0; i < g_pd.nobjs; i++) {
         PbObj *o = &g_pd.objs[i];
-        bool busy = o->id == g_pd.rt || o->id == g_pd.ds || o->id == g_pd.shown_id ||
-                    o->id == g_pd.made || o->cube || o->d.parent;
-        for (unsigned j = 0; j < g_pd.nzr && !busy; j++) {
-            busy = g_pd.zr[j].src == o->id;
-        }
-        if (!busy && (!best || o->bound < best->bound)) {
+        if (!obj_busy(o) && (!best || o->bound < best->bound)) {
             best = o;
         }
     }
     return best;
+}
+
+/* A linear object that reaches past the title's block of memory: one made
+ * before the memory was freed and given to a smaller block. It is never
+ * reused or written back (its write-back would cover memory not the
+ * target's), and goes once nothing holds it (object). */
+static bool past_block(const HleSurfDesc *d)
+{
+    const uint32_t end = d->pitch ? hle_host_contig_end(d->pa) : 0;
+    return end && (uint64_t)d->pitch * d->h > end - d->pa;
 }
 
 /* The object for a surface (memory, format, pitch, size), made the first
@@ -632,12 +647,27 @@ static uint32_t object(uint32_t pa, uint32_t xfmt, uint32_t pitch, uint32_t w, u
     uint32_t best = 0;
     uint64_t best_area = 0;
     for (unsigned i = 0; i < g_pd.nobjs; i++) {
-        const HleSurfDesc *d = &g_pd.objs[i].d;
-        if (d->pa != pa || d->xfmt != xfmt || d->pitch != pitch || g_pd.objs[i].cube) {
+        PbObj *s = &g_pd.objs[i];
+        const HleSurfDesc *d = &s->d;
+        if (d->pa != pa || d->xfmt != xfmt || d->pitch != pitch || s->cube) {
             continue;
         }
         if (d->w == w && d->h == h && !pitch) {
-            return g_pd.objs[i].id;
+            return s->id;
+        }
+        if (pitch && past_block(d)) {
+            if (!obj_busy(s)) {
+                if (g_lg.past_blocks++ < 8) {
+                    hle_log("hakuX-hle-pb", "surface %u (%08x %ux%u): past its block now, gone "
+                            "(first 8 logged)", s->id, d->pa, d->w, d->h);
+                }
+                HleCmdObjDestroy *x = begin(HLE_OP_OBJ_DESTROY, sizeof(*x));
+                x->after = 0;
+                x->id = s->id;
+                hle_fe_commit();
+                memset(s, 0, sizeof(*s));       /* a free slot (evict_slot's first) */
+            }
+            continue;
         }
         const uint64_t area = (uint64_t)d->w * d->h;
         if (pitch && d->w == w && d->h >= h && area > best_area) {
@@ -659,10 +689,12 @@ static uint32_t object(uint32_t pa, uint32_t xfmt, uint32_t pitch, uint32_t w, u
             }
             return 0;
         }
-        HleCmdObjDestroy *x = begin(HLE_OP_OBJ_DESTROY, sizeof(*x));
-        x->after = 0;
-        x->id = o->id;
-        hle_fe_commit();
+        if (o->id) {                            /* not a slot freed already */
+            HleCmdObjDestroy *x = begin(HLE_OP_OBJ_DESTROY, sizeof(*x));
+            x->after = 0;
+            x->id = o->id;
+            hle_fe_commit();
+        }
     }
     memset(o, 0, sizeof(*o));
     o->id = g_pd.next_id++;
@@ -909,7 +941,7 @@ static void writeback(uint32_t id)
     const HleSurfDesc *d = id ? object_desc(id) : NULL;
     const HleFmtInfo *fi = d ? hle_fmt_info(d->xfmt) : NULL;
     const PbObj *o = d ? obj_of(id) : NULL;
-    if (!fi || !d->pitch || (fi->flags & (HLE_FI_DEPTH | HLE_FI_DXT)) ||
+    if (!fi || !d->pitch || (fi->flags & (HLE_FI_DEPTH | HLE_FI_DXT)) || past_block(d) ||
         ((uint64_t)d->pitch * d->h > WRITEBACK_MAX && !(cpu_wb && o && o->cpu_used))) {
         return;
     }
@@ -1248,7 +1280,7 @@ static void restored_display(void)
 static void front_stale(const PbObj *o)
 {
     const HleFmtInfo *fi = o && o->d.pitch && !o->cube ? hle_fmt_info(o->d.xfmt) : NULL;
-    const bool colour = fi && !(fi->flags & (HLE_FI_DEPTH | HLE_FI_DXT));
+    const bool colour = fi && !(fi->flags & (HLE_FI_DEPTH | HLE_FI_DXT)) && !past_block(&o->d);
     hle_barrier_set_stale(colour ? o->d.pa : 0, colour ? o->d.pitch * o->d.h : 0, front_fill);
 }
 
@@ -2733,7 +2765,7 @@ static unsigned writeback_range(uint32_t pa, uint32_t end, uint64_t v, bool gpu_
             const HleFmtInfo *fi = hle_fmt_info(o->d.xfmt);
             if (o->written > after && (!next || o->written < next->written) && !o->cube &&
                 o->d.pitch && o->d.pa < end && o->d.pa + o->d.pitch * o->d.h > pa && fi &&
-                !(fi->flags & (HLE_FI_DEPTH | HLE_FI_DXT))) {
+                !(fi->flags & (HLE_FI_DEPTH | HLE_FI_DXT)) && !past_block(&o->d)) {
                 next = o;
             }
         }
