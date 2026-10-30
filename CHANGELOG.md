@@ -1,5 +1,31 @@
 # Changelog
 
+## linux-v0.12.0 (PortareOS)
+
+Sound that's placed and clearer, and more of the Xbox GPU's graphics features. It replaces 0.11.0 and the 0.12.0-exp builds.
+
+### What's new
+
+- **Stereo as a stereo Xbox mixes it** — Sounds play on the left and right speakers as the game places them. The Xbox's surround channels are mixed down as its own audio processor does for a stereo console: the centre on both sides at -3 dB, the rear channels on their own side at -3 dB, the subwoofer channel left out. 3D sounds keep their left/right placement, and sounds behind you are no longer 3 dB too loud. Before, many sounds came out of both speakers alike. The mix was measured from Halo's own audio programs.
+- **Clearer high frequencies** — Sounds at a lower rate than the output's 48 kHz, such as 22 kHz effects and speech, are converted with a band-limited (sinc) filter: a 22 kHz sound's 10 kHz content was about 6 dB quieter, now it's within 0.2 dB, and sounds pitched up past 48 kHz no longer alias. A new core option, **Audio Resampler** in **Quick Menu → Core Options**, switches back to **Linear**, what earlier versions used; it takes effect the next time the game starts.
+- **Short sounds play to their end** — A sound that doesn't loop lost its last 2 to 3 ms, and very short sounds pitched up could be lost entirely.
+- **No dropped audio** — When RetroArch takes fewer samples than it's offered, the rest plays next. Before, a whole period of sound (about 17 ms) was lost each time, heard as a click or a gap.
+- **Reused 3D voices** — A 3D sound no longer starts with the end of the sound its voice played before.
+- **More texture formats** — Textures in L16, V16U16, R6G5B5, R5G5B5A1 and R4G4B4A4, and depth textures that a pixel shader reads, now show. Before, they came out white.
+- **Window clip** — Exclusive clip windows, and several windows at once, clip as the Xbox does: split-screen, picture-in-picture and HUD masks.
+- **Lighting** — Spotlight falloff and specular highlights follow the curve the Xbox's lighting unit computes.
+- **Pixel-shader modes** — Depth replace (`texm3x2depth`), BRDF lookups and constant-eye specular reflections (`texm3x3spec`) now work. Before, they were drawn as plain 2D textures.
+
+Tried on the Nova: Burnout 3 and Halo showed no graphics glitches in a quick play session, and Halo ran at its full 30 fps with the sinc filter, its sound processing at about 3 % of one core. The stereo mix follows the measurement of Halo's audio programs and hasn't been listened to in a game yet.
+
+### Current limitations
+
+- Save states are not yet available.
+- The reverb and other effects the Xbox's audio processor adds aren't produced.
+- XLink Kai, which upstream also has, isn't offered in RetroArch yet, and neither is the Internet (NAT).
+- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
+- NBA Inside Drive 2003 saves its prestamped player textures blank: it reads back small images the GPU drew, which hakuX doesn't copy back to memory yet.
+
 ## linux-v0.12.0-exp.3 (PortareOS, experimental)
 
 Clearer high frequencies in the game's sounds, and short sounds that play to their end. It's a pre-release; 0.11.0 stays the latest stable release.
