@@ -146,6 +146,74 @@ static void test_2d_downmix(void)
     apu_down();
 }
 
+/* A 2D voice keeps its sound's route as its volumes change: a dry send
+ * fading to mute beside a reverb send fades the voice out (not to the
+ * reverb send's level, centred), a dry send fading in beside one stays in
+ * the monitor's mix (no step), a sound starting muted takes its route at
+ * its first audible frame, and a new sound (VOICE_ON) chooses again */
+static void test_2d_route_kept(void)
+{
+    apu_up(false, true, 1);
+    pcm_page(0, false, HALF, 0);
+    Voice v = voice(105, NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_2D_TOP, false, 0);
+    v.vol[0] = 0;               /* front left, 0 dB */
+    v.bin[2] = 10;              /* I3DL2 (reverb), 0 dB throughout */
+    v.vol[2] = 0;
+    start(&v);
+    frames(4);
+    bool ok = all(0, pcm(0.5f), 1) && all(1, 0, 0);
+    v.vol[0] = 0xFFE;           /* -64 dB */
+    volumes(&v);
+    frames(2);
+    ok = ok && all(0, pcm(0.5f * attenuation(0xFFE)), 1) && all(1, 0, 0);
+    v.vol[0] = 0xFFF;           /* muted */
+    volumes(&v);
+    frames(2);
+    ok = ok && all(0, 0, 0) && all(1, 0, 0);
+    check(ok, "2D dry send fading to mute beside a reverb send: the left at 0.5, 0.0003, then 0, the right 0");
+    apu_down();
+
+    apu_up(false, true, 1);
+    pcm_page(0, false, HALF, 0);
+    v.vol[0] = 0xFFF;           /* front left muted at the start, the reverb send audible */
+    start(&v);
+    frames(4);
+    ok = all(0, pcm(0.5f), 1) && all(1, pcm(0.5f), 1);
+    v.vol[0] = 0xFFE;
+    volumes(&v);
+    frames(2);
+    ok = ok && all(0, pcm(0.5f), 1) && all(1, pcm(0.5f), 1);
+    v.vol[0] = 0;
+    volumes(&v);
+    frames(2);
+    ok = ok && all(0, pcm(0.5f), 1) && all(1, pcm(0.5f), 1);
+    check(ok, "2D dry send fading in beside a reverb send: the monitor's mix throughout, 0.5 on both, no step");
+
+    d->regs[NV_PAPU_TVL2D] = 0xFFFF;    /* the list again empty: a new sound, front left audible */
+    start(&v);
+    frames(4);
+    check(all(0, pcm(0.5f), 1) && all(1, 0, 0), "2D voice's new sound (VOICE_ON): its route chosen again, panned");
+    apu_down();
+
+    apu_up(false, true, 1);
+    pcm_page(0, false, HALF, 0);
+    v = voice(106, NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_2D_TOP, false, 0);
+    v.bin[2] = 10;              /* every send muted at the start */
+    start(&v);
+    frames(2);
+    ok = all(0, 0, 0) && all(1, 0, 0);
+    v.vol[0] = 0x300;           /* front left fades in, -12 dB */
+    volumes(&v);
+    frames(2);
+    ok = ok && all(0, pcm(0.5f * attenuation(0x300)), 1) && all(1, 0, 0);
+    v.vol[2] = 0;               /* then the reverb send, 0 dB: left out */
+    volumes(&v);
+    frames(2);
+    ok = ok && all(0, pcm(0.5f * attenuation(0x300)), 1) && all(1, 0, 0);
+    check(ok, "2D sound starting muted: routed at its first audible frame, panned left, its later reverb send left out");
+    apu_down();
+}
+
 /* A 3D voice: the monitor's mix (no panning by its sends), with the HRTF
  * filter off, or on with an entry that passes its input (tap 0 both ears) */
 static void test_3d(void)
@@ -323,6 +391,7 @@ int main(int argc, char **argv)
     test_2d_stereo();
     test_2d_headroom();
     test_2d_downmix();
+    test_2d_route_kept();
     test_3d();
     test_multipass();
     test_full_dsp();

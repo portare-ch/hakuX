@@ -46,6 +46,10 @@ typedef struct MCPXAPUVoiceFilter {
      * last sample; voice_process turns it off then. Cleared at VOICE_ON. */
     bool ending;
     uint32_t silence_fed;
+    /* A 2D voice's route in the VP's own mix, VP_ROUTE_* (vp/stereo_route.h):
+     * chosen at its sound's first frame with an audible send, kept until its
+     * next VOICE_ON (cleared there) */
+    uint8_t route;
     sv_filter svf[2];
     HrtfFilter hrtf;
     /* The voice table for voice_resample_callback (the resampler's callback
