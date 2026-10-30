@@ -1,5 +1,41 @@
 # Changelog
 
+## linux-v0.13.0 (PortareOS)
+
+Xbox reverb and other DSP effects now play through stereo output, enabled by
+default and accelerated by a DSP56300 JIT on ARM64 Linux.
+
+### What's new
+
+- **Full DSP by default** — Runs the game's Xbox audio programs for reverb and
+  other effects. Uses the DSP JIT automatically; no setting change is needed
+  unless a previous build saved an explicit audio-processing preference.
+- **Fast fallback** — If a game has audio or performance problems, choose
+  **Quick Menu → Core Options → Audio Processing → Fast**, then restart the
+  game. This restores the previous dry mix and uses less CPU.
+- **Voice completion** — Rechecks released voices before notifying the game,
+  preventing stale notifications when a voice has been locked, restarted or
+  removed. Also optimizes the C interpreter retained for debugging and builds
+  without the JIT.
+
+On the Retroid Pocket Nova, paired replay of DOA3's captured audio programs used
+**27% less DSP CPU time with the JIT** than the optimized interpreter
+(0.483 → 0.351 CPU-seconds per audio-second). Seven silence, impulse and tone
+recordings were byte-identical, including the stereo reverb response. A live
+fight passed listening and control checks with no observed audio underruns.
+[Implementation and validation](https://github.com/portare-ch/hakuX-lr/pull/52).
+
+Full DSP remains experimental and costs more CPU than Fast. Please report the
+game and scene if audio sounds wrong or performance regresses, and whether
+switching to Fast helps.
+
+### Current limitations
+
+- Save states are not yet available.
+- XLink Kai and Internet (NAT) networking are unavailable in RetroArch.
+- CD CHDs and CHDs that require a parent image are unsupported. Use `chdman createdvd`.
+- NBA Inside Drive 2003 has blank saved player textures because GPU readback is incomplete.
+
 ## linux-v0.12.2 (PortareOS)
 
 Corrects misplaced specular highlights from point and spot lights, including
