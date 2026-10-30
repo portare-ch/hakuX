@@ -136,6 +136,17 @@ before the console boots, so a change takes effect when the game starts next:
 | `hakux_language` | `auto` (RetroArch's), `english`, `japanese`, `german`, `french`, `spanish`, `italian`, `korean`, `chinese`, `portuguese` | `auto` |
 | `hakux_video_region` | `auto` (the game's region), `ntsc-m`, `ntsc-j`, `pal` | `auto` |
 | `hakux_rumble` | `disabled`, `enabled` (the game's vibration to the controllers' motors); changes at once | `disabled` |
+| `hakux_network` | `disabled` (no cable), `lan` (system link with the consoles on the local network) | `disabled` |
+
+With `lan` (upstream's LAN backend, `native/net/lan.c`) the console's
+Ethernet frames travel as UDP datagrams on port 3075, broadcast on the
+interface the default route leaves by (or the first other one that
+broadcasts: a VPN's tunnel doesn't), and sent to the consoles named in
+`lan-peers.txt` in the save directory: `IP` or `IP:PORT`, separated by
+commas, spaces or lines, `#` starting a comment. When another console
+answers with this one's identity (a hard disk copied from another device),
+RetroArch says so, and this console gets a new serial number and MAC address
+when the game starts next. Its saves stay valid.
 
 PAL games are offered 60 Hz (the console's PAL60 setting) whatever the
 options. 480p, 720p and 1080i stay off. Filters (FXAA) and the picture's

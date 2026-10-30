@@ -124,6 +124,10 @@ the frame rate and the core's time per frame.
    demo discs): they continue without going back to the menu.
 9. **Video driver restarts:** some RetroArch video settings restart its video
    driver. The game then starts again, with a message saying so.
+10. **System link** (two devices): set **Network** to **LAN (system link)** in
+    the core options on both, start a game with system link on both, and open
+    its system link menu. Each should see the other's game. Note whether both
+    devices are on the same Wi-Fi, and if not, what `lan-peers.txt` names.
 
 ## Reporting
 
