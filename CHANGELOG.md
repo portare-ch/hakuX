@@ -1,5 +1,26 @@
 # Changelog
 
+## linux-v0.12.0-exp.3 (PortareOS, experimental)
+
+Clearer high frequencies in the game's sounds, and short sounds that play to their end. It's a pre-release; 0.11.0 stays the latest stable release.
+
+### What's new
+
+- **Clearer high frequencies** — Sounds at a lower rate than the output's 48 kHz, such as 22 kHz effects and speech, are now converted with a band-limited (sinc) filter. A 22 kHz sound's 10 kHz content came out about 6 dB quieter before; now it's within 0.2 dB. Sounds pitched up past 48 kHz, such as engines at high revs, no longer alias. A new core option, **Audio Resampler** in **Quick Menu → Core Options**, switches back to **Linear**, what earlier versions used. It takes effect the next time the game starts.
+- **Short sounds play to their end** — A sound that doesn't loop was cut off in the frame its data ran out, losing its last 2 to 3 ms. Very short sounds, such as clicks played at a high pitch, could be lost entirely. They now play to their last sample.
+- Everything in 0.12.0-exp.2 below.
+
+### Experimental
+
+The sinc filter meets its targets in the build's tests and was measured on the Nova, but it hasn't been listened to in a game yet. It costs two to three times the linear one: with 64 sounds playing at once, about 5 to 9 % of a frame on the Nova's big cores. If a game sounds worse than in 0.12.0-exp.2, or crackles, set **Audio Resampler** to **Linear** and report the game.
+
+### Current limitations
+
+- Save states are not yet available.
+- XLink Kai, which upstream also has, isn't offered in RetroArch yet, and neither is the Internet (NAT).
+- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
+- NBA Inside Drive 2003 saves its prestamped player textures blank: it reads back small images the GPU drew, which hakuX doesn't copy back to memory yet.
+
 ## linux-v0.12.0-exp.2 (PortareOS, experimental)
 
 The first batch of audio fixes, on top of 0.12.0-exp.1's graphics features. It's a pre-release; 0.11.0 stays the latest stable release.
