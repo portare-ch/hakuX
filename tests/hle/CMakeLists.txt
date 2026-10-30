@@ -86,22 +86,9 @@ endfunction()
 audio_test(test_apu_hrtf)
 audio_test(test_apu_stereo)
 audio_test(test_lr_audio ${REPO_ROOT}/native/libretro/audio.c)
-# The voices' resamplers: linear, and sinc with libsamplerate where NC_DEPS
-# has it (built as the core builds it, native/cmake/samplerate.cmake)
-set(LSR ${NC_DEPS}/libsamplerate)
-if(EXISTS ${LSR}/src/samplerate.c)
-  audio_test(test_apu_resample ${REPO_ROOT}/native/dev/apu/vp/resample.c
-             ${REPO_ROOT}/native/dev/apu/vp/resample_sinc.c ${LSR}/src/samplerate.c ${LSR}/src/src_linear.c
-             ${LSR}/src/src_sinc.c ${LSR}/src/src_zoh.c)
-  target_include_directories(test_apu_resample PRIVATE ${LSR}/include)
-  target_compile_definitions(test_apu_resample PRIVATE NC_HAVE_SINC)
-  set_source_files_properties(${LSR}/src/samplerate.c ${LSR}/src/src_linear.c ${LSR}/src/src_sinc.c
-                              ${LSR}/src/src_zoh.c PROPERTIES
-                              COMPILE_DEFINITIONS "ENABLE_SINC_MEDIUM_CONVERTER;HAVE_STDBOOL_H;PACKAGE=\"libsamplerate\";VERSION=\"0.2.2\""
-                              COMPILE_OPTIONS "-w")
-else()
-  audio_test(test_apu_resample ${REPO_ROOT}/native/dev/apu/vp/resample.c)
-endif()
+# The voices' resamplers: linear, and sinc where the host is AArch64
+audio_test(test_apu_resample ${REPO_ROOT}/native/dev/apu/vp/resample.c
+           ${REPO_ROOT}/native/dev/apu/vp/resample_sinc.c)
 
 # The shader generators live in the local tools/ (not versioned).
 if(EXISTS ${REPO_ROOT}/tools/hle/scan/hle_vshgen.c)

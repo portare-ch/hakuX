@@ -44,7 +44,7 @@ ApuConfig g_apu_config = {
     .hrtf = true,
     .volume_limit = 1.0f,
     .num_workers = 0,
-    .resampler = VP_RESAMPLE_SINC,      /* linear where libsamplerate isn't built in */
+    .resampler = VP_RESAMPLE_SINC,      /* linear where the build isn't AArch64 (vp/resample_sinc.h) */
 };
 
 /* ------------------------------------------------------------ platform */

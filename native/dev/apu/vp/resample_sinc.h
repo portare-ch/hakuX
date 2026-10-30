@@ -1,14 +1,25 @@
 /*
- * hakuX native core — the sinc quality behind resample.c (resample_sinc.c):
- * libsamplerate's converter by an opaque pointer, so its names (src_*,
- * SRC_STATE) stay in that one file.
+ * hakuX native core — the voices' band-limited resampler, resample.h's sinc
+ * (resample_sinc.c): AArch64 only, its taps through NEON. Elsewhere
+ * VP_HAVE_SINC is undefined and resample.c resamples linearly.
  */
 #ifndef NATIVE_DEV_APU_VP_RESAMPLE_SINC_H
 #define NATIVE_DEV_APU_VP_RESAMPLE_SINC_H
 
-void *vp_sinc_new(long (*cb)(void *cb_data, float **data), int channels, void *cb_data);
-long vp_sinc_read(void *s, double ratio, long frames, float *data);
-void vp_sinc_reset(void *s);
-void vp_sinc_delete(void *s);
+#include "resample.h"
+
+#if defined(__aarch64__)
+#define VP_HAVE_SINC 1
+
+typedef struct VpSinc VpSinc;
+
+/* A converter for 1 or 2 channels; NULL when out of memory */
+VpSinc *vp_sinc_new(int channels);
+/* frames output frames at ratio (clamped to 1/256 .. 256), its input from
+ * cb; fewer only when cb gives nothing */
+long vp_sinc_read(VpSinc *s, vp_resample_cb cb, void *cb_data, double ratio, long frames, float *data);
+void vp_sinc_reset(VpSinc *s);
+void vp_sinc_delete(VpSinc *s);
+#endif
 
 #endif

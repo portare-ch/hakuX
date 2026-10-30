@@ -86,7 +86,7 @@ static struct retro_core_option_v2_definition g_defs[OPT_COUNT + 1] = {
         "hakux_audio_resampler", "Audio Resampler", NULL,
         "How the game's sounds are converted to the output's 48 kHz. Sinc, the default, keeps their high "
         "frequencies and avoids aliasing; Linear, what hakuX used before, is lighter on the sound thread and duller. "
-        "Neither is known to be the Xbox's own." NEXT,
+        "Neither is known to be the Xbox's own; a core that isn't 64-bit ARM uses Linear." NEXT,
         NULL, NULL,
         {{"sinc", "Sinc (higher quality)"}, {"linear", "Linear"}, {NULL, NULL}},
         "sinc"},

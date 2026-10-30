@@ -7,9 +7,7 @@
 #endif
 
 #include "resample.h"
-#ifdef NC_HAVE_SINC
 #include "resample_sinc.h"
-#endif
 
 /*
  * Linear-interpolation resampler stub used in place of libsamplerate.
@@ -32,7 +30,7 @@
 
 struct VpResampler {
     int quality;       /* VP_RESAMPLE_*: the linear fields below, or sinc */
-    void *sinc;        /* resample_sinc.c's converter (sinc) */
+    void *sinc;        /* resample_sinc.c's converter, a VpSinc (sinc) */
     vp_resample_cb cb;
     void *cb_data;
     int channels;
@@ -237,7 +235,7 @@ static long linear_read(VpResampler *state, double ratio, long frames, float *da
 
 bool vp_resample_sinc_available(void)
 {
-#ifdef NC_HAVE_SINC
+#ifdef VP_HAVE_SINC
     return true;
 #else
     return false;
@@ -246,15 +244,15 @@ bool vp_resample_sinc_available(void)
 
 const char *vp_resample_name(int quality)
 {
-    return quality == VP_RESAMPLE_SINC ? "sinc (libsamplerate SRC_SINC_MEDIUM_QUALITY)" : "linear";
+    return quality == VP_RESAMPLE_SINC ? "sinc (32-tap Kaiser-windowed, NEON)" : "linear";
 }
 
 VpResampler *vp_resample_new(vp_resample_cb cb, int quality, int channels, void *cb_data)
 {
     VpResampler *r = linear_new(cb, channels, cb_data);
-#ifdef NC_HAVE_SINC
+#ifdef VP_HAVE_SINC
     if (r && quality == VP_RESAMPLE_SINC) {
-        r->sinc = vp_sinc_new(cb, channels, cb_data);
+        r->sinc = vp_sinc_new(channels);
         if (!r->sinc) {
             free(r);
             return NULL;
@@ -272,9 +270,9 @@ long vp_resample_read(VpResampler *r, double ratio, long frames, float *data)
     if (!r || !r->cb || !data || frames <= 0) {
         return 0;
     }
-#ifdef NC_HAVE_SINC
+#ifdef VP_HAVE_SINC
     if (r->sinc) {
-        return vp_sinc_read(r->sinc, ratio, frames, data);
+        return vp_sinc_read(r->sinc, r->cb, r->cb_data, ratio, frames, data);
     }
 #endif
     if (ratio <= 0.0) {
@@ -288,7 +286,7 @@ void vp_resample_reset(VpResampler *r)
     if (!r) {
         return;
     }
-#ifdef NC_HAVE_SINC
+#ifdef VP_HAVE_SINC
     if (r->sinc) {
         vp_sinc_reset(r->sinc);
     }
@@ -299,7 +297,7 @@ void vp_resample_reset(VpResampler *r)
 
 VpResampler *vp_resample_delete(VpResampler *r)
 {
-#ifdef NC_HAVE_SINC
+#ifdef VP_HAVE_SINC
     if (r && r->sinc) {
         vp_sinc_delete(r->sinc);
     }

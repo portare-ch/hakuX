@@ -271,7 +271,7 @@ def main():
         # The audio resampler option reaches the APU before it starts: sinc by
         # default, linear when chosen
         run([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'], 0,
-            ('resampler sinc', 'resampler: sinc (libsamplerate SRC_SINC_MEDIUM_QUALITY)', 'ran 30 frames'))
+            ('resampler sinc', 'resampler: sinc (32-tap Kaiser-windowed, NEON)', 'ran 30 frames'))
         run([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'], 0,
             ('resampler linear', 'resampler: linear', 'ran 30 frames'),
             dict(os.environ, HARNESS_OPTIONS='hakux_audio_resampler=linear'))

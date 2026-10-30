@@ -111,6 +111,7 @@ add_library(hakux_apu STATIC
   ${NC_APU}/dsp/dsp_dma.c
   ${NC_APU}/dsp/gp_ep.c
   ${NC_APU}/vp/resample.c
+  ${NC_APU}/vp/resample_sinc.c
   ${NC_APU}/vp/vp.c
 )
 if(ANDROID)

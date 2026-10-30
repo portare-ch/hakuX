@@ -111,7 +111,6 @@ target_compile_definitions(hakux_native PRIVATE HLE_HOST_TEST)
 target_link_libraries(hakux_native PUBLIC nc_fex hakux_hle hakux_apu nc_platform z)
 target_compile_options(hakux_native PRIVATE -Wall -Wno-unused-parameter)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/chd.cmake")
-include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/samplerate.cmake")
 
 # xboxrun shares the app's custom driver loader on Android.
 add_executable(xboxrun run/xboxrun.c run/capture.c app/vkdriver.c)

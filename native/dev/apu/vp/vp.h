@@ -42,7 +42,7 @@ typedef struct MCPXAPUVoiceFilter {
     VpResampler *resampler;     /* made at its first VOICE_ON, the APU's resample_quality */
     sv_filter svf[2];
     HrtfFilter hrtf;
-    /* The voice table for voice_resample_callback (libsamplerate's callback
+    /* The voice table for voice_resample_callback (the resampler's callback
      * signature cannot be extended). Set by voice_resample before
      * vp_resample_read; valid only for the duration of that synchronous
      * call. */

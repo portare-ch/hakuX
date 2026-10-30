@@ -1,16 +1,15 @@
 /*
  * hakuX native core — the voices' resamplers: libsamplerate's callback API
- * shape under the core's own names (so the real libsamplerate links beside
- * it), in two qualities:
- * - band-limited sinc, the default: libsamplerate's SRC_SINC_MEDIUM_QUALITY
- *   (resample_sinc.c), in a core built with libsamplerate (NC_HAVE_SINC),
- *   else linear. A quality setting, not a claim about the Xbox's
- *   undocumented interpolation;
+ * shape under the core's own names, in two qualities:
+ * - band-limited sinc, the default: a 32-tap Kaiser-windowed sinc through
+ *   NEON (resample_sinc.c), on AArch64; elsewhere linear. A quality
+ *   setting, not a claim about the Xbox's undocumented interpolation;
  * - linear (resample.c, NEON): what the core had before, lighter.
  * A resampler pulls its input from the callback, 32 frames at a time, and
  * keeps its phase, history and rate across reads; vp_resample_reset clears
  * them (a voice's new sound). The sinc converter reads its filter's half
- * length ahead of what it emits.
+ * length ahead of what it emits (16 frames, up to 129 for a voice pitched
+ * past 48 kHz).
  */
 #ifndef NATIVE_DEV_APU_VP_RESAMPLE_H
 #define NATIVE_DEV_APU_VP_RESAMPLE_H
@@ -23,7 +22,7 @@ typedef long (*vp_resample_cb)(void *cb_data, float **data);
 
 enum { VP_RESAMPLE_LINEAR = 0, VP_RESAMPLE_SINC = 1 };
 
-/* The sinc converter is in this build */
+/* The sinc converter is in this build (AArch64) */
 bool vp_resample_sinc_available(void);
 const char *vp_resample_name(int quality);
 

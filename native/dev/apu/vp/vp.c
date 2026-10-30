@@ -155,9 +155,9 @@ static void voice_reset_filters(MCPXAPUState *d, uint16_t v)
         vp_resample_reset(d->vp.filters[v].resampler);
     } else {
         /* the voice's first sound: its resampler made now, at the guest's
-         * VOICE_ON, not in a frame (the sinc converter allocates ~280 KB,
-         * its buffer sized for libsamplerate's widest ratio; made for the
-         * voices a title uses, not all 256), kept for its later sounds */
+         * VOICE_ON, not in a frame (the sinc converter is 4 KB; made for
+         * the voices a title uses, not all 256), kept for its later
+         * sounds */
         d->vp.filters[v].voice = v;
         d->vp.filters[v].resampler =
             vp_resample_new(&voice_resample_callback, d->vp.resample_quality, 2, &d->vp.filters[v]);

@@ -1,17 +1,18 @@
 /* The voices' resamplers (native/dev/apu/vp/resample.h) measured: linear,
- * and band-limited sinc (libsamplerate's SRC_SINC_MEDIUM_QUALITY) where the
- * test is built with libsamplerate. Their input comes from a callback 32
- * stereo frames at a time, as the VP feeds them. Levels are least-squares
- * sine fits over a window after the start (no FFT leakage, no startup
- * transient); the sinc converter is held to the stereo audio spec's
- * criteria (with 10 kHz of a 22.05 kHz voice at SRC_SINC_MEDIUM_QUALITY's
- * -3.25 dB, the converter chosen over FASTEST and BEST), the linear one
- * reported beside it. */
+ * and band-limited sinc (resample_sinc.c) where the host is AArch64. Their
+ * input comes from a callback 32 stereo frames at a time, as the VP feeds
+ * them. Levels are least-squares sine fits over a window after the start
+ * (no FFT leakage, no startup transient); the sinc converter is held to
+ * the stereo audio spec's criteria, the linear one reported beside it.
+ * `test_apu_resample bench`: each quality's time a voice-frame (32 stereo
+ * output frames) at four rates. */
 #include "hle_test.h"
 
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
 #include "native/dev/apu/vp/resample.h"
 
@@ -125,8 +126,7 @@ static int g_qualities;         /* 1: linear only, 2: and sinc */
 
 /* ---- the criteria */
 
-/* 22.05 kHz to 48 kHz: 1, 8 and 9 kHz within 1 dB; 10 kHz at the
- * converter's transition band (-3.25 dB) */
+/* 22.05 kHz to 48 kHz: 1, 8, 9, 9.5 and 10 kHz within 1 dB */
 static void test_passband_22k(void)
 {
     static const double tones[] = {1000, 8000, 9000, 9500, 10000};
@@ -140,11 +140,7 @@ static void test_passband_22k(void)
             fprintf(stderr, " %5.0f Hz %+6.2f dB", tones[k], l);
             HT_CHECK(fabs(l - r) < 0.01);
             if (q == VP_RESAMPLE_SINC) {
-                if (tones[k] <= 9000) {
-                    HT_CHECK(fabs(l) < 1.0);
-                } else if (tones[k] == 10000) {
-                    HT_CHECK(l > -4.0 && l < -2.5);
-                }
+                HT_CHECK(fabs(l) < 1.0);
             }
             free(y);
         }
@@ -360,6 +356,31 @@ static void test_rapid_pitch(void)
     }
 }
 
+/* the pitch's whole range, changing every read (1/256, the stretched
+ * filter's widest 1/8 and past it, just under and at 1, 256): every read
+ * whole, every sample finite and within the input's peak */
+static void test_extremes(void)
+{
+    static const double ratios[] = {1.0 / 256, 0.125, 0.13, 0.99, 1.0, 256.0, 0.1, 3.0};
+    for (int q = 0; q < g_qualities; q++) {
+        Signal s = tone(22050, 440, 0.5, 660, 0.5);
+        VpResampler *r = vp_resample_new(feed, q, 2, &s);
+        float y[64];
+        bool whole = true, bounded = true;
+        for (int i = 0; i < 4000; i++) {
+            whole &= vp_resample_read(r, ratios[i % 8], 32, y) == 32;
+            for (int k = 0; k < 64; k++) {
+                bounded &= isfinite(y[k]) && fabsf(y[k]) < 0.5f * 1.2f;
+            }
+        }
+        vp_resample_delete(r);
+        fprintf(stderr, "  %-6s ratios 1/256 to 256 in turn: %s, %s\n", k_name[q], whole ? "every read whole" : "short",
+                bounded ? "finite and bounded" : "out of bounds");
+        HT_CHECK(whole);
+        HT_CHECK(bounded);
+    }
+}
+
 /* a voice reused (reset) converts its new sound as a new converter does */
 static void test_reuse(void)
 {
@@ -391,11 +412,52 @@ static void test_reuse(void)
     }
 }
 
-int main(void)
+/* `bench`: a voice-frame's time, 32 stereo output frames, by quality and
+ * input rate, from a callback that only hands over a buffer */
+static long feed_buffer(void *p, float **data)
+{
+    *data = p;
+    return 32;
+}
+
+static void bench(void)
+{
+    static const double rates[] = {22050, 32000, 44100, 48000, 96000};
+    float in[64];
+    for (int i = 0; i < 64; i++) {
+        in[i] = (float)(0.5 * sin(i * 0.3));
+    }
+    for (int q = 0; q < g_qualities; q++) {
+        fprintf(stderr, "  bench %-6s", k_name[q]);
+        for (size_t k = 0; k < sizeof(rates) / sizeof(rates[0]); k++) {
+            VpResampler *r = vp_resample_new(feed_buffer, q, 2, in);
+            float y[64];
+            for (int i = 0; i < 200; i++) {
+                vp_resample_read(r, 48000.0 / rates[k], 32, y);
+            }
+            struct timespec t0, t1;
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            for (int i = 0; i < 20000; i++) {
+                vp_resample_read(r, 48000.0 / rates[k], 32, y);
+            }
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            vp_resample_delete(r);
+            const double us = ((t1.tv_sec - t0.tv_sec) * 1e6 + (t1.tv_nsec - t0.tv_nsec) / 1e3) / 20000;
+            fprintf(stderr, "  %5.0f Hz %6.3f us", rates[k], us);
+        }
+        fprintf(stderr, "  (a voice-frame)\n");
+    }
+}
+
+int main(int argc, char **argv)
 {
     g_qualities = vp_resample_sinc_available() ? 2 : 1;
+    if (argc > 1 && !strcmp(argv[1], "bench")) {
+        bench();
+        return 0;
+    }
     if (g_qualities == 1) {
-        fprintf(stderr, "  sinc not in this build (no libsamplerate): linear only\n");
+        fprintf(stderr, "  sinc not in this build (not AArch64): linear only\n");
     }
     HT_RUN(test_passband_22k);
     HT_RUN(test_alias_96k);
@@ -406,6 +468,7 @@ int main(void)
     HT_RUN(test_lookahead);
     HT_RUN(test_chunking);
     HT_RUN(test_rapid_pitch);
+    HT_RUN(test_extremes);
     HT_RUN(test_reuse);
     HT_DONE();
 }

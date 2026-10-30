@@ -8,8 +8,7 @@
     "Vulkan-Headers": {"url": "https://github.com/KhronosGroup/Vulkan-Headers.git", "commit": "a4f8ada9f4f97c45b8c89c57997be9cebaae65d2"},
     "root/subprojects/nv2a_vsh_cpu": {"url": "https://github.com/abaire/nv2a_vsh_cpu.git", "commit": "561fe80da57a881f89000256b459440c0178a7ce"},
     "SDL3": {"url": "https://github.com/libsdl-org/SDL.git", "commit": "fa2c02bb6e21974a89ea9824bc53c9932abe5f9c"},
-    "libchdr": {"url": "https://github.com/rtissera/libchdr.git", "commit": "47d794151b2b64f6aba60304e6480f4f5a2bc24b"},
-    "libsamplerate": {"url": "https://github.com/libsndfile/libsamplerate.git", "commit": "c96f5e3de9c4488f4e6c97f59f5245f22fda22f7"}
+    "libchdr": {"url": "https://github.com/rtissera/libchdr.git", "commit": "47d794151b2b64f6aba60304e6480f4f5a2bc24b"}
   },
   "fex_submodules": {
     "External/fmt": "c07e2aa4b130b4fd359a1c6455a5201b17af01fa",

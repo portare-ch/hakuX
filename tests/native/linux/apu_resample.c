@@ -341,7 +341,7 @@ int main(int argc, char **argv)
     }
     alarm(60);
     printf("sinc in this build: %s\n", vp_resample_sinc_available() ? "yes" : "no");
-    check(vp_resample_sinc_available(), "the core is built with libsamplerate's sinc");
+    check(vp_resample_sinc_available(), "the core is built with the NEON sinc");
     int end[2];
     long heard[2], lead[2];
     for (int q = 0; q < 2; q++) {
