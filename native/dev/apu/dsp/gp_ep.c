@@ -567,5 +567,6 @@ void mcpx_apu_dsp_init(MCPXAPUState *d)
      * use the full audio pipeline or not.
      */
     mcpx_apu_update_dsp_preference(d);
+    nc_log("hakuX-apu", "processing: %s", g_apu_config.use_dsp ? "full DSP" : "fast dry mix");
     gp_probe_init();
 }

@@ -109,8 +109,10 @@ varies; other games may have bugs or fail to start.
   network. **Crop Overscan** changes immediately.
 - **Audio:** **Audio Resampler** defaults to **Sinc**, which preserves more
   high-frequency detail and uses ARM NEON. Try **Linear** if audio crackles
-  or runs slowly, then close and reopen the game. Reverb and other Xbox
-  DSP effects are missing from the default mix.
+  or runs slowly, then close and reopen the game. **Audio Processing**
+  defaults to **Fast**, a dry mix. **Full DSP (experimental)** adds the
+  game's Xbox reverb and other effects to stereo output and uses more CPU.
+  Close and reopen the game after changing it.
 - **System link:** to play a game's LAN mode across devices, set
   **Network** to **LAN (system link)** in **Quick Menu → Core Options** on
   each device, then close and reopen the game. Devices on the same Wi-Fi

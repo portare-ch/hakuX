@@ -142,7 +142,8 @@ def main():
                                        'option: hakux_language (Language), default auto',
                                        'option: hakux_video_region (Video Region), default auto',
                                        'option: hakux_rumble (Rumble), default disabled',
-                                       'option: hakux_audio_resampler (Audio Resampler), default sinc'))
+                                       'option: hakux_audio_resampler (Audio Resampler), default sinc',
+                                       'option: hakux_audio_processing (Audio Processing), default fast'))
     with tempfile.TemporaryDirectory(prefix='hakux-libretro-') as folder:
         root = Path(folder)
         (root / 'saves').mkdir()
@@ -275,6 +276,19 @@ def main():
         run([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'], 0,
             ('resampler linear', 'resampler: linear', 'ran 30 frames'),
             dict(os.environ, HARNESS_OPTIONS='hakux_audio_resampler=linear'))
+        run([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'], 0,
+            ('audio processing fast', 'processing: fast dry mix', 'ran 30 frames'))
+        run([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'], 0,
+            ('audio processing dsp', 'processing: full DSP', 'ran 30 frames'),
+            dict(os.environ, HARNESS_OPTIONS='hakux_audio_processing=dsp'))
+        run([args.harness, args.core, root / 'spin.iso', 30, root / 'saves'], 0,
+            ('audio processing fast', 'processing: full DSP', 'ran 30 frames'),
+            dict(os.environ, NC_APU_DSP='1'))
+        run([args.harness, args.core, root / 'spin.iso', 60, root / 'saves'], 0,
+            ('processing: full DSP', 'processing: fast dry mix',
+             'reset at frame 40', 'ran 60 frames'),
+            dict(os.environ, HARNESS_OPTIONS='hakux_audio_processing=dsp',
+                 HARNESS_OPTIONS_LATER='hakux_audio_processing=fast', HARNESS_RESET_AT='40'))
         run([args.harness, args.core, root / 'spin.iso', 60, root / 'saves'], 0,
             ('reset at frame 20', 'reset: the core stopped in', 'ran 60 frames',
              'RetroArch destroyed the context: the core stopped in', 'stop: the front end stopped the console',

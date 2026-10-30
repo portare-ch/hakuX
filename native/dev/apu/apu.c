@@ -724,6 +724,11 @@ void nc_dev_apu_set_resampler(bool sinc)
     g_apu_config.resampler = sinc ? VP_RESAMPLE_SINC : VP_RESAMPLE_LINEAR;
 }
 
+void nc_dev_apu_set_dsp(bool enabled)
+{
+    g_apu_config.use_dsp = enabled;
+}
+
 void nc_dev_apu_init(NcVm *vm)
 {
     MCPXAPUState *d = nc_big_alloc(sizeof(*d)); /* 1.6 MiB */
