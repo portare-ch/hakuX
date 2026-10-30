@@ -1,5 +1,23 @@
 # Changelog
 
+## linux-v0.11.0 (PortareOS)
+
+System link: play a game's LAN mode with other devices on your network.
+
+### What's new
+
+- **System link (LAN)** — A new core option, **Network**, connects the console to the other consoles on your network. Set it to **LAN (system link)** in **Quick Menu → Core Options** on each device, then close and reopen the game. Devices on the same Wi-Fi find each other. A device the broadcast doesn't reach, such as one on another subnet or a VPN (Tailscale, ZeroTier), can be added by address to `lan-peers.txt` in the save directory. It's off by default.
+- **Copied consoles** — Two devices with the same console identity, such as a hard disk copied from one to the other, can't see each other's games. RetroArch now says so, and the device gets an identity of its own the next time the game starts. Its saves stay valid.
+
+Tried on the Nova: Halo's system link game reached another computer on the network, and that computer's frames reached the game. A game between two devices hasn't been tried yet.
+
+### Current limitations
+
+- Save states are not yet available.
+- XLink Kai, which upstream also has, isn't offered in RetroArch yet, and neither is the Internet (NAT).
+- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
+- NBA Inside Drive 2003 saves its prestamped player textures blank: it reads back small images the GPU drew, which hakuX doesn't copy back to memory yet.
+
 ## linux-v0.10.0 (PortareOS)
 
 A crash fix for NBA Inside Drive 2003, the GPU's antialiasing control, and nxdk homebrew that gets past its start-up.
