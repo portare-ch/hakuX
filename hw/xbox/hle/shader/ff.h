@@ -272,11 +272,13 @@ static inline const char *hle_push_glsl(void)
 #define HLE_IA_DEPTH 7
 #define HLE_ZEQ_DECL_GLSL \
     "layout(input_attachment_index = 7, set = 2, binding = 1) uniform subpassInput uZ;\n"
-/* after the alpha test (the derivatives' neighbours are still running) */
-#define HLE_ZEQ_TEST_GLSL(fb) \
+/* after the alpha test (the derivatives' neighbours are still running); z
+ * the fragment's depth, a string literal (gl_FragCoord.z, or the depth a
+ * pixel shader replaces it with) */
+#define HLE_ZEQ_TEST_GLSL(fb, z) \
     (((fb) & HLE_FB_ZEQ16) ? \
-     "  if (gl_FragCoord.z < subpassLoad(uZ).r - 2.0 / 65535.0) discard;\n" : \
-     "  if (gl_FragCoord.z < subpassLoad(uZ).r - 4.0 / 16777215.0) discard;\n")
+     "  if (" z " < subpassLoad(uZ).r - 2.0 / 65535.0) discard;\n" : \
+     "  if (" z " < subpassLoad(uZ).r - 4.0 / 16777215.0) discard;\n")
 
 /* NV2A's projective texture division: coordinates times 1/q, with 1/0 the
  * largest float and 0 times it 0, so q = 0 projects (0, 0, 0) to 0, never

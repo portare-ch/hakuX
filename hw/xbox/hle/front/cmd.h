@@ -258,8 +258,11 @@ typedef struct HleCmdState {
     uint32_t aactl;             /* NV2A SET_ANTI_ALIASING_CONTROL (0x1D7C): bit 0
                                    multisampling, 4 alpha-to-coverage, 8 alpha-to-one,
                                    31:16 the sample mask (as NV30's MULTISAMPLE_CONTROL);
-                                   D3D's 0xFFFF0001 until the title sets it. Keeps the
-                                   struct in 8-byte words (hle_fe_state). */
+                                   D3D's 0xFFFF0001 until the title sets it. */
+    float eye[3];               /* NV2A SET_EYE_VECTOR (0x181C): the texture shader's
+                                   constant eye (DOT_RFLCT_SPEC_CONST); (0, 0, -1),
+                                   NV_texture_shader's, until the title sets it */
+    uint32_t pad;               /* the struct in 8-byte words (hle_fe_state) */
 } HleCmdState;
 
 /* Texels are tightly packed in the arena: for each face (6 for cubes), each

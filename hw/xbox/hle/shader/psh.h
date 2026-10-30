@@ -125,7 +125,22 @@ typedef struct HlePshKey {
      * aa_ctl: bit 0 alpha-to-coverage, 1 alpha-to-one, 4-7 the sample mask
      * (all clear: no sample is written). hle_psh_aa_key sets both. */
     uint8_t aa_grid, aa_ctl;
+    uint8_t zclamp;                     /* a DOT_ZW draw's ZCLAMP_EN: its depth clamped to
+                                           the range, else a fragment outside it rejected
+                                           (0 for every other draw: no split key) */
 } HlePshKey;
+
+/* The stage (2 or 3) whose DOT_ZW replaces the fragment's depth, 0 none. It
+ * needs the previous stage's dot product: not on stage 0 or 1. */
+static inline unsigned hle_psh_zrep(uint32_t tex_modes)
+{
+    for (unsigned s = 3; s >= 2; s--) {
+        if (((tex_modes >> (5 * s)) & 0x1F) == HLE_PST_DOT_ZW) {
+            return s;
+        }
+    }
+    return 0;
+}
 
 /* Antialiasing control into k (aa_grid, aa_ctl): SET_ANTI_ALIASING_CONTROL's
  * aactl for a draw into a target with xs x ys samples (1 x 1: none), colour
@@ -139,7 +154,11 @@ void hle_psh_aa_key(HlePshKey *k, uint32_t aactl, uint32_t xs, uint32_t ys, bool
 void hle_psh_key(const uint32_t *rs, HlePshKey *k);
 
 /* GLSL into buf; returns its length, 0 when it does not fit. Unsupported
- * texture modes sample as PROJECT2D and set *unsupported (may be NULL). */
+ * texture modes sample as PROJECT2D and set *unsupported (may be NULL): a
+ * mode on a stage it can't be on (bump-env and dependent reads on stage 0,
+ * BRDF and DOT_ZW below stage 2). DOT_RFLCT_SPEC_CONST's eye vector is in
+ * stage 3's bump words (pc.bump3, pc.bumpl[2]: float bits), which a stage in
+ * that mode doesn't use. */
 size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsupported);
 
 #endif

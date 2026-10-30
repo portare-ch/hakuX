@@ -167,6 +167,155 @@ static void test_reflect(void)
     HT_CHECK(strstr(buf, "dot3 = dot(vTex3.xyz, dmap(1u, t0));") != NULL);
     HT_CHECK(strstr(buf, "e = vec3(vTex1.w, vTex2.w, vTex3.w)") != NULL);
     HT_CHECK(strstr(buf, "t3 = sampc(3u,") != NULL);
+    /* DOT_RFLCT_SPEC_CONST: the eye vector constant, in stage 3's bump words */
+    rs[HLE_PS_TEXMODES] = 1 | 0x11u << 5 | 0x11u << 10 | (unsigned)HLE_PST_DOT_RFLCT_SPEC_CONST << 15;
+    hle_psh_key(rs, &k);
+    un = 99;
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), &un) > 0);
+    dump("psh_reflect_const");
+    HT_EQ_U32(un, 0);
+    HT_CHECK(strstr(buf, "dot3 = dot(vTex3.xyz, dmap(1u, t0));") != NULL);
+    HT_CHECK(strstr(buf, "e = vec3(uintBitsToFloat(pc.bump3), uintBitsToFloat(pc.bumpl[2]))")
+             != NULL);
+    HT_CHECK(strstr(buf, "vTex3.w") == NULL);
+    HT_CHECK(strstr(buf, "t3 = sampc(3u, 2.0 * n * dot(n, e)") != NULL);
+}
+
+/* The normalization HLE_ZNORM_GLSL emits (z * s + z * s * s for the integer
+ * formats' s = 2^-n, z * s otherwise), each product rounded on its own as
+ * "precise" keeps them on the GPU */
+static float znorm(float z, float s)
+{
+    const float a = z * s;
+    const float ss = s == 0x1p-24f || s == 0x1p-16f ? s * s : 0.0f;
+    const float b = z * ss;
+    return a + b;
+}
+
+/* texm3x2pad / texm3x2depth: stage 2 DOTPRODUCT, stage 3 DOT_ZW; dot2 /
+ * dot3 is in depth-buffer units (nxdk_pgraph_tests' DotZW: its first
+ * vertex's matrix makes 10000), normalized as a program's screen z,
+ * rejected outside the buffer's range (clamped with ZCLAMP_EN) */
+static void test_dot_zw(void)
+{
+    uint32_t rs[HLE_PS_REGS] = { 0 };
+    rs[HLE_PS_TEXMODES] = 1 | 0x11u << 10 | (unsigned)HLE_PST_DOT_ZW << 15;
+    rs[HLE_PS_RGB_IN] = IN4(R_T0, R_V0, R_ZERO, R_ZERO);
+    rs[HLE_PS_RGB_OUT] = R_R0 << 4;
+    rs[HLE_PS_COUNT] = 1;
+    HlePshKey k;
+    hle_psh_key(rs, &k);
+    HT_EQ_U32(hle_psh_zrep(k.tex_modes), 3);
+    k.alpha_kill = 8;                                   /* no texel: nothing to kill on */
+    unsigned un = 99;
+    size_t n = hle_psh_glsl(&k, buf, sizeof(buf), &un);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("psh_dot_zw");
+    HT_EQ_U32(un, 0);
+    HT_CHECK(strstr(buf, "dot2 = dot(vTex2.xyz, dmap(0u, t0));") != NULL);
+    HT_CHECK(strstr(buf, "dot3 = dot(vTex3.xyz, dmap(0u, t0));") != NULL);
+    HT_CHECK(strstr(buf, "vec4 t3 = vec4(0.0);\n  zrz = dot2;\n  zrw = dot3;") != NULL);
+    HT_CHECK(strstr(buf, "t3.a == 0.0") == NULL);
+    /* units to the buffer's 0..1 by the program's normalization, not as is */
+    const char *q = strstr(buf, "float zq = zrw == 0.0 ? 0.0 : zrz / zrw;\n");
+    const char *zn = strstr(buf, "precise float zrep = zq * pc.zscale + zq * (pc.zscale == "
+                                 "uintBitsToFloat(0x33800000u) ||");
+    const char *far = strstr(buf, "if (zrw == 0.0) zrep = 1.0;");
+    const char *rej = strstr(buf, "if (!(zrep >= 0.0 && zrep <= 1.0)) discard;");
+    const char *out = strstr(buf, "gl_FragDepth = zrep;");
+    HT_CHECK(q && zn && far && rej && out && q < zn && zn < far && far < rej && rej < out);
+    /* replaces W-buffering's depth (its calculation not made); the EQUAL test
+     * reads the replaced one */
+    k.wbuf = 1;
+    k.zclamp = 1;
+    k.fbfetch = HLE_FB_ZEQ24;
+    n = hle_psh_glsl(&k, buf, sizeof(buf), &un);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("psh_dot_zw_wbuf");
+    HT_CHECK(strstr(buf, "zrep = clamp(zrep, 0.0, 1.0);") != NULL);
+    HT_CHECK(strstr(buf, "zrep >= 0.0") == NULL);
+    HT_CHECK(strstr(buf, "if (zrep < subpassLoad(uZ).r") != NULL);
+    HT_CHECK(strstr(buf, "gl_FragCoord.z <") == NULL);
+    HT_CHECK(strstr(buf, "gl_FragDepth = zrep;") != NULL);
+    HT_CHECK(strstr(buf, "wDepth") == NULL);
+    /* stage 2 (texm3x2pad on stage 1) */
+    rs[HLE_PS_TEXMODES] = 1 | 0x11u << 5 | (unsigned)HLE_PST_DOT_ZW << 10;
+    hle_psh_key(rs, &k);
+    HT_EQ_U32(hle_psh_zrep(k.tex_modes), 2);
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), &un) > 0);
+    HT_EQ_U32(un, 0);
+    HT_CHECK(strstr(buf, "zrz = dot1;\n  zrw = dot2;") != NULL);
+    /* stage 1: no dot before it */
+    rs[HLE_PS_TEXMODES] = 1 | (unsigned)HLE_PST_DOT_ZW << 5;
+    hle_psh_key(rs, &k);
+    HT_EQ_U32(hle_psh_zrep(k.tex_modes), 0);
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), &un) > 0);
+    HT_EQ_U32(un, 1u << HLE_PST_DOT_ZW);
+    HT_CHECK(strstr(buf, "zrep") == NULL && strstr(buf, "gl_FragDepth") == NULL);
+}
+
+/* DOT_ZW's depths by format, as the shader normalizes them (pc.zscale as
+ * pbdraw.c sets it): DotZW's 10000 (z 1000 x, w 0.1 x the texel's sum) */
+static void test_dot_zw_formats(void)
+{
+    const float z = 1000.0f * 1.9f, w = 0.1f * 1.9f, q = z / w;
+    HT_CHECK(q > 9999.0f && q < 10001.0f);
+    /* D24: 10000 of its 2^24 - 1 levels, kept (read as 0..1 it was above 1,
+     * discarded) */
+    const float d24 = znorm(q, 0x1p-24f);
+    HT_CHECK(d24 > 0.0f && d24 < 1.0f);
+    HT_CHECK((uint32_t)(d24 * 16777215.0f + 0.5f) == (uint32_t)(q + 0.5f));
+    HT_EQ_INT(znorm(16777215.0f, 0x1p-24f) == 1.0f, 1);         /* the far plane, kept */
+    HT_EQ_INT(znorm(16777220.0f, 0x1p-24f) > 1.0f, 1);          /* past it: rejected */
+    /* D16: the same depth a quarter of the way in */
+    const float d16 = znorm(q, 0x1p-16f);
+    HT_CHECK(d16 > 0.15f && d16 < 0.16f);
+    HT_CHECK((uint32_t)(d16 * 65535.0f + 0.5f) == (uint32_t)(q + 0.5f));
+    HT_EQ_INT(znorm(65535.0f, 0x1p-16f) == 1.0f, 1);
+    HT_EQ_INT(znorm(65536.0f, 0x1p-16f) > 1.0f, 1);
+    /* float buffers (zscale 1): the value as it is, as a program's z there */
+    HT_CHECK(znorm(0.25f, 1.0f) == 0.25f);
+    HT_CHECK(znorm(q, 1.0f) > 1.0f);
+}
+
+/* texbrdf: stages 0 and 1 the eye's and light's spherical coordinates, stage
+ * 2 the BRDF volume at (eye elevation, light elevation, azimuth difference) */
+static void test_brdf(void)
+{
+    uint32_t rs[HLE_PS_REGS] = { 0 };
+    rs[HLE_PS_TEXMODES] = 3 | 3u << 5 | (unsigned)HLE_PST_BRDF << 10;    /* t0, t1 cubes */
+    rs[HLE_PS_RGB_IN] = IN4(R_T0, R_V0, R_ZERO, R_ZERO);
+    rs[HLE_PS_RGB_OUT] = R_R0 << 4;
+    rs[HLE_PS_COUNT] = 1;
+    HlePshKey k;
+    hle_psh_key(rs, &k);
+    k.vol = 4;
+    unsigned un = 99;
+    size_t n = hle_psh_glsl(&k, buf, sizeof(buf), &un);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("psh_brdf");
+    HT_EQ_U32(un, 0);
+    HT_CHECK(strstr(buf, "vec4 t2 = samp3(2u, vec3(t0.g, t1.g, t1.r - t0.r));") != NULL);
+    /* no volume bound: the 2D texture, normalised (no image of another kind) */
+    k.vol = 0;
+    n = hle_psh_glsl(&k, buf, sizeof(buf), &un);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("psh_brdf_2d");
+    HT_EQ_U32(un, 0);
+    HT_CHECK(strstr(buf, "uSmp[nonuniformEXT(si)]), vec2(t0.g, t1.g)); }") != NULL);
+    HT_CHECK(strstr(buf, "samp3(2u") == NULL);
+    /* stage 3: stages 1 and 2 */
+    rs[HLE_PS_TEXMODES] = 1 | 3u << 5 | 3u << 10 | (unsigned)HLE_PST_BRDF << 15;
+    hle_psh_key(rs, &k);
+    k.vol = 8;
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), &un) > 0);
+    HT_EQ_U32(un, 0);
+    HT_CHECK(strstr(buf, "vec4 t3 = samp3(3u, vec3(t1.g, t2.g, t2.r - t1.r));") != NULL);
+    /* stage 1: not two stages before it */
+    rs[HLE_PS_TEXMODES] = 1 | (unsigned)HLE_PST_BRDF << 5;
+    hle_psh_key(rs, &k);
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), &un) > 0);
+    HT_EQ_U32(un, 1u << HLE_PST_BRDF);
 }
 
 /* NGB's shadow receivers: t0 a D24 shadow buffer (PROJECT3D, SHADOWFUNC
@@ -565,6 +714,9 @@ int main(void)
     HT_RUN(test_final_fog);
     HT_RUN(test_dot_mux);
     HT_RUN(test_reflect);
+    HT_RUN(test_dot_zw);
+    HT_RUN(test_dot_zw_formats);
+    HT_RUN(test_brdf);
     HT_RUN(test_shadow_project);
     HT_RUN(test_shadow_f24);
     HT_RUN(test_bumpenv);
