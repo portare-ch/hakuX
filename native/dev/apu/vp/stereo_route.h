@@ -21,11 +21,16 @@
  *
  * Bins 0 to 5 are DirectSound's speaker conventions (DSMIXBIN_FRONT_LEFT to
  * DSMIXBIN_BACK_RIGHT; Cxbx-Reloaded's XbDSoundTypes.h), not a rule of the
- * hardware's; how the guest's DSP program downmixes them for a stereo
- * console isn't established, so the weights are the standard downmix's,
- * not a measurement. A send's source channel follows the mix-bin mixer's
- * contract, its slot modulo the voice's channels (vp.c mix_one_bin); its
- * destination, the bin it names.
+ * hardware's. The weights are the ones DirectSound's own DSP image uses for
+ * a stereo console, measured in Halo (2026-10-30, with the full DSP): its
+ * EP downmixes the speaker bins for the analog output by a 5x2 table in
+ * its Y memory (Y:0000-0009, in AC-3's order L, C, R, Ls, Rs: 1 and 0,
+ * 0.7071 and 0.7071, 0 and 1, 0.7071 and 0, 0 and 0.7071; no LFE), and
+ * tones through each bin came out at 0 and -3.01 dB alike at 100 Hz, 1 kHz
+ * and 8 kHz. What the hardware's analog stage and level do isn't measured.
+ * A send's source channel follows the mix-bin mixer's contract, its slot
+ * modulo the voice's channels (vp.c mix_one_bin); its destination, the bin
+ * it names.
  */
 #ifndef NATIVE_DEV_APU_VP_STEREO_ROUTE_H
 #define NATIVE_DEV_APU_VP_STEREO_ROUTE_H
