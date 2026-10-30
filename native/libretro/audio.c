@@ -91,17 +91,24 @@ void nc_lr_audio_run(retro_audio_sample_batch_t batch)
     const uint32_t first = MIN(bytes, g_out.cap - at);
     memcpy(pcm, g_out.buf + at, first);
     memcpy((uint8_t *)pcm + first, g_out.buf, bytes - first);
-    apu_st_rel(&g_out.tail, tail + bytes);
     apu_inc(&g_out.callbacks);
     if (n < want) {
         apu_inc(&g_out.short_callbacks);
     }
-    pthread_cond_broadcast(g_out.wake);
-    for (uint32_t done = 0; done < n;) {
+    /* What the frontend takes leaves the ring; a frame it doesn't (its
+     * buffer full: 0) stays first for the next call, so the ring backs up
+     * and the frame thread waits (its high watermark) instead of the frames
+     * being dropped. A count past what was offered counts as all of it. */
+    uint32_t done = 0;
+    while (done < n) {
         const size_t took = batch(pcm + 2 * done, n - done);
         if (!took) {
-            break;          /* RetroArch's buffer is full: the rest is dropped, not kept */
+            break;
         }
-        done += (uint32_t)took;
+        done += (uint32_t)MIN(took, (size_t)(n - done));
+    }
+    if (done) {
+        apu_st_rel(&g_out.tail, tail + (uint64_t)done * OUT_FRAME_BYTES);
+        pthread_cond_broadcast(g_out.wake);
     }
 }

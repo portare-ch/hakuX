@@ -147,8 +147,252 @@ static void run(int frames, int retarget_every, const float *itds, int n_itds, b
     HT_EQ_INT(f.buf_pos, ref.buf_pos);
 }
 
+/* ---- history (hrtf_filter_clear_history: a voice's new sound) */
+
+#define ARRAY_LEN(a) (sizeof(a) / sizeof((a)[0]))
+
+/* the parameters at their targets: the filter's fast path */
+static void settle(HrtfFilter *f)
+{
+    for (int ch = 0; ch < 2; ch++) {
+        memcpy(f->ch[ch].hrir_coeff_cur, f->ch[ch].hrir_coeff_tar, sizeof(f->ch[ch].hrir_coeff_cur));
+    }
+    f->itd_cur = f->itd_tar;
+}
+
+static void random_frame(float in[HRTF_SAMPLES_PER_FRAME][2])
+{
+    for (int n = 0; n < HRTF_SAMPLES_PER_FRAME; n++) {
+        in[n][0] = rnd();
+        in[n][1] = rnd();
+    }
+}
+
+static bool params_equal(const HrtfFilter *a, const HrtfFilter *b)
+{
+    for (int ch = 0; ch < 2; ch++) {
+        if (memcmp(a->ch[ch].hrir_coeff_cur, b->ch[ch].hrir_coeff_cur, sizeof(a->ch[ch].hrir_coeff_cur)) ||
+            memcmp(a->ch[ch].hrir_coeff_tar, b->ch[ch].hrir_coeff_tar, sizeof(a->ch[ch].hrir_coeff_tar))) {
+            return false;
+        }
+    }
+    return a->itd_cur == b->itd_cur && a->itd_tar == b->itd_tar;
+}
+
+/* A voice reused for a new sound after one that played through a delayed
+ * impulse response: from silence, silence, not the previous sound's tail.
+ * Without the clear (the old reset) its tail comes out. */
+static void test_history_new_voice(void)
+{
+    static HrtfFilter f, stale;
+    hrtf_filter_init(&f);
+    float h[2][HRTF_NUM_TAPS] = {{0}};
+    h[0][5] = 1.0f;
+    h[1][9] = 1.0f;
+    hrtf_filter_set_target_params(&f, h, 12.0f);
+    settle(&f);
+    float in[HRTF_SAMPLES_PER_FRAME][2], out[HRTF_SAMPLES_PER_FRAME][2];
+    for (int fr = 0; fr < 3; fr++) {
+        random_frame(in);
+        hrtf_filter_process(&f, in, out);
+    }
+    stale = f;
+    hrtf_filter_clear_history(&f);
+    float zero[HRTF_SAMPLES_PER_FRAME][2] = {{0}};
+    unsigned leaked = 0, nonzero = 0;
+    for (int fr = 0; fr < 4; fr++) {
+        float a[HRTF_SAMPLES_PER_FRAME][2], b[HRTF_SAMPLES_PER_FRAME][2];
+        hrtf_filter_process(&f, zero, a);
+        hrtf_filter_process(&stale, zero, b);
+        for (int n = 0; n < HRTF_SAMPLES_PER_FRAME; n++) {
+            nonzero += a[n][0] != 0.0f || a[n][1] != 0.0f;
+            leaked += b[n][0] != 0.0f || b[n][1] != 0.0f;
+        }
+    }
+    HT_EQ_INT(nonzero, 0);
+    HT_CHECK(leaked > 0);       /* what the old reset left */
+}
+
+/* From every ring position (frames move it 32 of 73 at a time, so 73
+ * frames visit each): the history, its mirror and its padding all zero, the
+ * position at the start, the parameters as they were; and from there the
+ * filter runs exactly as a clean one with the same parameters. */
+static void test_history_every_position(void)
+{
+    static HrtfFilter f, c, clean;
+    hrtf_filter_init(&f);
+    float h[2][HRTF_NUM_TAPS];
+    random_hrir(h);
+    hrtf_filter_set_target_params(&f, h, 7.5f);
+    settle(&f);
+    unsigned seen = 0;
+    uint8_t visited[HRTF_BUFLEN] = {0};
+    for (int fr = 0; fr < HRTF_BUFLEN; fr++) {
+        float in[HRTF_SAMPLES_PER_FRAME][2], a[HRTF_SAMPLES_PER_FRAME][2], b[HRTF_SAMPLES_PER_FRAME][2];
+        random_frame(in);
+        hrtf_filter_process(&f, in, a);
+        if (!visited[f.buf_pos]) {
+            visited[f.buf_pos] = 1;
+            seen++;
+        }
+        c = f;
+        hrtf_filter_clear_history(&c);
+        HT_EQ_INT(c.buf_pos, 0);
+        for (int ch = 0; ch < 2; ch++) {
+            for (size_t i = 0; i < ARRAY_LEN(c.ch[ch].buf); i++) {
+                HT_CHECK(c.ch[ch].buf[i] == 0.0f);
+            }
+        }
+        HT_CHECK(params_equal(&c, &f));
+        hrtf_filter_init(&clean);
+        for (int ch = 0; ch < 2; ch++) {
+            memcpy(clean.ch[ch].hrir_coeff_cur, c.ch[ch].hrir_coeff_cur, sizeof(clean.ch[ch].hrir_coeff_cur));
+            memcpy(clean.ch[ch].hrir_coeff_tar, c.ch[ch].hrir_coeff_tar, sizeof(clean.ch[ch].hrir_coeff_tar));
+        }
+        clean.itd_cur = c.itd_cur;
+        clean.itd_tar = c.itd_tar;
+        random_frame(in);
+        hrtf_filter_process(&c, in, a);
+        hrtf_filter_process(&clean, in, b);
+        HT_CHECK(memcmp(a, b, sizeof(a)) == 0);
+    }
+    HT_EQ_INT(seen, HRTF_BUFLEN);
+}
+
+/* Clearing the history of a voice whose parameters are still moving leaves
+ * them moving where they were */
+static void test_history_keeps_moving_parameters(void)
+{
+    static HrtfFilter f, before;
+    hrtf_filter_init(&f);
+    float h[2][HRTF_NUM_TAPS];
+    random_hrir(h);
+    hrtf_filter_set_target_params(&f, h, -20.25f);
+    float in[HRTF_SAMPLES_PER_FRAME][2], out[HRTF_SAMPLES_PER_FRAME][2];
+    random_frame(in);
+    hrtf_filter_process(&f, in, out);
+    HT_CHECK(!hrtf_filter_settled(&f));
+    before = f;
+    hrtf_filter_clear_history(&f);
+    HT_CHECK(params_equal(&f, &before));
+}
+
+/* New targets for a voice that keeps playing (no VOICE_ON): its history
+ * goes on, so the last frames' samples still sound through the delay */
+static void test_retarget_keeps_history(void)
+{
+    static HrtfFilter f, before;
+    hrtf_filter_init(&f);
+    float h[2][HRTF_NUM_TAPS];
+    random_hrir(h);
+    hrtf_filter_set_target_params(&f, h, 3.0f);
+    float in[HRTF_SAMPLES_PER_FRAME][2], out[HRTF_SAMPLES_PER_FRAME][2];
+    for (int fr = 0; fr < 4; fr++) {
+        random_frame(in);
+        hrtf_filter_process(&f, in, out);
+    }
+    before = f;
+    random_hrir(h);
+    hrtf_filter_set_target_params(&f, h, -9.0f);
+    HT_EQ_INT(f.buf_pos, before.buf_pos);
+    for (int ch = 0; ch < 2; ch++) {
+        HT_CHECK(memcmp(f.ch[ch].buf, before.ch[ch].buf, sizeof(f.ch[ch].buf)) == 0);
+    }
+    float zero[HRTF_SAMPLES_PER_FRAME][2] = {{0}};
+    hrtf_filter_process(&f, zero, out);
+    unsigned nonzero = 0;
+    for (int n = 0; n < HRTF_SAMPLES_PER_FRAME; n++) {
+        nonzero += out[n][0] != 0.0f || out[n][1] != 0.0f;
+    }
+    HT_CHECK(nonzero > 0);
+}
+
+/* Each ear's own coefficients, normalized by their own absolute sum (left
+ * as they are when it is 0 or 1), and its own delay: an impulse through a
+ * settled filter against values worked out by hand, not against the
+ * reference above (whose normalization stops at the first ear with a sum of
+ * 0 or 1 and leaves the other ear's coefficients unset). */
+static void impulse_response(const float h[2][HRTF_NUM_TAPS], float itd, float y[2][HRTF_SAMPLES_PER_FRAME])
+{
+    static HrtfFilter f;
+    hrtf_filter_init(&f);
+    float hh[2][HRTF_NUM_TAPS];
+    memcpy(hh, h, sizeof(hh));
+    hrtf_filter_set_target_params(&f, hh, itd);
+    settle(&f);
+    float in[HRTF_SAMPLES_PER_FRAME][2] = {{0}}, out[HRTF_SAMPLES_PER_FRAME][2];
+    in[0][0] = in[0][1] = 1.0f;
+    hrtf_filter_process(&f, in, out);
+    for (int n = 0; n < HRTF_SAMPLES_PER_FRAME; n++) {
+        y[0][n] = out[n][0];
+        y[1][n] = out[n][1];
+    }
+}
+
+static void expect(const float y[HRTF_SAMPLES_PER_FRAME], const float want[HRTF_SAMPLES_PER_FRAME])
+{
+    for (int n = 0; n < HRTF_SAMPLES_PER_FRAME; n++) {
+        HT_CHECK(fabsf(y[n] - want[n]) < 1e-6f);
+    }
+}
+
+static void test_coefficients_by_ear(void)
+{
+    float h[2][HRTF_NUM_TAPS], y[2][HRTF_SAMPLES_PER_FRAME], w0[HRTF_SAMPLES_PER_FRAME], w1[HRTF_SAMPLES_PER_FRAME];
+    /* asymmetric: 2 at tap 0 (sum 2: 1), 0.25 at taps 1 and 2 (sum 0.5: 0.5 each) */
+    memset(h, 0, sizeof(h));
+    h[0][0] = 2.0f;
+    h[1][1] = h[1][2] = 0.25f;
+    impulse_response(h, 0.0f, y);
+    memset(w0, 0, sizeof(w0));
+    memset(w1, 0, sizeof(w1));
+    w0[0] = 1.0f;
+    w1[1] = w1[2] = 0.5f;
+    expect(y[0], w0);
+    expect(y[1], w1);
+    /* the first ear's sum 0: silent; the second still normalized (3 at tap 3: 1) */
+    memset(h, 0, sizeof(h));
+    h[1][3] = 3.0f;
+    impulse_response(h, 0.0f, y);
+    memset(w0, 0, sizeof(w0));
+    memset(w1, 0, sizeof(w1));
+    w1[3] = 1.0f;
+    expect(y[0], w0);
+    expect(y[1], w1);
+    /* the first ear's sum 1: as it is (0.5 at tap 0, -0.5 at tap 4); the
+     * second normalized (4 at tap 2: 1) */
+    memset(h, 0, sizeof(h));
+    h[0][0] = 0.5f;
+    h[0][4] = -0.5f;
+    h[1][2] = 4.0f;
+    impulse_response(h, 0.0f, y);
+    memset(w0, 0, sizeof(w0));
+    memset(w1, 0, sizeof(w1));
+    w0[0] = 0.5f;
+    w0[4] = -0.5f;
+    w1[2] = 1.0f;
+    expect(y[0], w0);
+    expect(y[1], w1);
+    /* a delay of +3 holds the first ear back 3 samples, not the second */
+    memset(h, 0, sizeof(h));
+    h[0][0] = 1.0f;
+    h[1][0] = 1.0f;
+    impulse_response(h, 3.0f, y);
+    memset(w0, 0, sizeof(w0));
+    memset(w1, 0, sizeof(w1));
+    w0[3] = 1.0f;
+    w1[0] = 1.0f;
+    expect(y[0], w0);
+    expect(y[1], w1);
+}
+
 int main(void)
 {
+    HT_RUN(test_history_new_voice);
+    HT_RUN(test_history_every_position);
+    HT_RUN(test_history_keeps_moving_parameters);
+    HT_RUN(test_retarget_keeps_history);
+    HT_RUN(test_coefficients_by_ear);
     const float moving[] = {0.0f, 7.25f, -13.5f, 42.0f, -42.0f, 41.9f, -0.3f, 30.0f, 100.0f, -100.0f};
     const float whole[] = {0.0f, 5.0f, -12.0f, 42.0f, -42.0f};
     run(400, 3, moving, 10, false);         /* parameters always moving */
