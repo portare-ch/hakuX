@@ -2,7 +2,7 @@
 
 ## linux-v0.12.0-exp.1 (PortareOS, experimental)
 
-An experimental build with more of the Xbox GPU's graphics features. None of them has been tried in a game yet, so it's a pre-release: 0.11.0 stays the current version, and PortareOS keeps shipping it.
+An experimental build with more of the Xbox GPU's graphics features. None of them had been tried in a game, so it's a pre-release; 0.11.0 stays the latest stable release. PortareOS ships it for broad testing.
 
 ### What's new
 
@@ -13,7 +13,7 @@ An experimental build with more of the Xbox GPU's graphics features. None of the
 
 ### Experimental
 
-These follow NVIDIA's documentation, xemu, and the Xbox captures of nxdk_pgraph_tests where they exist. A game that looked right in 0.11.0 can look wrong in this build; if one does, go back to 0.11.0 and report the game.
+These follow NVIDIA's documentation, xemu, and the Xbox captures of nxdk_pgraph_tests where they exist. A game that looked right in 0.11.0 can look wrong in this build; if one does, report the game and the scene.
 
 ### Current limitations
 
