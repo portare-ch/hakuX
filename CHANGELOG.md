@@ -1,5 +1,27 @@
 # Changelog
 
+## linux-v0.12.0-exp.2 (PortareOS, experimental)
+
+The first batch of audio fixes, on top of 0.12.0-exp.1's graphics features. It's a pre-release; 0.11.0 stays the latest stable release.
+
+### What's new
+
+- **Stereo panning** — Ordinary 2D sounds, such as music, menus and effects a game doesn't place in 3D, now play on the left and right speakers as the game pans them. Before, they came out of both speakers at the louder side's level.
+- **Reused 3D voices** — A 3D sound no longer starts with the end of the sound its voice played before.
+- **No dropped audio** — When RetroArch takes fewer samples than it's offered, the rest is played next instead of dropped. Before, a whole period of sound (about 17 ms) was lost each time, heard as a click or a gap.
+- Everything in 0.12.0-exp.1 below.
+
+### Experimental
+
+The audio fixes follow from how the Xbox's audio unit routes and filters a voice, and pass the build's tests; they haven't been listened to in a game yet. Halo's and Ninja Gaiden Black's quiet, off-centre sound may not be fixed by them: 3D sounds, centre and surround channels, and effects such as reverb are still mixed as before. If a game sounds different from 0.11.0, report the game and the scene.
+
+### Current limitations
+
+- Save states are not yet available.
+- XLink Kai, which upstream also has, isn't offered in RetroArch yet, and neither is the Internet (NAT).
+- CD CHDs (`chdman createcd`) and CHDs that are deltas of another are refused: an Xbox disc is a DVD.
+- NBA Inside Drive 2003 saves its prestamped player textures blank: it reads back small images the GPU drew, which hakuX doesn't copy back to memory yet.
+
 ## linux-v0.12.0-exp.1 (PortareOS, experimental)
 
 An experimental build with more of the Xbox GPU's graphics features. It's a pre-release; 0.11.0 stays the latest stable release. PortareOS ships it for broad testing.
