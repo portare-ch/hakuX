@@ -503,6 +503,29 @@ static uint32_t tile_pitch(uint32_t bytes)
     return 0;
 }
 
+/* A linear target's rows, no more than the title's block of memory holds: a
+ * write-back (front_stale, writeback) covers pitch x rows. NBA Inside Drive
+ * 2003 binds its 640 x 480 front buffer (a 600 KiB block) while the display
+ * is still its first target's, the 640 x 960 antialiased back buffer; sized
+ * as the display, the front buffer's write-back overwrote the 600 KiB above
+ * it, where a page of the title's code had been moved, and the title ran
+ * into zeros after its intro. */
+static uint32_t rows_in_block(uint32_t pa, uint32_t pitch, uint32_t h)
+{
+    const uint32_t end = pitch ? hle_host_contig_end(pa) : 0;
+    if (!end || (uint64_t)pitch * h <= end - pa) {
+        return h;
+    }
+    const uint32_t rows = (end - pa) / pitch;
+    static unsigned s_logged;
+    if (s_logged < 8) {
+        s_logged++;
+        hle_log("hakuX-hle-pb", "target %08x: %u rows of %u bytes, %u in its block (first 8 logged)", pa,
+                h, pitch, rows);
+    }
+    return MAX(rows, 1u);
+}
+
 static void linear_size(uint32_t pitch, uint32_t xfmt, uint32_t sx, uint32_t sy, uint32_t *w,
                         uint32_t *h)
 {
@@ -1046,10 +1069,10 @@ static void sync_rt(void)
         }
     }
     uint32_t rt = cx_fmt ? object_view(cpa, cx_fmt, swz ? 0 : hle_kelvin_color_xfmt(cf, true),
-                                       swz ? 0 : cpitch, w, h) : 0;
+                                       swz ? 0 : cpitch, w, swz ? h : rows_in_block(cpa, cpitch, h)) : 0;
     uint32_t ds = zx_fmt ? object_view(zpa, zx_fmt,
                                        swz ? 0 : hle_kelvin_depth_xfmt(zf == 2, zfloat, true),
-                                       swz ? 0 : zpitch, w, h) : 0;
+                                       swz ? 0 : zpitch, w, swz ? h : rows_in_block(zpa, zpitch, h)) : 0;
     g_pd.binds++;
     for (unsigned i = 0; i < g_pd.nobjs; i++) {
         if (g_pd.objs[i].id == rt || g_pd.objs[i].id == ds) {

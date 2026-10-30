@@ -194,6 +194,11 @@ void hle_host_gpu_lost(const char *why)
     nc_hle_set_fatal(NC_FATAL_GPU_LOST, why);
 }
 
+uint32_t hle_host_contig_end(uint32_t pa)
+{
+    return nc_mm_contig_end(pa);
+}
+
 /* Disc reads aren't counted here. */
 bool hle_host_disc_stats(uint64_t *ops, uint64_t *bytes, uint64_t *ns)
 {

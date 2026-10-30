@@ -51,6 +51,19 @@ static Contig g_contig[MAX_CONTIG];
 static unsigned g_ncontig;
 static uint32_t g_gpu_instance_end;
 
+uint32_t nc_mm_contig_end(uint32_t pa)
+{
+    /* Read from the decode thread without the guest's: a block made or freed
+     * meanwhile is seen as a moment earlier or later would see it. */
+    for (unsigned i = 0, n = __atomic_load_n(&g_ncontig, __ATOMIC_ACQUIRE); i < n && i < MAX_CONTIG; i++) {
+        const uint32_t cpa = g_contig[i].va & ~NC_CONTIG_WINDOW, size = g_contig[i].size;
+        if (pa >= cpa && pa - cpa < size) {
+            return cpa + size;
+        }
+    }
+    return 0;
+}
+
 void nc_mm_usage(NcKernel *k, uint32_t *contig_bytes, uint32_t *virtual_bytes, unsigned *contig_blocks)
 {
     uint32_t c = 0, v = 0;
