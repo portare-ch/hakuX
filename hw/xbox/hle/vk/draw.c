@@ -3455,6 +3455,62 @@ static uint32_t first_vertex(uint32_t n, const uint32_t *stride, VkDeviceSize *o
     return (uint32_t)q;
 }
 
+/* A window clip's rectangle (render-target pixels) as a scissor at the
+ * resolution scale, inside the target */
+static VkRect2D clip_scissor(const HleRect *r, uint32_t tw, uint32_t th, uint32_t rs)
+{
+    const int32_t x1 = MAX(r->x1, 0), y1 = MAX(r->y1, 0);
+    const int32_t x2 = MIN(r->x2, (int32_t)tw), y2 = MIN(r->y2, (int32_t)th);
+    return (VkRect2D){ { x1 * (int32_t)rs, y1 * (int32_t)rs },
+                       { x2 > x1 ? (uint32_t)(x2 - x1) * rs : 0, y2 > y1 ? (uint32_t)(y2 - y1) * rs : 0 } };
+}
+
+/* The draw itself, its state recorded; batch: a strip may be held for the
+ * strips after it (not a draw recorded once in each of a window clip's
+ * rectangles, a scissor between them) */
+static void record_draw(VkCommandBuffer cb, const HleCmdDraw *c, uint32_t vfirst, bool batch)
+{
+    if (c->ib_off != UINT32_MAX) {
+        /* A strip run still held binds its index buffer as it is recorded,
+         * which this draw's own recording would set off after the check
+         * below: the draw then read the run's indices. Nightcaster's terrain
+         * lost tiles so, its strips read in place sharing one binding (no
+         * state recorded between them and the indexed draw after). */
+        hle_batch_flush(cb);
+        /* 16-bit indices from the arena, bound once: the offset is firstIndex */
+        if (REC_CHANGED(ibuf, g_harena.buf)) {
+            T.vkCmdBindIndexBuffer(cb, g_harena.buf, 0, VK_INDEX_TYPE_UINT16);
+        }
+        int q = g_probe.nvsh ? probe_begin(cb, c, vfirst, (uint64_t)(uintptr_t)g_rec.pipe)
+                                : -1;
+        if (g_hle_gpucut != 2) {
+            T.vkCmdDrawIndexed(cb, g_hle_gpucut == 4 ? MIN(c->count, 3u) : c->count, 1,
+                               c->ib_off / 2, (int32_t)vfirst, 0);
+        }
+        if (q >= 0) {
+            T.vkCmdEndQuery(cb, g_probe.pool, (uint32_t)q);
+        }
+    } else {
+        int q = g_probe.nvsh ? probe_begin(cb, c, vfirst, (uint64_t)(uintptr_t)g_rec.pipe)
+                                : -1;
+        if (g_hle_gpucut == 2) {
+            /* debug: the state alone */
+        } else if (g_hle_gpucut == 4) {
+            T.vkCmdDraw(cb, MIN(c->count, 3u), 1, vfirst, 0);  /* debug: a draw's own cost */
+        } else if (batch && q < 0 && (c->prim == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP ||
+                      c->prim == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN ||
+                      c->prim == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP) &&
+            hle_batch_draw(cb, (VkPrimitiveTopology)c->prim, vfirst, c->count)) {
+            /* held: recorded with the strips that follow it (a probed draw never is) */
+        } else {
+            T.vkCmdDraw(cb, c->count, 1, vfirst, 0);
+        }
+        if (q >= 0) {
+            T.vkCmdEndQuery(cb, g_probe.pool, (uint32_t)q);
+        }
+    }
+}
+
 void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, uint32_t ds_id,
                        const HleCmdViewport *vpc)
 {
@@ -4176,16 +4232,19 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
     VkRect2D sc = full ? (VkRect2D){ { 0, 0 }, { sw, sh } } :
                          (VkRect2D){ { (int32_t)(vpc->x * rs), (int32_t)(vpc->y * rs) },
                                      { vpc->w * rs, vpc->h * rs } };
+    /* the window clip's rectangles replace the viewport as the clip: the
+     * first one's scissor here, the draw recorded again in each of the
+     * others (below) */
+    unsigned pieces = 1;
     if (vpc->clip) {
-        /* SetScissors' rectangle replaces the viewport as the clip */
-        int32_t x1 = MAX(vpc->cx1, 0), y1 = MAX(vpc->cy1, 0);
-        int32_t x2 = MIN(vpc->cx2, (int32_t)tw), y2 = MIN(vpc->cy2, (int32_t)th);
-        sc = (VkRect2D){ { x1 * (int32_t)rs, y1 * (int32_t)rs },
-                         { x2 > x1 ? (uint32_t)(x2 - x1) * rs : 0,
-                           y2 > y1 ? (uint32_t)(y2 - y1) * rs : 0 } };
+        pieces = vpc->nclip;
+        if (pieces) {
+            sc = clip_scissor(&vpc->rect[0], tw, th, rs);
+        }
     }
     if (g_hle_gpucut == 1 || g_hle_gpucut == 4) {
         sc = (VkRect2D){ { 0, 0 }, { 1, 1 } };  /* debug: next to no fragments */
+        pieces = MIN(pieces, 1u);
     }
     VkViewport v = { 0, (float)sh, (float)sw, -(float)sh, 0.0f, 1.0f };
     if (!prog && !rhw && !full) {
@@ -4490,44 +4549,14 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
         mp.prim = c->prim;
         mp.end = vfirst + c->count;
     }
-    if (c->ib_off != UINT32_MAX) {
-        /* A strip run still held binds its index buffer as it is recorded,
-         * which this draw's own recording would set off after the check
-         * below: the draw then read the run's indices. Nightcaster's terrain
-         * lost tiles so, its strips read in place sharing one binding (no
-         * state recorded between them and the indexed draw after). */
-        hle_batch_flush(cb);
-        /* 16-bit indices from the arena, bound once: the offset is firstIndex */
-        if (REC_CHANGED(ibuf, g_harena.buf)) {
-            T.vkCmdBindIndexBuffer(cb, g_harena.buf, 0, VK_INDEX_TYPE_UINT16);
+    for (unsigned i = 0; i < pieces; i++) {
+        if (i) {
+            sc = clip_scissor(&vpc->rect[i], tw, th, rs);
+            g_rec.sc = sc;
+            T.vkCmdSetScissor(cb, 0, 1, &sc);
+            g_dr.emits[EM_SC]++;
         }
-        int q = g_probe.nvsh ? probe_begin(cb, c, vfirst, (uint64_t)(uintptr_t)g_rec.pipe)
-                                : -1;
-        if (g_hle_gpucut != 2) {
-            T.vkCmdDrawIndexed(cb, g_hle_gpucut == 4 ? MIN(c->count, 3u) : c->count, 1,
-                               c->ib_off / 2, (int32_t)vfirst, 0);
-        }
-        if (q >= 0) {
-            T.vkCmdEndQuery(cb, g_probe.pool, (uint32_t)q);
-        }
-    } else {
-        int q = g_probe.nvsh ? probe_begin(cb, c, vfirst, (uint64_t)(uintptr_t)g_rec.pipe)
-                                : -1;
-        if (g_hle_gpucut == 2) {
-            /* debug: the state alone */
-        } else if (g_hle_gpucut == 4) {
-            T.vkCmdDraw(cb, MIN(c->count, 3u), 1, vfirst, 0);  /* debug: a draw's own cost */
-        } else if (q < 0 && (c->prim == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP ||
-                      c->prim == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN ||
-                      c->prim == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP) &&
-            hle_batch_draw(cb, (VkPrimitiveTopology)c->prim, vfirst, c->count)) {
-            /* held: recorded with the strips that follow it (a probed draw never is) */
-        } else {
-            T.vkCmdDraw(cb, c->count, 1, vfirst, 0);
-        }
-        if (q >= 0) {
-            T.vkCmdEndQuery(cb, g_probe.pool, (uint32_t)q);
-        }
+        record_draw(cb, c, vfirst, pieces == 1);
     }
     g_rec.valid = true;
     g_dr.draws++;
