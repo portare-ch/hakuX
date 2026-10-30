@@ -1595,7 +1595,7 @@ static uint32_t g_snap_rt;
 static bool samples(unsigned mode)
 {
     return mode != HLE_PST_NONE && mode != HLE_PST_PASSTHRU && mode != HLE_PST_CLIPPLANE &&
-           mode != HLE_PST_DOTPRODUCT;
+           mode != HLE_PST_DOTPRODUCT && mode != HLE_PST_DOT_ZW;
 }
 
 bool hle_draw_snap_needed(const HleCmdDraw *c, uint32_t rt_id)
@@ -3286,7 +3286,14 @@ static void psframe_log(const HleCmdDraw *c, const HleCmdState *s, const HlePshK
             memcpy(f + 4, &s->tss[st][TSS_BUMPENVLSCALE], 8);
             hle_log("hakuX-hle-pipe", "  bump st%u: %g %g %g %g l %g %g", st, f[0], f[1],
                     f[2], f[3], f[4], f[5]);
+        } else if (m == HLE_PST_DOT_RFLCT_SPEC_CONST) {
+            hle_log("hakuX-hle-pipe", "  eye st%u: %g %g %g", st, s->eye[0], s->eye[1],
+                    s->eye[2]);
         }
+    }
+    if (hle_psh_zrep(pk->tex_modes)) {
+        hle_log("hakuX-hle-pipe", "  depth replace st%u (ZCLAMP_EN %u)",
+                hle_psh_zrep(pk->tex_modes), s->zclamp);
     }
     if (s->rs[RS_FOGENABLE]) {
         float fs, fe, fd;
@@ -3971,6 +3978,10 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
                 mt[0] = half2(t[TSS_BUMPENVMAT00], t[TSS_BUMPENVMAT00 + 1]);
                 mt[1] = half2(t[TSS_BUMPENVMAT00 + 2], t[TSS_BUMPENVMAT00 + 3]);
                 pc.bumpl[st - 1] = half2(t[TSS_BUMPENVLSCALE], t[TSS_BUMPENVLSCALE + 1]);
+            } else if (st == 3 && m == HLE_PST_DOT_RFLCT_SPEC_CONST) {
+                /* the constant eye vector in the stage's words (psh.h) */
+                memcpy(pc.bump3, s->eye, 8);
+                memcpy(&pc.bumpl[2], &s->eye[2], 4);
             }
         }
         psframe_log(c, s, &k.pk, rt_id, pc.psc);
@@ -4186,6 +4197,8 @@ void hle_draw_cmd_draw(const HleCmdDraw *c, VkCommandBuffer cb, uint32_t rt_id, 
     }
     if (s->psh) {
         k.pk.wbuf = wbuf;
+        /* a depth DOT_ZW replaces is clamped the same way (psh.c) */
+        k.pk.zclamp = zclamp && hle_psh_zrep(k.pk.tex_modes);
     } else {
         k.ps.wbuf = wbuf;
     }

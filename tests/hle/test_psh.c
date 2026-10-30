@@ -167,6 +167,113 @@ static void test_reflect(void)
     HT_CHECK(strstr(buf, "dot3 = dot(vTex3.xyz, dmap(1u, t0));") != NULL);
     HT_CHECK(strstr(buf, "e = vec3(vTex1.w, vTex2.w, vTex3.w)") != NULL);
     HT_CHECK(strstr(buf, "t3 = sampc(3u,") != NULL);
+    /* DOT_RFLCT_SPEC_CONST: the eye vector constant, in stage 3's bump words */
+    rs[HLE_PS_TEXMODES] = 1 | 0x11u << 5 | 0x11u << 10 | (unsigned)HLE_PST_DOT_RFLCT_SPEC_CONST << 15;
+    hle_psh_key(rs, &k);
+    un = 99;
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), &un) > 0);
+    dump("psh_reflect_const");
+    HT_EQ_U32(un, 0);
+    HT_CHECK(strstr(buf, "dot3 = dot(vTex3.xyz, dmap(1u, t0));") != NULL);
+    HT_CHECK(strstr(buf, "e = vec3(uintBitsToFloat(pc.bump3), uintBitsToFloat(pc.bumpl[2]))")
+             != NULL);
+    HT_CHECK(strstr(buf, "vTex3.w") == NULL);
+    HT_CHECK(strstr(buf, "t3 = sampc(3u, 2.0 * n * dot(n, e)") != NULL);
+}
+
+/* texm3x2pad / texm3x2depth: stage 2 DOTPRODUCT, stage 3 DOT_ZW; the depth
+ * is dot2 / dot3, rejected outside 0..1 (clamped with ZCLAMP_EN) */
+static void test_dot_zw(void)
+{
+    uint32_t rs[HLE_PS_REGS] = { 0 };
+    rs[HLE_PS_TEXMODES] = 1 | 0x11u << 10 | (unsigned)HLE_PST_DOT_ZW << 15;
+    rs[HLE_PS_RGB_IN] = IN4(R_T0, R_V0, R_ZERO, R_ZERO);
+    rs[HLE_PS_RGB_OUT] = R_R0 << 4;
+    rs[HLE_PS_COUNT] = 1;
+    HlePshKey k;
+    hle_psh_key(rs, &k);
+    HT_EQ_U32(hle_psh_zrep(k.tex_modes), 3);
+    k.alpha_kill = 8;                                   /* no texel: nothing to kill on */
+    unsigned un = 99;
+    size_t n = hle_psh_glsl(&k, buf, sizeof(buf), &un);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("psh_dot_zw");
+    HT_EQ_U32(un, 0);
+    HT_CHECK(strstr(buf, "float zrep = 1.0;") != NULL);
+    HT_CHECK(strstr(buf, "dot2 = dot(vTex2.xyz, dmap(0u, t0));") != NULL);
+    HT_CHECK(strstr(buf, "dot3 = dot(vTex3.xyz, dmap(0u, t0));") != NULL);
+    HT_CHECK(strstr(buf, "vec4 t3 = vec4(0.0);\n  zrep = dot3 == 0.0 ? 1.0 : dot2 / dot3;")
+             != NULL);
+    HT_CHECK(strstr(buf, "t3.a == 0.0") == NULL);
+    HT_CHECK(strstr(buf, "if (!(zrep >= 0.0 && zrep <= 1.0)) discard;") != NULL);
+    HT_CHECK(strstr(buf, "gl_FragDepth = zrep;") != NULL);
+    /* replaces W-buffering's depth; the EQUAL test reads the replaced one */
+    k.wbuf = 1;
+    k.zclamp = 1;
+    k.fbfetch = HLE_FB_ZEQ24;
+    n = hle_psh_glsl(&k, buf, sizeof(buf), &un);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("psh_dot_zw_wbuf");
+    HT_CHECK(strstr(buf, "zrep = clamp(zrep, 0.0, 1.0);") != NULL);
+    HT_CHECK(strstr(buf, "zrep >= 0.0") == NULL);
+    HT_CHECK(strstr(buf, "if (zrep < subpassLoad(uZ).r") != NULL);
+    HT_CHECK(strstr(buf, "gl_FragCoord.z <") == NULL);
+    HT_CHECK(strstr(buf, "gl_FragDepth = zrep;") != NULL);
+    HT_CHECK(strstr(buf, "gl_FragDepth = wDepth;") == NULL);
+    /* stage 2 (texm3x2pad on stage 1) */
+    rs[HLE_PS_TEXMODES] = 1 | 0x11u << 5 | (unsigned)HLE_PST_DOT_ZW << 10;
+    hle_psh_key(rs, &k);
+    HT_EQ_U32(hle_psh_zrep(k.tex_modes), 2);
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), &un) > 0);
+    HT_EQ_U32(un, 0);
+    HT_CHECK(strstr(buf, "zrep = dot2 == 0.0 ? 1.0 : dot1 / dot2;") != NULL);
+    /* stage 1: no dot before it */
+    rs[HLE_PS_TEXMODES] = 1 | (unsigned)HLE_PST_DOT_ZW << 5;
+    hle_psh_key(rs, &k);
+    HT_EQ_U32(hle_psh_zrep(k.tex_modes), 0);
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), &un) > 0);
+    HT_EQ_U32(un, 1u << HLE_PST_DOT_ZW);
+    HT_CHECK(strstr(buf, "zrep") == NULL && strstr(buf, "gl_FragDepth") == NULL);
+}
+
+/* texbrdf: stages 0 and 1 the eye's and light's spherical coordinates, stage
+ * 2 the BRDF volume at (eye elevation, light elevation, azimuth difference) */
+static void test_brdf(void)
+{
+    uint32_t rs[HLE_PS_REGS] = { 0 };
+    rs[HLE_PS_TEXMODES] = 3 | 3u << 5 | (unsigned)HLE_PST_BRDF << 10;    /* t0, t1 cubes */
+    rs[HLE_PS_RGB_IN] = IN4(R_T0, R_V0, R_ZERO, R_ZERO);
+    rs[HLE_PS_RGB_OUT] = R_R0 << 4;
+    rs[HLE_PS_COUNT] = 1;
+    HlePshKey k;
+    hle_psh_key(rs, &k);
+    k.vol = 4;
+    unsigned un = 99;
+    size_t n = hle_psh_glsl(&k, buf, sizeof(buf), &un);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("psh_brdf");
+    HT_EQ_U32(un, 0);
+    HT_CHECK(strstr(buf, "vec4 t2 = samp3(2u, vec3(t0.g, t1.g, t1.r - t0.r));") != NULL);
+    /* no volume bound: the 2D texture, normalised (no image of another kind) */
+    k.vol = 0;
+    n = hle_psh_glsl(&k, buf, sizeof(buf), &un);
+    HT_CHECK(n > 0 && n == strlen(buf));
+    dump("psh_brdf_2d");
+    HT_EQ_U32(un, 0);
+    HT_CHECK(strstr(buf, "uSmp[nonuniformEXT(si)]), vec2(t0.g, t1.g)); }") != NULL);
+    HT_CHECK(strstr(buf, "samp3(2u") == NULL);
+    /* stage 3: stages 1 and 2 */
+    rs[HLE_PS_TEXMODES] = 1 | 3u << 5 | 3u << 10 | (unsigned)HLE_PST_BRDF << 15;
+    hle_psh_key(rs, &k);
+    k.vol = 8;
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), &un) > 0);
+    HT_EQ_U32(un, 0);
+    HT_CHECK(strstr(buf, "vec4 t3 = samp3(3u, vec3(t1.g, t2.g, t2.r - t1.r));") != NULL);
+    /* stage 1: not two stages before it */
+    rs[HLE_PS_TEXMODES] = 1 | (unsigned)HLE_PST_BRDF << 5;
+    hle_psh_key(rs, &k);
+    HT_CHECK(hle_psh_glsl(&k, buf, sizeof(buf), &un) > 0);
+    HT_EQ_U32(un, 1u << HLE_PST_BRDF);
 }
 
 /* NGB's shadow receivers: t0 a D24 shadow buffer (PROJECT3D, SHADOWFUNC
@@ -565,6 +672,8 @@ int main(void)
     HT_RUN(test_final_fog);
     HT_RUN(test_dot_mux);
     HT_RUN(test_reflect);
+    HT_RUN(test_dot_zw);
+    HT_RUN(test_brdf);
     HT_RUN(test_shadow_project);
     HT_RUN(test_shadow_f24);
     HT_RUN(test_bumpenv);

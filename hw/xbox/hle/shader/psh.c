@@ -354,13 +354,20 @@ static void shadow_sample(Buf *b, const HlePshKey *k, unsigned s, bool project3d
     put(b, "  }\n");
 }
 
+/* Mode m fetches a texel from its stage's texture (the others' result is a
+ * constant or their coordinates) */
+static bool fetches(unsigned m)
+{
+    return m != HLE_PST_NONE && m != HLE_PST_PASSTHRU && m != HLE_PST_CLIPPLANE &&
+           m != HLE_PST_DOTPRODUCT && m != HLE_PST_DOT_ZW;
+}
+
 /* Texture colour sign: stage s's signed channels (HlePshKey sgn_ob,
  * sgn_raw) as the NV2A reads them, before anything uses the texel. */
 static void sign_decode(Buf *b, const HlePshKey *k, unsigned s, unsigned m)
 {
     const unsigned ob = (k->sgn_ob >> (4 * s)) & 15, raw = (k->sgn_raw >> (4 * s)) & 15 & ~ob;
-    if (m == HLE_PST_NONE || m == HLE_PST_PASSTHRU || m == HLE_PST_CLIPPLANE ||
-        m == HLE_PST_DOTPRODUCT) {
+    if (!fetches(m)) {
         return;
     }
     for (unsigned c = 0; c < 4; c++) {
@@ -394,8 +401,7 @@ static void color_key(Buf *b, const HlePshKey *k, unsigned s, unsigned m)
     const unsigned ob = (k->sgn_ob >> (4 * s)) & 15;
     const bool sgn = ((k->sgn_ob | k->sgn_raw) >> (4 * s)) & 15;
     const uint32_t c = k->ckey_col[s];
-    if (!op || m == HLE_PST_NONE || m == HLE_PST_PASSTHRU || m == HLE_PST_CLIPPLANE ||
-        m == HLE_PST_DOTPRODUCT) {
+    if (!op || !fetches(m)) {
         sign_decode(b, k, s, m);
         return;
     }
@@ -429,8 +435,7 @@ static void color_key(Buf *b, const HlePshKey *k, unsigned s, unsigned m)
  * (PGR2's car shadow) draw only where the compare passed. */
 static void alpha_kill(Buf *b, const HlePshKey *k, unsigned s, unsigned m)
 {
-    if (((k->alpha_kill >> s) & 1) && m != HLE_PST_NONE && m != HLE_PST_PASSTHRU &&
-        m != HLE_PST_CLIPPLANE && m != HLE_PST_DOTPRODUCT) {
+    if (((k->alpha_kill >> s) & 1) && fetches(m)) {
         put(b, "  if (t%u.a == 0.0) discard;\n", s);
     }
 }
@@ -544,9 +549,12 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
     if (k->fog >= 2) {
         put(&b, "  fogf = isnan(fogf) ? 1.0 : clamp(fogf, 0.0, 1.0);\n");
     }
+    /* DOT_ZW's stage: the depth it replaces the fragment's with (zrep) */
+    const unsigned zr = hle_psh_zrep(k->tex_modes);
     put(&b, "  vec4 fogr = vec4(col(pc.fog_color).rgb, fogf);\n"
-            "  float dot1 = 0.0, dot2 = 0.0, dot3 = 0.0;\n%s",
-        k->debug == 17 ? "  vec4 shdbg = vec4(0.0, 0.0, 0.0, 1.0);\n" : "");
+            "  float dot1 = 0.0, dot2 = 0.0, dot3 = 0.0;\n%s%s",
+        k->debug == 17 ? "  vec4 shdbg = vec4(0.0, 0.0, 0.0, 1.0);\n" : "",
+        zr ? "  float zrep = 1.0;\n" : "");
     for (unsigned s = 0; s < 4; s++) {
         unsigned m = (k->tex_modes >> (5 * s)) & 0x1F;
         /* dot-product stages: the texture coordinates dotted with the
@@ -698,16 +706,54 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
             put(&b, "  vec4 t%u = sampc(%uu, vec3(dot1, dot2, dot3));\n", s, s);
             break;
         case HLE_PST_DOT_RFLCT_SPEC:                /* stage 3: N reflected about E */
-        case HLE_PST_DOT_RFLCT_SPEC_CONST:          /* (E = the eye vector: q coordinates) */
-            put(&b, "  vec4 t%u;\n  { vec3 n = vec3(dot1, dot2, dot3), "
-                    "e = vec3(vTex1.w, vTex2.w, vTex3.w);\n"
+        case HLE_PST_DOT_RFLCT_SPEC_CONST:
+            /* E the eye vector: the q coordinates of stages 1-3, or (CONST)
+             * SET_EYE_VECTOR's, constant across the draw (this stage's bump
+             * words) */
+            put(&b, "  vec4 t%u;\n  { vec3 n = vec3(dot1, dot2, dot3), e = %s;\n"
                     "    t%u = sampc(%uu, 2.0 * n * dot(n, e) / max(dot(n, n), 1e-8) - e); }\n",
-                s, s, s);
-            if (m == HLE_PST_DOT_RFLCT_SPEC_CONST) {
+                s, m == HLE_PST_DOT_RFLCT_SPEC ? "vec3(vTex1.w, vTex2.w, vTex3.w)"
+                   : "vec3(uintBitsToFloat(pc.bump3), uintBitsToFloat(pc.bumpl[2]))", s, s);
+            break;
+        case HLE_PST_DOT_ZW:
+            /* depth replace (texm3x2pad / texm3x2depth): the previous stage's
+             * dot (z) over this one's (w) is the fragment's depth, in the
+             * depth range's 0..1 (NV_texture_shader's DOT_PRODUCT_DEPTH_REPLACE;
+             * D3D's 1 where w is 0). The stage's colour is 0. */
+            if (s < 2) {
                 unsup |= 1u << m;
+                put(&b, "  vec4 t%u = samp(%uu, nvproj(vTex%u).xy);\n", s, s, s);
+                break;
+            }
+            put(&b, "  vec4 t%u = vec4(0.0);\n"
+                    "  zrep = dot%u == 0.0 ? 1.0 : dot%u / dot%u;\n", s, s, s - 1, s);
+            break;
+        case HLE_PST_BRDF:
+            /* isotropic BRDF (NVIDIA's US6664963): stages s-2 and s-1 hold the
+             * eye's and the light's spherical coordinates, 16-bit unsigned
+             * numbers over 65535: elevation the high half (g: V16U16's V),
+             * azimuth the low (r: U), as Cxbx-Reloaded reads them. The
+             * stage's volume is looked up at (eye elevation, light elevation,
+             * light azimuth - eye azimuth), the last on [-1, 1] (a wrapping
+             * address mode makes it the angle's). Without a volume bound,
+             * the 2D texture at the first two. */
+            if (s < 2) {
+                unsup |= 1u << m;
+                put(&b, "  vec4 t%u = samp(%uu, nvproj(vTex%u).xy);\n", s, s, s);
+                break;
+            }
+            if ((k->vol >> s) & 1) {
+                put(&b, "  vec4 t%u = samp3(%uu, vec3(t%u.g, t%u.g, t%u.r - t%u.r));\n",
+                    s, s, s - 2, s - 1, s - 1, s - 2);
+            } else {
+                put(&b, "  vec4 t%u;\n"
+                        "  { uint ti = pc.tex[%u] & 0xFFFFu, si = (pc.tex[%u] >> 16) & 0xFFu;\n"
+                        "    t%u = texture(sampler2D(uTex2D[nonuniformEXT(ti)], "
+                        "uSmp[nonuniformEXT(si)]), vec2(t%u.g, t%u.g)); }\n",
+                    s, s, s, s, s - 2, s - 1);
             }
             break;
-        default:                        /* volume, BRDF, DOT_ZW, dependent AR/GB */
+        default:                        /* unknown modes */
             unsup |= 1u << m;
             put(&b, "  vec4 t%u = samp(%uu, nvproj(vTex%u).xy); /* mode %u */\n",
                 s, s, s, m);
@@ -728,8 +774,15 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
         put(&b, "  { float a = outc.a, r = pc.alpha_ref; if (!(%s)) discard; }\n",
             k_cmp[k->alpha_func]);
     }
+    if (zr) {
+        /* outside the depth range the fragment is rejected
+         * (NV_texture_shader), or clamped to it with ZCLAMP_EN; NaN fails */
+        put(&b, k->zclamp ? "  zrep = clamp(zrep, 0.0, 1.0);\n"
+                          : "  if (!(zrep >= 0.0 && zrep <= 1.0)) discard;\n");
+    }
     if (k->fbfetch & HLE_FB_ZEQ) {
-        put(&b, "%s", HLE_ZEQ_TEST_GLSL(k->fbfetch));
+        put(&b, "%s", zr ? HLE_ZEQ_TEST_GLSL(k->fbfetch, "zrep")
+                         : HLE_ZEQ_TEST_GLSL(k->fbfetch, "gl_FragCoord.z"));
     }
     if (k->aa_grid) {
         /* antialiasing control: this pixel is sample si of its guest pixel
@@ -805,7 +858,9 @@ size_t hle_psh_glsl(const HlePshKey *k, char *buf, size_t cap, unsigned *unsuppo
                 "    oColor.rgb = clamp(oColor.rgb + dt / %s, 0.0, 1.0); }\n",
             k->dither == 1 ? "vec3(31.0, 63.0, 31.0)" : "vec3(31.0)");
     }
-    put(&b, "%s}\n", k->wbuf ? HLE_WBUF_STORE_GLSL : "");
+    /* the replaced depth replaces W-buffering's too: the fragment's, whatever
+     * made it (the polygon offset with it) */
+    put(&b, "%s}\n", zr ? "  gl_FragDepth = zrep;\n" : k->wbuf ? HLE_WBUF_STORE_GLSL : "");
     if (unsupported) {
         *unsupported = unsup;
     }

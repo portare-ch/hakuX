@@ -591,7 +591,7 @@ size_t hle_ff_ps_glsl(const HleFfPsKey *k, char *buf, size_t cap)
             k_cmp[k->alpha_func]);
     }
     if (k->fbfetch & HLE_FB_ZEQ) {
-        put(&b, "%s", HLE_ZEQ_TEST_GLSL(k->fbfetch));
+        put(&b, "%s", HLE_ZEQ_TEST_GLSL(k->fbfetch, "gl_FragCoord.z"));
     }
     put(&b, "  oColor = %s;\n", k->out_bgra ? "cur.bgra" : "cur");
     if (k->sblend) {

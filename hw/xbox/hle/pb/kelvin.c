@@ -57,7 +57,8 @@ static bool state_method(uint32_t m)
     return !(m >= 0x0B00 && m < 0x0C00) &&              /* program, constants */
            !(m >= 0x1500 && m < 0x1720) &&              /* immediate vertex data */
            !(m >= 0x17C8 && m <= 0x17D0) &&             /* reports */
-           !(m >= 0x17FC && m < 0x1B00) &&              /* draws, inline / vertex data */
+           !(m >= 0x17FC && m < 0x181C) &&              /* draws, inline data */
+           !(m >= 0x1828 && m < 0x1B00) &&              /* (eye vector,) vertex data */
            !(m >= 0x1D6C && m <= 0x1D74) &&             /* semaphores */
            !(m >= 0x1D8C && m <= 0x1D9C) &&             /* clears */
            !(m >= 0x1E80 && m <= 0x1EA4) &&             /* transform data, loads */
@@ -231,6 +232,14 @@ void hle_kelvin_state(HleCmdState *st)
         }
     }
     st->aactl = W(0x1D7C) ? R(0x1D7C) : 0xFFFF0001u;   /* SET_ANTI_ALIASING_CONTROL */
+    static const float k_eye[3] = { 0.0f, 0.0f, -1.0f };
+    for (unsigned i = 0; i < 3; i++) {  /* SET_EYE_VECTOR (envytools' TEX_SHADER_CONST_EYE) */
+        if (W(0x181C + 4 * i)) {
+            memcpy(&st->eye[i], &R(0x181C + 4 * i), 4);
+        } else {
+            st->eye[i] = k_eye[i];
+        }
+    }
     if (!W(0x0380)) {                   /* SET_LINE_WIDTH never written: 1.0 (an */
         rs[RS_LINEWIDTH] = 8;           /* explicit 0 draws no line, vk/draw.c) */
     }
