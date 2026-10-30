@@ -50,13 +50,16 @@ static int classify(const Voice *v)
     return vp_stereo_classify(v->bin, att);
 }
 
+/* the sends' headroom their bins' (a 2D voice's, as vp.c gives it) */
 static void gains(const Voice *v, float g[2][2])
 {
     float att[VP_SENDS];
+    uint8_t shift[VP_SENDS];
     for (int b = 0; b < VP_SENDS; b++) {
         att[b] = att_of(v->vol[b]);
+        shift[b] = v->headroom[v->bin[b]];
     }
-    vp_stereo_gains(v->bin, att, v->headroom, v->channels, v->ea, g);
+    vp_stereo_gains(v->bin, att, shift, v->channels, v->ea, g);
 }
 
 /* a frame of the voice's samples: channel 0 a ramp, channel 1 another (a
@@ -300,12 +303,11 @@ static void test_five_speakers(void)
     }
 }
 
-/* audible LFE, effect, 3D crosstalk and multipass sends beside the speaker
- * sends are left out: the same gains as the speaker sends alone, whatever
- * their level */
+/* audible LFE, effect and multipass sends beside the speaker sends are left
+ * out: the same gains as the speaker sends alone, whatever their level */
 static void test_other_sends_left_out(void)
 {
-    static const int others[] = {VP_BIN_LFE, 6, 9, 10, 12, 20, MULTIPASS_BIN};
+    static const int others[] = {VP_BIN_LFE, 10, 12, 20, MULTIPASS_BIN};
     for (size_t k = 0; k < sizeof(others) / sizeof(others[0]); k++) {
         Voice a = voice(1), b = voice(1);
         a.vol[0] = b.vol[0] = 0x300;
@@ -342,10 +344,46 @@ static void test_gains_fade_to_mute(void)
     HT_CHECK(last == 0.0f);
 }
 
+/* A 3D voice's sends to the 3D bins (its HRTF submixes): its two ears the
+ * sources, the left ear the even slots; the front pair to its own speaker at
+ * 0 dB, the back pair at -3 dB (the GP's crosstalk stage, then the EP's
+ * downmix, as measured), each send at its own headroom */
+static void test_3d_bins(void)
+{
+    Voice v = voice(2);         /* the HRTF filter's ears */
+    for (int b = 0; b < 4; b++) {
+        v.bin[b] = VP_BIN_3D_FRONT_LEFT + b;
+    }
+    v.vol[0] = 0;               /* left ear, 3D front left, 0 dB */
+    v.vol[1] = 0x300;           /* right ear, 3D front right, -12 dB */
+    v.vol[2] = 0;               /* left ear, 3D back left, 0 dB */
+    float out[N][2], in[N][2];
+    mix(&v, out);
+    source(in, 2);
+    const float l = 1.0f + VP_DOWNMIX_SIDE, r = att_of(0x300);
+    for (int i = 0; i < N; i++) {
+        HT_CHECK(fabsf(out[i][0] - l * in[i][0]) < 1e-5f);
+        HT_CHECK(fabsf(out[i][1] - r * in[i][1]) < 1e-5f);
+    }
+    /* behind the listener only: 3 dB under the same sound in front */
+    Voice back = voice(2), front = voice(2);
+    for (int b = 0; b < 4; b++) {
+        back.bin[b] = front.bin[b] = VP_BIN_3D_FRONT_LEFT + b;
+    }
+    front.vol[0] = front.vol[1] = 0;
+    back.vol[2] = back.vol[3] = 0;
+    float gf[2][2], gb[2][2];
+    HT_CHECK(classify(&back) == VP_ROUTE_SPEAKERS);
+    gains(&front, gf);
+    gains(&back, gb);
+    HT_CHECK(fabsf(gb[0][0] / gf[0][0] - VP_DOWNMIX_SIDE) < 1e-6f && fabsf(gb[1][1] / gf[1][1] - VP_DOWNMIX_SIDE) < 1e-6f);
+    HT_CHECK(gb[0][1] == 0.0f && gb[1][0] == 0.0f);
+}
+
 /* only LFE or non-speaker sends audible: the monitor's mix */
 static void test_no_speaker_send(void)
 {
-    static const int others[] = {VP_BIN_LFE, 6, 10, 12, 20, MULTIPASS_BIN};
+    static const int others[] = {VP_BIN_LFE, 10, 12, 20, MULTIPASS_BIN};
     for (size_t k = 0; k < sizeof(others) / sizeof(others[0]); k++) {
         Voice v = voice(1);
         v.bin[4] = others[k];
@@ -371,6 +409,7 @@ int main(void)
     HT_RUN(test_five_speakers);
     HT_RUN(test_other_sends_left_out);
     HT_RUN(test_gains_fade_to_mute);
+    HT_RUN(test_3d_bins);
     HT_RUN(test_no_speaker_send);
     HT_DONE();
 }
