@@ -151,6 +151,8 @@ static void voice_reset_filters(MCPXAPUState *d, uint16_t v)
 {
     assert(v < MCPX_HW_MAX_VOICES);
     memset(&d->vp.filters[v].svf, 0, sizeof(d->vp.filters[v].svf));
+    d->vp.filters[v].ending = false;
+    d->vp.filters[v].silence_fed = 0;
     if (d->vp.filters[v].resampler) {
         vp_resample_reset(d->vp.filters[v].resampler);
     } else {
@@ -1382,7 +1384,7 @@ static int voice_get_samples(MCPXAPUState *d, uint8_t *c, uint32_t v,
             d->vp.ssl[v].ssl_seg = 0;
             if (!persist) {
                 d->vp.ssl[v].ssl_index = 0;
-                voice_off_nolock(d, c, v);
+                d->vp.filters[v].ending = true;     /* off when it has played out */
             } else {
                 set_notify_status(
                     d, v, MCPX_HW_NOTIFIER_SSLA_DONE + d->vp.ssl[v].ssl_index,
@@ -1588,7 +1590,7 @@ static int voice_get_samples(MCPXAPUState *d, uint8_t *c, uint32_t v,
                 cbo = lbo;
             } else {
                 cbo = ebo;
-                voice_off_nolock(d, c, v);
+                d->vp.filters[v].ending = true;     /* off when it has played out */
                 DPRINTF("end of buffer!\n");
             }
         }
@@ -1609,7 +1611,7 @@ static long voice_resample_callback(void *cb_data, float **data)
     uint8_t *c = filter->cb_voice_cache;
 
     int sample_count = 0;
-    while (sample_count < NUM_SAMPLES_PER_FRAME) {
+    while (sample_count < NUM_SAMPLES_PER_FRAME && !filter->ending) {
         int active = voice_get_mask_nolock(d, c, v, NV_PAVS_VOICE_PAR_STATE,
                                     NV_PAVS_VOICE_PAR_STATE_ACTIVE_VOICE);
         if (!active) {
@@ -1628,6 +1630,9 @@ static long voice_resample_callback(void *cb_data, float **data)
         /* Starvation causes SRC hang on repeated calls. Provide silence. */
         memset(&filter->resample_buf[2*sample_count], 0,
             2*(NUM_SAMPLES_PER_FRAME-sample_count)*sizeof(float));
+        if (filter->ending) {
+            filter->silence_fed += NUM_SAMPLES_PER_FRAME - sample_count;
+        }
         sample_count = NUM_SAMPLES_PER_FRAME;
     }
 
@@ -1815,6 +1820,15 @@ static void voice_process(MCPXAPUState *d, uint8_t *c,
                                 NV_PAVS_VOICE_PAR_STATE_ACTIVE_VOICE);
     if (!active) {
         return;
+    }
+    /* Its sound's data ended (voice_get_samples): off once the output has
+     * passed its last sample and the filter no longer reads it, this frame
+     * still mixed. The guest sees the end a frame or so after its decoder
+     * reached it, as the resampler reads ahead. */
+    const MCPXAPUVoiceFilter *vf = &d->vp.filters[v];
+    if (vf->ending && (!vf->resampler || vp_resample_ahead(vf->resampler) - vf->silence_fed <=
+                                            -vp_resample_reach(vf->resampler))) {
+        voice_off_nolock(d, c, v);
     }
 #else
     /* HAKUX_AUDIO_NO_PROCESS=1: skip the expensive sample-production +
@@ -2675,6 +2689,8 @@ void mcpx_apu_vp_reset(MCPXAPUState *d)
     g_idle_last = 0xFFFF;
     for (int v = 0; v < ARRAY_SIZE(d->vp.filters); v++) {
         hrtf_filter_init(&d->vp.filters[v].hrtf);
+        d->vp.filters[v].ending = false;
+        d->vp.filters[v].silence_fed = 0;
     }
     refresh_table(&d->vp.voice_cache, 0, 0);
     refresh_table(&d->vp.ssl_cache, 0, 0);

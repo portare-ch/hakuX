@@ -15,9 +15,12 @@ typedef struct VpSinc VpSinc;
 
 /* A converter for 1 or 2 channels; NULL when out of memory */
 VpSinc *vp_sinc_new(int channels);
-/* frames output frames at ratio (clamped to 1/256 .. 256), its input from
- * cb; fewer only when cb gives nothing */
+/* frames output frames at ratio (positive and finite), its input from cb;
+ * fewer only when cb gives nothing */
 long vp_sinc_read(VpSinc *s, vp_resample_cb cb, void *cb_data, double ratio, long frames, float *data);
+/* vp_resample_ahead, vp_resample_reach */
+double vp_sinc_ahead(const VpSinc *s);
+double vp_sinc_reach(const VpSinc *s);
 void vp_sinc_reset(VpSinc *s);
 void vp_sinc_delete(VpSinc *s);
 #endif

@@ -11,7 +11,7 @@
  * passes exactly). Below 1 (a voice pitched past 48 kHz) the filter is
  * stretched to the output's Nyquist, 32 / ratio taps, the ratio rounded
  * down to 1/128ths, at most 8 times (256 taps); past that a pitch-up
- * aliases. The input is kept planar with 131 frames of history and read
+ * aliases, its rate still the one asked for (the VP's go to 1/512). The input is kept planar with 131 frames of history and read
  * 16 frames ahead of the output (up to 132 for the stretched filter), its
  * buffer 4 KB a channel pair; nothing is allocated after vp_sinc_new.
  */
@@ -43,6 +43,7 @@ struct VpSinc {
     int channels;
     int len;                    /* frames in buf */
     double pos;                 /* the next output's position in buf, in input frames */
+    double reach;               /* the last read's: frames before pos an output reads */
     float buf[2][BUF_FRAMES];   /* each channel's input */
 };
 
@@ -117,6 +118,17 @@ void vp_sinc_reset(VpSinc *s)
     memset(s->buf[1], 0, sizeof(float) * HISTORY);
     s->len = HISTORY;
     s->pos = HISTORY;
+    s->reach = HALF - 1;
+}
+
+double vp_sinc_ahead(const VpSinc *s)
+{
+    return s->len - s->pos;
+}
+
+double vp_sinc_reach(const VpSinc *s)
+{
+    return s->reach;
 }
 
 void vp_sinc_delete(VpSinc *s)
@@ -247,13 +259,13 @@ static void out_stretched(const VpSinc *s, long n, double frac, int m, float *ou
 
 long vp_sinc_read(VpSinc *s, vp_resample_cb cb, void *cb_data, double ratio, long frames, float *data)
 {
-    ratio = !(ratio >= 1.0 / 256) ? 1.0 / 256 : ratio > 256.0 ? 256.0 : ratio;
     const double step = 1.0 / ratio;
     /* the stretched filter's 1/128ths (rounded down: its cutoff at or under
      * the output's Nyquist), and the frames it reads past n */
     int m = ratio < 1.0 ? (int)(ratio * PHASES) : PHASES;
     m = m < PHASES / STRETCH ? PHASES / STRETCH : m;
     const long ahead = m < PHASES ? HALF * PHASES / m + 4 : HALF;
+    s->reach = m < PHASES ? (double)HALF * PHASES / m : HALF - 1;
     for (long i = 0; i < frames; i++) {
         long n = (long)s->pos;
         while (n + ahead >= s->len) {

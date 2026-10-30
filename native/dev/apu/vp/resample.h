@@ -29,9 +29,16 @@ const char *vp_resample_name(int quality);
 /* A resampler of the quality (linear where sinc isn't built in) for
  * channels channels, its input from cb; NULL when out of memory */
 VpResampler *vp_resample_new(vp_resample_cb cb, int quality, int channels, void *cb_data);
-/* Up to frames output frames at ratio (output rate / input rate, clamped
- * to 1/256 .. 256) into data; fewer only when the input has ended */
+/* Up to frames output frames at ratio (output rate / input rate) into
+ * data; fewer only when the input has ended. Any positive ratio: the VP's
+ * pitch with its envelope spans 1/512 .. 512 (NaN, 0 or less: 1) */
 long vp_resample_read(VpResampler *r, double ratio, long frames, float *data);
+/* The input frames the callback gave that the output hasn't reached yet,
+ * and how far before its position an output still reads the input: a
+ * sound whose input ended is fully played once its silence after the end
+ * exceeds ahead + reach (vp.c voice_process) */
+double vp_resample_ahead(const VpResampler *r);
+double vp_resample_reach(const VpResampler *r);
 void vp_resample_reset(VpResampler *r);
 VpResampler *vp_resample_delete(VpResampler *r);    /* NULL */
 int vp_resample_quality(const VpResampler *r);

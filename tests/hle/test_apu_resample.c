@@ -356,12 +356,12 @@ static void test_rapid_pitch(void)
     }
 }
 
-/* the pitch's whole range, changing every read (1/256, the stretched
- * filter's widest 1/8 and past it, just under and at 1, 256): every read
- * whole, every sample finite and within the input's peak */
+/* the pitch's whole range with its envelope, changing every read (1/512,
+ * the stretched filter's widest 1/8 and past it, just under and at 1, 512):
+ * every read whole, every sample finite and within the input's peak */
 static void test_extremes(void)
 {
-    static const double ratios[] = {1.0 / 256, 0.125, 0.13, 0.99, 1.0, 256.0, 0.1, 3.0};
+    static const double ratios[] = {1.0 / 512, 0.125, 0.13, 0.99, 1.0, 512.0, 0.1, 3.0};
     for (int q = 0; q < g_qualities; q++) {
         Signal s = tone(22050, 440, 0.5, 660, 0.5);
         VpResampler *r = vp_resample_new(feed, q, 2, &s);
@@ -374,10 +374,39 @@ static void test_extremes(void)
             }
         }
         vp_resample_delete(r);
-        fprintf(stderr, "  %-6s ratios 1/256 to 256 in turn: %s, %s\n", k_name[q], whole ? "every read whole" : "short",
+        fprintf(stderr, "  %-6s ratios 1/512 to 512 in turn: %s, %s\n", k_name[q], whole ? "every read whole" : "short",
                 bounded ? "finite and bounded" : "out of bounds");
         HT_CHECK(whole);
         HT_CHECK(bounded);
+    }
+}
+
+/* each ratio's rate as asked, to the VP's 1/512 and 512 (base pitch and
+ * envelope): after n output frames the input taken is n / ratio plus what
+ * the converter holds ahead (vp_resample_ahead; negative when the position
+ * has stepped past it, up to a step), within its look-ahead and a
+ * callback's 32 frames. Linear keeps its position in float: within 0.1 %. */
+static void test_rate(void)
+{
+    static const double ratios[] = {1.0 / 512, 1.0 / 300, 1.0 / 9, 0.5, 2.0, 300.0, 512.0};
+    for (int q = 0; q < g_qualities; q++) {
+        fprintf(stderr, "  %-6s input taken against n / ratio:", k_name[q]);
+        for (size_t k = 0; k < sizeof(ratios) / sizeof(ratios[0]); k++) {
+            Signal s = tone(22050, 440, 0.5, 660, 0.5);
+            VpResampler *r = vp_resample_new(feed, q, 2, &s);
+            const long n = ratios[k] < 1 ? 64 : (long)(64 * ratios[k]);
+            float y[64];
+            for (long done = 0; done < n; done += 32) {
+                vp_resample_read(r, ratios[k], 32, y);
+            }
+            const double taken = s.n - vp_resample_ahead(r), want = n / ratios[k];
+            const double ahead = vp_resample_ahead(r);
+            vp_resample_delete(r);
+            fprintf(stderr, "  %g: %+.2g (ahead %.0f)", ratios[k], taken - want, ahead);
+            HT_CHECK(fabs(taken - want) < (q == VP_RESAMPLE_SINC ? 1e-6 : 1e-3) * want + 1e-6);
+            HT_CHECK(ahead >= -1 / ratios[k] && ahead <= 140 + 32);
+        }
+        fprintf(stderr, "\n");
     }
 }
 
@@ -469,6 +498,7 @@ int main(int argc, char **argv)
     HT_RUN(test_chunking);
     HT_RUN(test_rapid_pitch);
     HT_RUN(test_extremes);
+    HT_RUN(test_rate);
     HT_RUN(test_reuse);
     HT_DONE();
 }

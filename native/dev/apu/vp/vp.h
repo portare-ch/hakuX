@@ -40,6 +40,12 @@ typedef struct MCPXAPUVoiceFilter {
     uint16_t voice;
     float resample_buf[NUM_SAMPLES_PER_FRAME * 2];
     VpResampler *resampler;     /* made at its first VOICE_ON, the APU's resample_quality */
+    /* Its sound's data at an end (a buffer that doesn't loop, a stream's
+     * last segment): the voice plays on, the callback giving the resampler
+     * silence (silence_fed frames since), until the output has passed the
+     * last sample; voice_process turns it off then. Cleared at VOICE_ON. */
+    bool ending;
+    uint32_t silence_fed;
     sv_filter svf[2];
     HrtfFilter hrtf;
     /* The voice table for voice_resample_callback (the resampler's callback

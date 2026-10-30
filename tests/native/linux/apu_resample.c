@@ -1,10 +1,10 @@
 /* The voices' resamplers (vp/resample.h) through the real voice processing,
  * linear and sinc (the hakux_audio_resampler option, NC_APU_RESAMPLER):
  * a looping 22.05 kHz voice's levels and its seamless loop, the pitch
- * changing every frame, a voice's end (it ends, and how much of it is
- * heard; how far its guest-visible position runs ahead of what is heard),
- * a reused voice, a persistent stream starved and fed again, and an ADPCM
- * voice's loop. `apu-resample-smoke bench`: throughput, the worst frame and
+ * changing every frame, a voice's end (all of it heard before the voice
+ * goes off; how far its guest-visible position runs ahead of what is
+ * heard), short one-shot sounds heard whole, a reused voice, a persistent
+ * stream starved and fed again, and an ADPCM voice's loop. `apu-resample-smoke bench`: throughput, the worst frame and
  * allocations at 32 to 256 voices (not a test; a host figure, not the
  * Nova's). Allocations are counted by wrapping malloc, calloc and realloc
  * (linked with --wrap). */
@@ -140,9 +140,11 @@ static void test_pitch_every_frame(int q)
     check(worst < 1.2 * steepest + 2, what);
 }
 
-/* A 2205-sample voice that doesn't loop: it ends (the frame its voice goes
- * inactive), how much of its 4800 output samples is heard, and how far its
- * guest-visible position (CBO) runs ahead of what has been heard mid-way */
+/* A 2205-sample voice that doesn't loop: all of its 4800 output samples
+ * heard, the voice inactive in the frame after its last (not when its
+ * decoder reached the end, the resampler's look-ahead still to play), and
+ * how far its guest-visible position (CBO) runs ahead of what has been
+ * heard mid-way */
 static void test_end(int q, int *end_frame, long *heard, long *lead)
 {
     apu_up_with(false, true, 1, k_q[q]);
@@ -169,9 +171,52 @@ static void test_end(int q, int *end_frame, long *heard, long *lead)
         *heard = abs(g_rec[i][0]) > 30 ? i + 1 : *heard;
     }
     char what[200];
-    snprintf(what, sizeof(what), "%s: a voice's end: inactive after frame %d, heard to sample %ld of %.0f, "
-             "position %ld input samples ahead of the output", k_q[q], *end_frame, *heard, 2205 * ratio_of(p), *lead);
-    check(*end_frame > 0 && *end_frame <= 155, what);
+    const long whole = (long)(2205 * ratio_of(p));
+    snprintf(what, sizeof(what), "%s: a voice's end: heard to sample %ld of %ld, inactive after frame %d, "
+             "position %ld input samples ahead of the output", k_q[q], *heard, whole, *end_frame, *lead);
+    check(*heard >= whole - 2 && *end_frame >= *heard / NUM_SAMPLES_PER_FRAME &&
+          *end_frame <= *heard / NUM_SAMPLES_PER_FRAME + 2, what);
+}
+
+/* Short one-shot sounds, their decoder at the end in their first frame or
+ * two: all of each heard, then the voice off. 64 frames at 22.05 kHz (139
+ * output frames) and 128 at 96 kHz (64: the stretched filter), at half
+ * scale: the output frames at half that level or more. */
+static void test_short(int q)
+{
+    static const struct {
+        uint32_t frames;
+        double fs;
+    } k_sounds[] = {{64, 22050}, {128, 96000}};
+    for (int k = 0; k < 2; k++) {
+        apu_up_with(false, true, 1, k_q[q]);
+        int16_t *pcm = (int16_t *)(g_ram + PCM_PA);
+        for (uint32_t i = 0; i < k_sounds[k].frames; i++) {
+            pcm[i] = 16384;
+        }
+        const int16_t p = pitch_for(k_sounds[k].fs);
+        Voice v = front(100, 0, p);
+        v.ebo = k_sounds[k].frames - 1;
+        v.loop = false;
+        start(&v);
+        int end_frame = -1;
+        for (int f = 0; f < 20; f++) {
+            frames_into(1, g_rec + NUM_SAMPLES_PER_FRAME * f);
+            if (end_frame < 0 && !voice_active(100)) {
+                end_frame = f;
+            }
+        }
+        apu_down();
+        long loud = 0;
+        for (long i = 0; i < 20 * NUM_SAMPLES_PER_FRAME; i++) {
+            loud += g_rec[i][0] >= 8192;
+        }
+        const double want = k_sounds[k].frames * ratio_of(p);
+        char what[200];
+        snprintf(what, sizeof(what), "%s: a %u-frame sound at %.2f kHz: %ld output frames heard of %.0f, "
+                 "inactive after frame %d", k_q[q], k_sounds[k].frames, k_sounds[k].fs / 1000, loud, want, end_frame);
+        check(fabs(loud - want) <= 3 && end_frame >= 0, what);
+    }
 }
 
 /* A voice reused for a new sound sounds as it does on a fresh APU */
@@ -348,13 +393,14 @@ int main(int argc, char **argv)
         test_levels_and_loop(q);
         test_pitch_every_frame(q);
         test_end(q, &end[q], &heard[q], &lead[q]);
+        test_short(q);
         test_reuse(q);
         test_stream_starve_recover(q);
         test_adpcm_loop(q);
     }
-    /* sinc against linear at a voice's end: it ends no later, and its
-     * position runs at most its filter's look-ahead (96 frames) further ahead */
-    check(end[1] <= end[0] && lead[1] - lead[0] <= 96, "sinc's end and position lead against linear's");
+    /* sinc against linear at a voice's end: its position runs at most its
+     * filter's look-ahead (16 frames) further ahead */
+    check(lead[1] - lead[0] <= 16, "sinc's position lead against linear's");
     free(g_ram);
     return failures ? 1 : 0;
 }

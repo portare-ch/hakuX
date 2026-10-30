@@ -270,15 +270,36 @@ long vp_resample_read(VpResampler *r, double ratio, long frames, float *data)
     if (!r || !r->cb || !data || frames <= 0) {
         return 0;
     }
+    if (!(ratio > 0.0) || !isfinite(ratio)) {
+        ratio = 1.0;
+    }
 #ifdef VP_HAVE_SINC
     if (r->sinc) {
         return vp_sinc_read(r->sinc, r->cb, r->cb_data, ratio, frames, data);
     }
 #endif
-    if (ratio <= 0.0) {
-        ratio = 1.0;
-    }
     return linear_read(r, ratio, frames, data);
+}
+
+double vp_resample_ahead(const VpResampler *r)
+{
+#ifdef VP_HAVE_SINC
+    if (r->sinc) {
+        return vp_sinc_ahead(r->sinc);
+    }
+#endif
+    return r->input_len - r->input_pos;
+}
+
+/* linear reads the frame at its position and the next */
+double vp_resample_reach(const VpResampler *r)
+{
+#ifdef VP_HAVE_SINC
+    if (r->sinc) {
+        return vp_sinc_reach(r->sinc);
+    }
+#endif
+    return 0.0;
 }
 
 void vp_resample_reset(VpResampler *r)
