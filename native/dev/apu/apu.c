@@ -40,7 +40,7 @@ static pthread_t g_apu_trace_thread;
 uint8_t *g_apu_ram;
 uint32_t g_apu_ram_size;
 ApuConfig g_apu_config = {
-    .use_dsp = false,
+    .use_dsp = NC_HAVE_DSP_JIT,
     .hrtf = true,
     .volume_limit = 1.0f,
     .num_workers = 0,

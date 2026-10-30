@@ -130,9 +130,9 @@ except Crop Overscan and Rumble, which update immediately:
 | `hakux_rumble` | `disabled`, `enabled` (controller vibration) | `disabled` |
 | `hakux_network` | `disabled` (no cable), `lan` (system link) | `disabled` |
 | `hakux_audio_resampler` | `sinc` (higher quality, 32-tap filter using ARM NEON), `linear` (less CPU, softer high frequencies; fallback on non-ARM64 builds) | `sinc` |
-| `hakux_audio_processing` | `fast` (dry mix), `dsp` (Xbox effects and stereo downmix; experimental) | `fast` |
+| `hakux_audio_processing` | `fast` (dry mix), `dsp` (Xbox effects and stereo downmix; experimental) | `dsp` with JIT, otherwise `fast` |
 
-Full DSP uses the DSP56300 JIT when compiled in. `NC_APU_DSP=0|1`
+Full DSP uses the DSP56300 JIT and is the default when compiled in. `NC_APU_DSP=0|1`
 overrides the audio processing option; `NC_APU_DSP_JIT=0` selects the C
 interpreter for debugging. Fast mode does not create JIT instances.
 

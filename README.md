@@ -110,9 +110,10 @@ varies; other games may have bugs or fail to start.
 - **Audio:** **Audio Resampler** defaults to **Sinc**, which preserves more
   high-frequency detail and uses ARM NEON. Try **Linear** if audio crackles
   or runs slowly, then close and reopen the game. **Audio Processing**
-  defaults to **Fast**, a dry mix. **Full DSP (experimental)** adds the
-  game's Xbox reverb and other effects to stereo output. Linux builds use
-  a DSP JIT to reduce its CPU cost; Fast still uses less CPU.
+  defaults to **Full DSP (experimental)** in Linux releases, running the
+  game's Xbox reverb and other effects with a DSP JIT and stereo output.
+  Select **Fast** for a dry mix that uses less CPU if a game has audio or
+  performance problems.
   Close and reopen the game after changing it.
 - **System link:** to play a game's LAN mode across devices, set
   **Network** to **LAN (system link)** in **Quick Menu → Core Options** on

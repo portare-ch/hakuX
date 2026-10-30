@@ -65,6 +65,7 @@ if(TARGET hakux_libretro)
   target_link_libraries(libretro-harness PRIVATE ${CMAKE_DL_LIBS} Threads::Threads)
   add_test(NAME libretro-smoke
            COMMAND "${Python3_EXECUTABLE}" "${NC_REPO}/tests/native/libretro/check.py"
-                   "$<TARGET_FILE:libretro-harness>" "$<TARGET_FILE:hakux_libretro>")
+                   "$<TARGET_FILE:libretro-harness>" "$<TARGET_FILE:hakux_libretro>"
+                   --audio-default "$<IF:$<BOOL:${HAKUX_DSP_JIT}>,dsp,fast>")
   set_tests_properties(libretro-smoke PROPERTIES TIMEOUT 120)
 endif()

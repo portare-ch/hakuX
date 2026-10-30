@@ -126,6 +126,7 @@ int main(void)
     NcVm vm = {.phys = ram, .ram_size = sizeof(ram)};
     setenv("NC_APU_WORKERS", "1", 1);
     unsetenv("NC_TRACE_APU");
+    nc_dev_apu_set_dsp(false);
     check_program_rewrites();
     /* Each preference twice: the bug hides after a preference change and
      * fails specifically when the next device uses the SAME preference. */

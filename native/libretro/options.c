@@ -14,6 +14,12 @@
 
 #define NEXT " Restart the game to apply."
 
+#if NC_HAVE_DSP_JIT
+#define AUDIO_PROCESSING_DEFAULT "dsp"
+#else
+#define AUDIO_PROCESSING_DEFAULT "fast"
+#endif
+
 enum { OPT_SCALE, OPT_CROP, OPT_FORMAT, OPT_LANGUAGE, OPT_REGION, OPT_RUMBLE, OPT_NETWORK, OPT_RESAMPLER,
        OPT_PROCESSING, OPT_COUNT };
 
@@ -84,7 +90,7 @@ static struct retro_core_option_v2_definition g_defs[OPT_COUNT + 1] = {
         "It uses more CPU. Fast plays the dry mix; try it if Full DSP crackles or runs slowly." NEXT,
         NULL, NULL,
         {{"fast", "Fast (dry mix)"}, {"dsp", "Full DSP (experimental)"}, {NULL, NULL}},
-        "fast"},
+        AUDIO_PROCESSING_DEFAULT},
     {NULL},
 };
 
