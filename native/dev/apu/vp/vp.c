@@ -153,7 +153,7 @@ static void voice_reset_filters(MCPXAPUState *d, uint16_t v)
     memset(&d->vp.filters[v].svf, 0, sizeof(d->vp.filters[v].svf));
     d->vp.filters[v].ending = false;
     d->vp.filters[v].silence_fed = 0;
-    d->vp.filters[v].route = VP_ROUTE_UNDECIDED;
+    d->vp.route[v] = VP_ROUTE_UNDECIDED;
     if (d->vp.filters[v].resampler) {
         vp_resample_reset(d->vp.filters[v].resampler);
     } else {
@@ -2055,11 +2055,10 @@ static void voice_process(MCPXAPUState *d, uint8_t *c,
             for (int b = 0; b < VP_SENDS; b++) {
                 att[b] = attenuate(vol[b]);
             }
-            MCPXAPUVoiceFilter *const vf = &d->vp.filters[v];
-            if (vf->route == VP_ROUTE_UNDECIDED) {
-                vf->route = (uint8_t)vp_stereo_classify(bin, att);
+            if (d->vp.route[v] == VP_ROUTE_UNDECIDED) {
+                d->vp.route[v] = (uint8_t)vp_stereo_classify(bin, att);
             }
-            if (vf->route == VP_ROUTE_SPEAKERS) {
+            if (d->vp.route[v] == VP_ROUTE_SPEAKERS) {
                 float g2[2][2];
                 vp_stereo_gains(bin, att, d->vp.submix_headroom, channels, ea_value, g2);
                 vp_stereo_mix(sample_buf, samples, g2, channels);
@@ -2699,8 +2698,9 @@ void mcpx_apu_vp_reset(MCPXAPUState *d)
         hrtf_filter_init(&d->vp.filters[v].hrtf);
         d->vp.filters[v].ending = false;
         d->vp.filters[v].silence_fed = 0;
-        d->vp.filters[v].route = VP_ROUTE_UNDECIDED;
     }
+    /* undecided: what a state load without the routes (an older one) keeps */
+    memset(d->vp.route, VP_ROUTE_UNDECIDED, sizeof(d->vp.route));
     refresh_table(&d->vp.voice_cache, 0, 0);
     refresh_table(&d->vp.ssl_cache, 0, 0);
 }

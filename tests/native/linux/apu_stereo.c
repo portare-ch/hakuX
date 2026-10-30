@@ -11,6 +11,10 @@
  * the same output. No guest executable or sound device: the frame thread
  * stays parked (SECTL off) and this test runs the frames. */
 #include "apu_fixture.h"
+#include "native/dev/apu/vp/stereo_route.h"
+#include "native/state/lock.h"
+#include "native/state/sections.h"
+#include "native/state/state.h"
 
 static bool all(int ch, int want, int tol)
 {
@@ -214,6 +218,59 @@ static void test_2d_route_kept(void)
     apu_down();
 }
 
+/* A 2D voice's route across a savestate (state.c's vp.route): its dry send
+ * faded to mute beside a reverb send, saved and loaded, it stays silent
+ * (chosen again it would play the reverb send's level, centred); the same
+ * state without the routes, as an older one, loads with every voice
+ * undecided */
+static void test_2d_route_saved(void)
+{
+    apu_up(false, true, 1);
+    pcm_page(0, false, HALF, 0);
+    Voice v = voice(107, NV1BA0_PIO_SET_ANTECEDENT_VOICE_LIST_2D_TOP, false, 0);
+    v.vol[0] = 0;               /* front left, 0 dB, then muted */
+    v.bin[2] = 10;              /* I3DL2, 0 dB */
+    v.vol[2] = 0;
+    start(&v);
+    frames(4);
+    v.vol[0] = 0xFFF;
+    volumes(&v);
+    frames(2);
+    const bool before = all(0, 0, 0) && all(1, 0, 0);
+    NcBuf b = {0};
+    nc_apu_state_save(&b);
+    NcRd r = {b.p, b.len, 0, false};
+    const bool loaded = nc_apu_state_load(&r, NC_STATE_V_APU);
+    const bool kept = d->vp.route[107] == VP_ROUTE_SPEAKERS;
+    frames(2);
+    check(!b.fail && before && loaded && kept && all(0, 0, 0) && all(1, 0, 0),
+          "2D voice's route across a savestate: faded to mute beside a reverb send, silent before and after");
+
+    /* the state without vp.route, its last field: the field count one less
+     * (the "mcpx-apu" table's, before its first field, gp.dsp) and the
+     * field's bytes (name, kind, size, count, 256 routes) cut off */
+    const size_t field = 1 + strlen("vp.route") + 1 + 4 + 4 + sizeof(d->vp.route);
+    bool cut = false;
+    for (size_t at = 0; at + 11 <= b.len && !cut; at++) {
+        uint32_t n;
+        memcpy(&n, b.p + at, 4);
+        if (b.p[at + 4] == 6 && !memcmp(b.p + at + 5, "gp.dsp", 6) && n > 1) {
+            n--;
+            memcpy(b.p + at, &n, 4);
+            cut = !memcmp(b.p + b.len - field + 1, "vp.route", 8);
+        }
+    }
+    NcRd old = {b.p, b.len - field, 0, false};
+    const bool old_loaded = cut && nc_apu_state_load(&old, NC_STATE_V_APU);
+    bool undecided = true;
+    for (int k = 0; k < MCPX_HW_MAX_VOICES; k++) {
+        undecided &= d->vp.route[k] == VP_ROUTE_UNDECIDED;
+    }
+    check(old_loaded && undecided, "a state without the routes (an older one): loads, every voice undecided");
+    nc_buf_free(&b);
+    apu_down();
+}
+
 /* A 3D voice: the monitor's mix (no panning by its sends), with the HRTF
  * filter off, or on with an entry that passes its input (tap 0 both ears) */
 static void test_3d(void)
@@ -392,6 +449,7 @@ int main(int argc, char **argv)
     test_2d_headroom();
     test_2d_downmix();
     test_2d_route_kept();
+    test_2d_route_saved();
     test_3d();
     test_multipass();
     test_full_dsp();
